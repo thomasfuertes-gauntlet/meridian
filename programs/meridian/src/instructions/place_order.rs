@@ -59,13 +59,20 @@ pub struct PlaceOrder<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+/// A fill computed during the read phase, executed during the CPI phase.
+struct Fill {
+    book_index: usize,
+    fill_qty: u64,
+    fill_cost: u64, // fill_qty * execution_price
+    remaining_acct_idx: usize,
+}
+
 pub fn handler<'info>(
     ctx: Context<'_, '_, 'info, 'info, PlaceOrder<'info>>,
     side: OrderSide,
     price: u64,
     quantity: u64,
 ) -> Result<()> {
-    // Cache keys before borrowing order_book
     let market_key = ctx.accounts.market.key();
     let order_book_ai = ctx.accounts.order_book.to_account_info();
 
@@ -78,21 +85,7 @@ pub fn handler<'info>(
     require!(price > 0 && price < USDC_PER_PAIR, MeridianError::InvalidPrice);
     require!(quantity > 0, MeridianError::InvalidAmount);
 
-    // Validate order_book fields that we can't check in account constraints with AccountLoader
-    {
-        let ob = ctx.accounts.order_book.load()?;
-        require!(ob.market == market_key, MeridianError::Unauthorized);
-        require!(
-            ob.ob_usdc_vault == ctx.accounts.ob_usdc_vault.key(),
-            MeridianError::VaultInvariantViolation
-        );
-        require!(
-            ob.ob_yes_vault == ctx.accounts.ob_yes_vault.key(),
-            MeridianError::VaultInvariantViolation
-        );
-    }
-
-    // --- Escrow incoming tokens ---
+    // --- Escrow incoming tokens (before any AccountLoader borrow) ---
     let escrow_amount = match side {
         OrderSide::Bid => quantity.checked_mul(price).ok_or(MeridianError::InvalidAmount)?,
         OrderSide::Ask => quantity,
@@ -100,7 +93,6 @@ pub fn handler<'info>(
 
     match side {
         OrderSide::Bid => {
-            // Transfer USDC from user to ob_usdc_vault
             token::transfer(
                 CpiContext::new(
                     ctx.accounts.token_program.to_account_info(),
@@ -114,7 +106,6 @@ pub fn handler<'info>(
             )?;
         }
         OrderSide::Ask => {
-            // Transfer Yes tokens from user to ob_yes_vault
             token::transfer(
                 CpiContext::new(
                     ctx.accounts.token_program.to_account_info(),
@@ -129,41 +120,74 @@ pub fn handler<'info>(
         }
     }
 
-    // --- Load order book mutably for matching ---
-    let mut ob = ctx.accounts.order_book.load_mut()?;
-    let ob_seeds: &[&[u8]] = &[OrderBook::SEED, market_key.as_ref(), &[ob.bump]];
+    // --- Phase 1: READ - compute matches without CPI ---
+    let (fills, remaining_qty, total_fill_cost, ob_bump) = {
+        let ob = ctx.accounts.order_book.load()?;
+
+        // Validate order_book belongs to this market
+        require!(ob.market == market_key, MeridianError::Unauthorized);
+        require!(ob.ob_usdc_vault == ctx.accounts.ob_usdc_vault.key(), MeridianError::VaultInvariantViolation);
+        require!(ob.ob_yes_vault == ctx.accounts.ob_yes_vault.key(), MeridianError::VaultInvariantViolation);
+
+        let mut fills: Vec<Fill> = Vec::new();
+        let mut rem_qty = quantity;
+        let mut total_cost: u64 = 0;
+        let mut ra_idx: usize = 0;
+
+        match side {
+            OrderSide::Bid => {
+                let ask_count = ob.ask_count as usize;
+                for i in 0..ask_count {
+                    if rem_qty == 0 { break; }
+                    if ob.asks[i].is_active == 0 { continue; }
+                    let ask_price = ob.asks[i].price;
+                    if ask_price > price { break; }
+
+                    let fill_qty = rem_qty.min(ob.asks[i].quantity);
+                    let fill_cost = fill_qty.checked_mul(ask_price).ok_or(MeridianError::InvalidAmount)?;
+                    total_cost = total_cost.checked_add(fill_cost).ok_or(MeridianError::InvalidAmount)?;
+
+                    fills.push(Fill { book_index: i, fill_qty, fill_cost, remaining_acct_idx: ra_idx });
+                    ra_idx += 1;
+                    rem_qty = rem_qty.checked_sub(fill_qty).ok_or(MeridianError::InvalidAmount)?;
+                }
+            }
+            OrderSide::Ask => {
+                let bid_count = ob.bid_count as usize;
+                for i in 0..bid_count {
+                    if rem_qty == 0 { break; }
+                    if ob.bids[i].is_active == 0 { continue; }
+                    let bid_price = ob.bids[i].price;
+                    if bid_price < price { break; }
+
+                    let fill_qty = rem_qty.min(ob.bids[i].quantity);
+                    let fill_cost = fill_qty.checked_mul(bid_price).ok_or(MeridianError::InvalidAmount)?;
+
+                    fills.push(Fill { book_index: i, fill_qty, fill_cost, remaining_acct_idx: ra_idx });
+                    ra_idx += 1;
+                    rem_qty = rem_qty.checked_sub(fill_qty).ok_or(MeridianError::InvalidAmount)?;
+                }
+            }
+        }
+
+        (fills, rem_qty, total_cost, ob.bump)
+    };
+    // ob read borrow dropped here
+
+    // --- Phase 2: CPI - execute all fill transfers ---
+    let ob_seeds: &[&[u8]] = &[OrderBook::SEED, market_key.as_ref(), &[ob_bump]];
     let ob_signer_seeds = &[ob_seeds];
 
-    let clock = Clock::get()?;
-    let mut remaining_qty = quantity;
-    let mut remaining_idx: usize = 0; // index into remaining_accounts
-    let mut total_fill_cost: u64 = 0; // tracks actual USDC spent (for bid refunds)
+    for fill in &fills {
+        require!(
+            fill.remaining_acct_idx < ctx.remaining_accounts.len(),
+            MeridianError::InvalidAmount
+        );
+        let counterparty_ata = &ctx.remaining_accounts[fill.remaining_acct_idx];
 
-    match side {
-        OrderSide::Bid => {
-            // Match against asks, lowest price first (asks are sorted ascending)
-            let ask_count = ob.ask_count as usize;
-            for i in 0..ask_count {
-                if remaining_qty == 0 {
-                    break;
-                }
-                if ob.asks[i].is_active == 0 {
-                    continue;
-                }
-                let ask_price = ob.asks[i].price;
-                if ask_price > price {
-                    break; // asks are sorted ascending, no more matches
-                }
-
-                let fill_qty = remaining_qty.min(ob.asks[i].quantity);
-                let fill_cost = fill_qty
-                    .checked_mul(ask_price)
-                    .ok_or(MeridianError::InvalidAmount)?;
-                total_fill_cost = total_fill_cost
-                    .checked_add(fill_cost)
-                    .ok_or(MeridianError::InvalidAmount)?;
-
-                // Transfer Yes tokens from ob_yes_vault to taker (user_yes)
+        match side {
+            OrderSide::Bid => {
+                // Taker gets Yes tokens
                 token::transfer(
                     CpiContext::new_with_signer(
                         ctx.accounts.token_program.to_account_info(),
@@ -174,54 +198,24 @@ pub fn handler<'info>(
                         },
                         ob_signer_seeds,
                     ),
-                    fill_qty,
+                    fill.fill_qty,
                 )?;
-
-                // Transfer USDC from ob_usdc_vault to counterparty (ask owner's USDC ATA)
-                require!(
-                    remaining_idx < ctx.remaining_accounts.len(),
-                    MeridianError::InvalidAmount
-                );
-                let counterparty_usdc = &ctx.remaining_accounts[remaining_idx];
-                remaining_idx += 1;
-
+                // Ask owner gets USDC
                 token::transfer(
                     CpiContext::new_with_signer(
                         ctx.accounts.token_program.to_account_info(),
                         Transfer {
                             from: ctx.accounts.ob_usdc_vault.to_account_info(),
-                            to: counterparty_usdc.to_account_info(),
+                            to: counterparty_ata.to_account_info(),
                             authority: order_book_ai.clone(),
                         },
                         ob_signer_seeds,
                     ),
-                    fill_cost,
+                    fill.fill_cost,
                 )?;
-
-                ob.asks[i].quantity = ob.asks[i]
-                    .quantity
-                    .checked_sub(fill_qty)
-                    .ok_or(MeridianError::InvalidAmount)?;
-                if ob.asks[i].quantity == 0 {
-                    ob.asks[i].is_active = 0;
-                }
-                remaining_qty = remaining_qty
-                    .checked_sub(fill_qty)
-                    .ok_or(MeridianError::InvalidAmount)?;
             }
-
-            // Refund excess escrow (price improvement)
-            let refund = escrow_amount
-                .checked_sub(total_fill_cost)
-                .ok_or(MeridianError::InvalidAmount)?
-                .checked_sub(
-                    remaining_qty
-                        .checked_mul(price)
-                        .ok_or(MeridianError::InvalidAmount)?,
-                )
-                .ok_or(MeridianError::InvalidAmount)?;
-
-            if refund > 0 {
+            OrderSide::Ask => {
+                // Taker gets USDC
                 token::transfer(
                     CpiContext::new_with_signer(
                         ctx.accounts.token_program.to_account_info(),
@@ -232,139 +226,138 @@ pub fn handler<'info>(
                         },
                         ob_signer_seeds,
                     ),
-                    refund,
+                    fill.fill_cost,
                 )?;
-            }
-
-            // Compact asks: remove filled orders
-            let ac = ob.ask_count;
-            ob.ask_count = compact_orders(&mut ob.asks, ac);
-
-            // Rest remaining quantity as a new bid
-            if remaining_qty > 0 {
-                let bid_count = ob.bid_count as usize;
-                require!(bid_count < MAX_ORDERS_PER_SIDE, MeridianError::OrderBookFull);
-
-                let order_id = ob.next_order_id;
-                ob.next_order_id = order_id.checked_add(1).ok_or(MeridianError::InvalidAmount)?;
-
-                // Find sorted insert position: bids descending by price, FIFO at same price
-                let insert_pos = find_bid_insert_pos(&ob.bids, bid_count, price, order_id);
-
-                // Shift orders right to make room
-                for j in (insert_pos..bid_count).rev() {
-                    ob.bids[j + 1] = ob.bids[j];
-                }
-
-                ob.bids[insert_pos] = Order {
-                    owner: ctx.accounts.user.key(),
-                    price,
-                    quantity: remaining_qty,
-                    timestamp: clock.unix_timestamp,
-                    order_id,
-                    is_active: 1,
-                    _padding: [0; 7],
-                };
-                ob.bid_count = (bid_count + 1) as u16;
-            }
-        }
-        OrderSide::Ask => {
-            // Match against bids, highest price first (bids are sorted descending)
-            let bid_count = ob.bid_count as usize;
-            for i in 0..bid_count {
-                if remaining_qty == 0 {
-                    break;
-                }
-                if ob.bids[i].is_active == 0 {
-                    continue;
-                }
-                let bid_price = ob.bids[i].price;
-                if bid_price < price {
-                    break; // bids are sorted descending, no more matches
-                }
-
-                let fill_qty = remaining_qty.min(ob.bids[i].quantity);
-                let fill_cost = fill_qty
-                    .checked_mul(bid_price)
-                    .ok_or(MeridianError::InvalidAmount)?;
-
-                // Transfer USDC from ob_usdc_vault to taker (user_usdc)
-                token::transfer(
-                    CpiContext::new_with_signer(
-                        ctx.accounts.token_program.to_account_info(),
-                        Transfer {
-                            from: ctx.accounts.ob_usdc_vault.to_account_info(),
-                            to: ctx.accounts.user_usdc.to_account_info(),
-                            authority: order_book_ai.clone(),
-                        },
-                        ob_signer_seeds,
-                    ),
-                    fill_cost,
-                )?;
-
-                // Transfer Yes tokens from ob_yes_vault to counterparty (bid owner's Yes ATA)
-                require!(
-                    remaining_idx < ctx.remaining_accounts.len(),
-                    MeridianError::InvalidAmount
-                );
-                let counterparty_yes = &ctx.remaining_accounts[remaining_idx];
-                remaining_idx += 1;
-
+                // Bid owner gets Yes tokens
                 token::transfer(
                     CpiContext::new_with_signer(
                         ctx.accounts.token_program.to_account_info(),
                         Transfer {
                             from: ctx.accounts.ob_yes_vault.to_account_info(),
-                            to: counterparty_yes.to_account_info(),
+                            to: counterparty_ata.to_account_info(),
                             authority: order_book_ai.clone(),
                         },
                         ob_signer_seeds,
                     ),
-                    fill_qty,
+                    fill.fill_qty,
                 )?;
-
-                ob.bids[i].quantity = ob.bids[i]
-                    .quantity
-                    .checked_sub(fill_qty)
-                    .ok_or(MeridianError::InvalidAmount)?;
-                if ob.bids[i].quantity == 0 {
-                    ob.bids[i].is_active = 0;
-                }
-                remaining_qty = remaining_qty
-                    .checked_sub(fill_qty)
-                    .ok_or(MeridianError::InvalidAmount)?;
             }
+        }
+    }
 
-            // Compact bids: remove filled orders
-            let bc = ob.bid_count;
-            ob.bid_count = compact_orders(&mut ob.bids, bc);
+    // Refund excess escrow for bids (price improvement)
+    if side == OrderSide::Bid {
+        let refund = escrow_amount
+            .checked_sub(total_fill_cost)
+            .ok_or(MeridianError::InvalidAmount)?
+            .checked_sub(
+                remaining_qty.checked_mul(price).ok_or(MeridianError::InvalidAmount)?,
+            )
+            .ok_or(MeridianError::InvalidAmount)?;
 
-            // Rest remaining quantity as a new ask
-            if remaining_qty > 0 {
-                let ask_count = ob.ask_count as usize;
-                require!(ask_count < MAX_ORDERS_PER_SIDE, MeridianError::OrderBookFull);
+        if refund > 0 {
+            token::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.ob_usdc_vault.to_account_info(),
+                        to: ctx.accounts.user_usdc.to_account_info(),
+                        authority: order_book_ai.clone(),
+                    },
+                    ob_signer_seeds,
+                ),
+                refund,
+            )?;
+        }
+    }
 
-                let order_id = ob.next_order_id;
-                ob.next_order_id = order_id.checked_add(1).ok_or(MeridianError::InvalidAmount)?;
+    // --- Phase 3: WRITE - update book state ---
+    {
+        let mut ob = ctx.accounts.order_book.load_mut()?;
+        let clock = Clock::get()?;
 
-                // Find sorted insert position: asks ascending by price, FIFO at same price
-                let insert_pos = find_ask_insert_pos(&ob.asks, ask_count, price, order_id);
-
-                // Shift orders right to make room
-                for j in (insert_pos..ask_count).rev() {
-                    ob.asks[j + 1] = ob.asks[j];
+        match side {
+            OrderSide::Bid => {
+                // Update matched asks
+                for fill in &fills {
+                    ob.asks[fill.book_index].quantity = ob.asks[fill.book_index]
+                        .quantity
+                        .checked_sub(fill.fill_qty)
+                        .ok_or(MeridianError::InvalidAmount)?;
+                    if ob.asks[fill.book_index].quantity == 0 {
+                        ob.asks[fill.book_index].is_active = 0;
+                    }
                 }
 
-                ob.asks[insert_pos] = Order {
-                    owner: ctx.accounts.user.key(),
-                    price,
-                    quantity: remaining_qty,
-                    timestamp: clock.unix_timestamp,
-                    order_id,
-                    is_active: 1,
-                    _padding: [0; 7],
-                };
-                ob.ask_count = (ask_count + 1) as u16;
+                // Compact asks
+                let ac = ob.ask_count;
+                ob.ask_count = compact_orders(&mut ob.asks, ac);
+
+                // Rest remaining quantity as a new bid
+                if remaining_qty > 0 {
+                    let bid_count = ob.bid_count as usize;
+                    require!(bid_count < MAX_ORDERS_PER_SIDE, MeridianError::OrderBookFull);
+
+                    let order_id = ob.next_order_id;
+                    ob.next_order_id = order_id.checked_add(1).ok_or(MeridianError::InvalidAmount)?;
+
+                    let insert_pos = find_bid_insert_pos(&ob.bids, bid_count, price, order_id);
+                    for j in (insert_pos..bid_count).rev() {
+                        ob.bids[j + 1] = ob.bids[j];
+                    }
+
+                    ob.bids[insert_pos] = Order {
+                        owner: ctx.accounts.user.key(),
+                        price,
+                        quantity: remaining_qty,
+                        timestamp: clock.unix_timestamp,
+                        order_id,
+                        is_active: 1,
+                        _padding: [0; 7],
+                    };
+                    ob.bid_count = (bid_count + 1) as u16;
+                }
+            }
+            OrderSide::Ask => {
+                // Update matched bids
+                for fill in &fills {
+                    ob.bids[fill.book_index].quantity = ob.bids[fill.book_index]
+                        .quantity
+                        .checked_sub(fill.fill_qty)
+                        .ok_or(MeridianError::InvalidAmount)?;
+                    if ob.bids[fill.book_index].quantity == 0 {
+                        ob.bids[fill.book_index].is_active = 0;
+                    }
+                }
+
+                // Compact bids
+                let bc = ob.bid_count;
+                ob.bid_count = compact_orders(&mut ob.bids, bc);
+
+                // Rest remaining quantity as a new ask
+                if remaining_qty > 0 {
+                    let ask_count = ob.ask_count as usize;
+                    require!(ask_count < MAX_ORDERS_PER_SIDE, MeridianError::OrderBookFull);
+
+                    let order_id = ob.next_order_id;
+                    ob.next_order_id = order_id.checked_add(1).ok_or(MeridianError::InvalidAmount)?;
+
+                    let insert_pos = find_ask_insert_pos(&ob.asks, ask_count, price, order_id);
+                    for j in (insert_pos..ask_count).rev() {
+                        ob.asks[j + 1] = ob.asks[j];
+                    }
+
+                    ob.asks[insert_pos] = Order {
+                        owner: ctx.accounts.user.key(),
+                        price,
+                        quantity: remaining_qty,
+                        timestamp: clock.unix_timestamp,
+                        order_id,
+                        is_active: 1,
+                        _padding: [0; 7],
+                    };
+                    ob.ask_count = (ask_count + 1) as u16;
+                }
             }
         }
     }
@@ -385,7 +378,6 @@ fn compact_orders(orders: &mut [Order; MAX_ORDERS_PER_SIDE], count: u16) -> u16 
             write += 1;
         }
     }
-    // Zero out vacated slots
     for i in write..n {
         orders[i] = Order::default();
     }

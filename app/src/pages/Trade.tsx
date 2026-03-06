@@ -6,6 +6,7 @@ import { OrderBook } from "../components/OrderBook";
 import { TradePanel } from "../components/TradePanel";
 import { SettlementCountdown } from "../components/SettlementCountdown";
 import { MAG7, PROGRAM_ID, USDC_PER_PAIR } from "../lib/constants";
+import { useUsdcMint } from "../lib/usdc-mint";
 import { getProgram } from "../lib/anchor";
 import {
   parseOrderBook,
@@ -146,11 +147,7 @@ export function Trade() {
   const bestAsk =
     orderBook && orderBook.asks.length > 0 ? orderBook.asks[0].price : null;
 
-  // We need a USDC mint address - derive from config or use a known devnet mint
-  // For now, use the vault's token type. The actual USDC mint should come from config.
-  const DEVNET_USDC_MINT = new PublicKey(
-    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU" // placeholder - update with actual devnet USDC mint
-  );
+  const DEVNET_USDC_MINT = useUsdcMint();
 
   return (
     <div>

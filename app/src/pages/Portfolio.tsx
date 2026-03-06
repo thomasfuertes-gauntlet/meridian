@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
-import { PublicKey } from "@solana/web3.js";
 import { getProgram } from "../lib/anchor";
 import {
   fetchPositions,
@@ -9,11 +8,7 @@ import {
   type Position,
 } from "../lib/portfolio";
 import { USDC_PER_PAIR } from "../lib/constants";
-
-// Placeholder - should come from deployment config
-const DEVNET_USDC_MINT = new PublicKey(
-  "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
-);
+import { useUsdcMint } from "../lib/usdc-mint";
 
 function OutcomeBadge({ outcome }: { outcome: Position["outcome"] }) {
   if (outcome === "pending")
@@ -29,6 +24,7 @@ export function Portfolio() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const DEVNET_USDC_MINT = useUsdcMint();
 
   const loadPositions = useCallback(async () => {
     if (!wallet) return;

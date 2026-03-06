@@ -1,6 +1,7 @@
 /**
  * Local development setup script.
  * Run after `anchor deploy` on local validator.
+ * Idempotent - safe to run multiple times.
  *
  * Creates: config, USDC mint, 7 test markets (one per MAG7 stock),
  * order books, and airdrops USDC to a specified wallet.
@@ -35,6 +36,14 @@ const dummyPythFeedId = Array(32).fill(0);
 const pastCloseTime = new anchor.BN(0);
 const today = new anchor.BN(Math.floor(Date.now() / 86400000));
 
+async function accountExists(
+  connection: anchor.web3.Connection,
+  pubkey: PublicKey
+): Promise<boolean> {
+  const info = await connection.getAccountInfo(pubkey);
+  return info !== null;
+}
+
 async function main() {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
@@ -49,7 +58,6 @@ async function main() {
   const browserWallet = process.argv[2] ? new PublicKey(process.argv[2]) : null;
   if (browserWallet) {
     console.log("Browser wallet:", browserWallet.toString());
-    // Airdrop SOL to browser wallet for tx fees
     const sig = await connection.requestAirdrop(browserWallet, 5 * LAMPORTS_PER_SOL);
     await connection.confirmTransaction(sig);
     console.log("Airdropped 5 SOL to browser wallet");
@@ -85,7 +93,7 @@ async function main() {
     usdcMint,
     adminUsdcAta,
     mintAuthority,
-    1000 * USDC_PER_PAIR // 1000 USDC
+    1000 * USDC_PER_PAIR
   );
   console.log("Minted 1000 USDC to admin");
 
@@ -106,17 +114,25 @@ async function main() {
       usdcMint,
       browserUsdcAta,
       mintAuthority,
-      100 * USDC_PER_PAIR // 100 USDC
+      100 * USDC_PER_PAIR
     );
     console.log("Minted 100 USDC to browser wallet");
   }
 
-  // 4. Initialize config
-  await program.methods
-    .initializeConfig()
-    .accountsPartial({ admin: admin.publicKey })
-    .rpc();
-  console.log("Config initialized");
+  // 4. Initialize config (skip if already exists)
+  const [configPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("config")],
+    program.programId
+  );
+  if (await accountExists(connection, configPda)) {
+    console.log("Config already initialized, skipping");
+  } else {
+    await program.methods
+      .initializeConfig()
+      .accountsPartial({ admin: admin.publicKey })
+      .rpc();
+    console.log("Config initialized");
+  }
 
   // 5. Create markets + order books for each MAG7 stock
   for (const { ticker, strike } of MAG7_STRIKES) {
@@ -131,7 +147,12 @@ async function main() {
       program.programId
     );
 
-    // Create market
+    // Skip if market already exists
+    if (await accountExists(connection, marketPda)) {
+      console.log(`Market already exists: ${ticker} > $${strike / USDC_PER_PAIR}, skipping`);
+      continue;
+    }
+
     await program.methods
       .createStrikeMarket(ticker, strikePrice, today, pastCloseTime, dummyPythFeedId)
       .accountsPartial({ admin: admin.publicKey, usdcMint })
@@ -139,18 +160,6 @@ async function main() {
     console.log(`Created market: ${ticker} > $${strike / USDC_PER_PAIR}`);
 
     // Initialize order book
-    const [orderBookPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("orderbook"), marketPda.toBuffer()],
-      program.programId
-    );
-    const [obUsdcVault] = PublicKey.findProgramAddressSync(
-      [Buffer.from("ob_usdc_vault"), marketPda.toBuffer()],
-      program.programId
-    );
-    const [obYesVault] = PublicKey.findProgramAddressSync(
-      [Buffer.from("ob_yes_vault"), marketPda.toBuffer()],
-      program.programId
-    );
     const [yesMintPda] = PublicKey.findProgramAddressSync(
       [Buffer.from("yes_mint"), marketPda.toBuffer()],
       program.programId
@@ -168,17 +177,23 @@ async function main() {
     console.log(`  Order book initialized for ${ticker}`);
   }
 
+  // Write config for frontend
+  const fs = await import("fs");
+  const configPath = `${__dirname}/../app/src/lib/local-config.json`;
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify({ usdcMint: usdcMint.toString() }, null, 2)
+  );
+  console.log(`\nWrote ${configPath}`);
+
   // Print summary
   console.log("\n--- Setup Complete ---");
   console.log(`USDC Mint: ${usdcMint.toString()}`);
   console.log(`Markets created: ${MAG7_STRIKES.length}`);
-  console.log(`\nUpdate DEVNET_USDC_MINT in app/src/pages/Trade.tsx and Portfolio.tsx with:`);
-  console.log(`  ${usdcMint.toString()}`);
   if (browserWallet) {
     console.log(`\nBrowser wallet ${browserWallet.toString()} funded with:`);
     console.log(`  5 SOL (tx fees) + 100 USDC (trading)`);
   }
-  console.log(`\nFrontend: update app/src/lib/constants.ts DEVNET_RPC to "http://localhost:8899"`);
 }
 
 main().catch((err) => {

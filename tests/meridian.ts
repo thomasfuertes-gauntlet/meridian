@@ -2,16 +2,8 @@ import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { Meridian } from "../target/types/meridian";
 import { expect } from "chai";
-import {
-  Keypair,
-  PublicKey,
-  SystemProgram,
-  SYSVAR_RENT_PUBKEY,
-} from "@solana/web3.js";
-import {
-  TOKEN_PROGRAM_ID,
-  createMint,
-} from "@solana/spl-token";
+import { Keypair, PublicKey } from "@solana/web3.js";
+import { createMint } from "@solana/spl-token";
 
 describe("meridian", () => {
   const provider = anchor.AnchorProvider.env();
@@ -53,10 +45,8 @@ describe("meridian", () => {
   it("initializes global config", async () => {
     await program.methods
       .initializeConfig()
-      .accounts({
+      .accountsPartial({
         admin: admin.publicKey,
-        config: configPda,
-        systemProgram: SystemProgram.programId,
       })
       .rpc();
 
@@ -104,17 +94,9 @@ describe("meridian", () => {
 
     await program.methods
       .createStrikeMarket(ticker, strikePrice, date)
-      .accounts({
+      .accountsPartial({
         admin: admin.publicKey,
-        config: configPda,
-        market: marketPda,
-        yesMint: yesMintPda,
-        noMint: noMintPda,
-        vault: vaultPda,
         usdcMint: usdcMint,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-        rent: SYSVAR_RENT_PUBKEY,
       })
       .rpc();
 

@@ -4,7 +4,10 @@ export const PROGRAM_ID = new PublicKey(
   "G8kuCKKgU3uTswZPzkP5iXhSWd15ejKgnpr9atJx7azD"
 );
 
-export const DEVNET_RPC = "https://api.devnet.solana.com";
+// Vite exposes env vars prefixed with VITE_
+// Default to localhost for local dev, override with VITE_RPC_URL for devnet
+export const RPC_URL =
+  import.meta.env.VITE_RPC_URL || "http://localhost:8899";
 
 // MAG7 tickers and their Pyth Hermes price feed IDs (equity feeds)
 export const MAG7 = [

@@ -1,10 +1,10 @@
 import { AnchorProvider, Program, type Idl } from "@coral-xyz/anchor";
 import { Connection } from "@solana/web3.js";
 import { type AnchorWallet } from "@solana/wallet-adapter-react";
-import { DEVNET_RPC } from "./constants";
+import { RPC_URL } from "./constants";
 import idl from "../idl/meridian.json";
 
-export const connection = new Connection(DEVNET_RPC, "confirmed");
+export const connection = new Connection(RPC_URL, "confirmed");
 
 export function getProvider(wallet: AnchorWallet): AnchorProvider {
   return new AnchorProvider(connection, wallet, {

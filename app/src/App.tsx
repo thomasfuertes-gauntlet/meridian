@@ -8,7 +8,7 @@ import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import { PhantomWalletAdapter } from "@solana/wallet-adapter-wallets";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
-import { DEVNET_RPC } from "./lib/constants";
+import { RPC_URL } from "./lib/constants";
 import { WalletButton } from "./components/WalletButton";
 import { Landing } from "./pages/Landing";
 import { Markets } from "./pages/Markets";
@@ -34,7 +34,7 @@ export default function App() {
   const wallets = useMemo(() => [new PhantomWalletAdapter()], []);
 
   return (
-    <ConnectionProvider endpoint={DEVNET_RPC}>
+    <ConnectionProvider endpoint={RPC_URL}>
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
           <div className="min-h-screen flex flex-col">

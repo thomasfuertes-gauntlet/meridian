@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+      "Liberation Mono", monospace;
+  }
+}
+
+/* wallet adapter overrides for dark theme */
+.wallet-adapter-button {
+  background-color: rgb(34 197 94) !important;
+  border-radius: 0.5rem !important;
+  font-family: inherit !important;
+}
+.wallet-adapter-button:hover {
+  background-color: rgb(22 163 74) !important;
+}

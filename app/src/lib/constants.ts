@@ -1,0 +1,59 @@
+import { PublicKey } from "@solana/web3.js";
+
+export const PROGRAM_ID = new PublicKey(
+  "G8kuCKKgU3uTswZPzkP5iXhSWd15ejKgnpr9atJx7azD"
+);
+
+export const DEVNET_RPC = "https://api.devnet.solana.com";
+
+// MAG7 tickers and their Pyth Hermes price feed IDs (equity feeds)
+export const MAG7 = [
+  {
+    ticker: "AAPL",
+    name: "Apple",
+    pythFeedId:
+      "0x49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688",
+  },
+  {
+    ticker: "MSFT",
+    name: "Microsoft",
+    pythFeedId:
+      "0xd0ca23c1cc005e004ccf1db5bf76aeb6a49218f43dac3d4b275e92de12ded4d1",
+  },
+  {
+    ticker: "GOOGL",
+    name: "Alphabet",
+    pythFeedId:
+      "0xe65ff435be2571461c57e57a118f577cf723883a9af55e5eb1c7acc42f65bbac",
+  },
+  {
+    ticker: "AMZN",
+    name: "Amazon",
+    pythFeedId:
+      "0xb5d0e0fa58a1fdc967f1a9bc23769c5b6baf8107021e1499c2729976a4e7023e",
+  },
+  {
+    ticker: "NVDA",
+    name: "NVIDIA",
+    pythFeedId:
+      "0x5de33e26fcc79f4c7ef2e732ec01908ef7cf003e0a3c5e94c9a77af7b9071588",
+  },
+  {
+    ticker: "META",
+    name: "Meta Platforms",
+    pythFeedId:
+      "0x2b9ab1e972a281585084148ba1389800799bd4be63b957507db1349314e47445",
+  },
+  {
+    ticker: "TSLA",
+    name: "Tesla",
+    pythFeedId:
+      "0x16dad506d7db8da01c87581c87ca897a012a153557d4d578c3b9c9e1bc0632f1",
+  },
+] as const;
+
+export type Ticker = (typeof MAG7)[number]["ticker"];
+
+// USDC uses 6 decimal places
+export const USDC_DECIMALS = 6;
+export const USDC_PER_PAIR = 1_000_000; // 1.00 USDC in base units

@@ -28,4 +28,14 @@ pub enum MeridianError {
     PriceStale,
     #[msg("Oracle confidence band too wide")]
     PriceConfidenceTooWide,
+    #[msg("Order book is full")]
+    OrderBookFull,
+    #[msg("Invalid price: must be between 1 and 999999 (exclusive of 0 and 1_000_000)")]
+    InvalidPrice,
+    #[msg("No matching orders found")]
+    NoMatchingOrders,
+    #[msg("Order not found")]
+    OrderNotFound,
+    #[msg("Not the order owner")]
+    NotOrderOwner,
 }

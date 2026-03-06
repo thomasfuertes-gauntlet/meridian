@@ -7,6 +7,9 @@ pub mod settle_market;
 pub mod admin_settle;
 pub mod pause;
 pub mod unpause;
+pub mod initialize_order_book;
+pub mod place_order;
+pub mod cancel_order;
 
 pub use initialize_config::*;
 pub use create_strike_market::*;
@@ -17,3 +20,6 @@ pub use settle_market::*;
 pub use admin_settle::*;
 pub use pause::*;
 pub use unpause::*;
+pub use initialize_order_book::*;
+pub use place_order::*;
+pub use cancel_order::*;

@@ -5,6 +5,7 @@ pub mod instructions;
 pub mod state;
 
 use instructions::*;
+use state::OrderSide;
 
 declare_id!("G8kuCKKgU3uTswZPzkP5iXhSWd15ejKgnpr9atJx7azD");
 
@@ -53,5 +54,17 @@ pub mod meridian {
 
     pub fn unpause(ctx: Context<Unpause>) -> Result<()> {
         instructions::unpause::handler(ctx)
+    }
+
+    pub fn initialize_order_book(ctx: Context<InitializeOrderBook>) -> Result<()> {
+        instructions::initialize_order_book::handler(ctx)
+    }
+
+    pub fn place_order(ctx: Context<PlaceOrder>, side: OrderSide, price: u64, quantity: u64) -> Result<()> {
+        instructions::place_order::handler(ctx, side, price, quantity)
+    }
+
+    pub fn cancel_order(ctx: Context<CancelOrder>, order_id: u64) -> Result<()> {
+        instructions::cancel_order::handler(ctx, order_id)
     }
 }

@@ -46,4 +46,12 @@ pub mod meridian {
     pub fn admin_settle(ctx: Context<AdminSettle>, price: u64) -> Result<()> {
         instructions::admin_settle::handler(ctx, price)
     }
+
+    pub fn pause(ctx: Context<Pause>) -> Result<()> {
+        instructions::pause::handler(ctx)
+    }
+
+    pub fn unpause(ctx: Context<Unpause>) -> Result<()> {
+        instructions::unpause::handler(ctx)
+    }
 }

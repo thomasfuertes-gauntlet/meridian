@@ -5,6 +5,8 @@ pub mod burn_pair;
 pub mod redeem;
 pub mod settle_market;
 pub mod admin_settle;
+pub mod pause;
+pub mod unpause;
 
 pub use initialize_config::*;
 pub use create_strike_market::*;
@@ -13,3 +15,5 @@ pub use burn_pair::*;
 pub use redeem::*;
 pub use settle_market::*;
 pub use admin_settle::*;
+pub use pause::*;
+pub use unpause::*;

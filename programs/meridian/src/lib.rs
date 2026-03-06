@@ -60,7 +60,7 @@ pub mod meridian {
         instructions::initialize_order_book::handler(ctx)
     }
 
-    pub fn place_order(ctx: Context<PlaceOrder>, side: OrderSide, price: u64, quantity: u64) -> Result<()> {
+    pub fn place_order<'info>(ctx: Context<'_, '_, 'info, 'info, PlaceOrder<'info>>, side: OrderSide, price: u64, quantity: u64) -> Result<()> {
         instructions::place_order::handler(ctx, side, price, quantity)
     }
 

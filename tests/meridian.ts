@@ -8,6 +8,7 @@ import {
   createAssociatedTokenAccount,
   mintTo,
   getAccount,
+  getMint,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 
@@ -923,10 +924,7 @@ describe("meridian", () => {
 
     // ── place_order - crossing (match) ─────────────────────────
 
-    // CONTRACT BUG: place_order does CPI transfers while order_book is mutably borrowed
-    // via load_mut() (zero_copy). The Solana runtime's RefCell borrow checker rejects this
-    // with AccountBorrowFailed. Fix: split matching into read/CPI/write phases like cancel_order.
-    it.skip("crossing bid fills against resting ask with price improvement", async () => {
+    it("crossing bid fills against resting ask with price improvement", async () => {
       const m = await createMarketWithOB("OB5", new anchor.BN(100_000_000));
 
       // Admin places ask at 500_000 for qty 2 (needs Yes tokens)
@@ -1000,8 +998,7 @@ describe("meridian", () => {
 
     // ── place_order - partial fill ─────────────────────────────
 
-    // CONTRACT BUG: same AccountBorrowFailed issue as crossing test above
-    it.skip("partial fill leaves remainder on book", async () => {
+    it("partial fill leaves remainder on book", async () => {
       const m = await createMarketWithOB("OB6", new anchor.BN(100_000_000));
 
       // Admin places ask for qty 5 at 400_000
@@ -1059,8 +1056,7 @@ describe("meridian", () => {
 
     // ── place_order - market orders ────────────────────────────
 
-    // CONTRACT BUG: same AccountBorrowFailed issue as crossing test above
-    it.skip("bid at max price sweeps all asks", async () => {
+    it("bid at max price sweeps all asks", async () => {
       const m = await createMarketWithOB("OB7", new anchor.BN(100_000_000));
 
       // Admin places asks at different prices
@@ -1404,6 +1400,588 @@ describe("meridian", () => {
           .accountsPartial({ admin: admin.publicKey })
           .rpc();
       }
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  PAUSE / UNPAUSE TESTS
+  // ═══════════════════════════════════════════════════════════════
+
+  describe("pause / unpause", () => {
+    const connection = provider.connection;
+    let nonAdmin: Keypair;
+
+    // Unique market for pause mint tests
+    const pTicker = "PAUS";
+    const pStrike = new anchor.BN(111_000_000);
+    const pDate = new anchor.BN(1800000001);
+    let pMarket: ReturnType<typeof deriveMarketPdas>;
+
+    before(async () => {
+      nonAdmin = Keypair.generate();
+      const sig = await connection.requestAirdrop(
+        nonAdmin.publicKey,
+        2 * anchor.web3.LAMPORTS_PER_SOL
+      );
+      await connection.confirmTransaction(sig);
+
+      // Create market for mint-during-pause tests
+      pMarket = await createMarket(pTicker, pStrike, pDate);
+    });
+
+    it("pause sets config.paused = true", async () => {
+      await program.methods
+        .pause()
+        .accountsPartial({ admin: admin.publicKey })
+        .rpc();
+
+      const config = await program.account.globalConfig.fetch(configPda);
+      expect(config.paused).to.equal(true);
+    });
+
+    it("mint rejected during pause (Paused error)", async () => {
+      const userYes = getAssociatedTokenAddressSync(
+        pMarket.yesMintPda,
+        admin.publicKey
+      );
+      const userNo = getAssociatedTokenAddressSync(
+        pMarket.noMintPda,
+        admin.publicKey
+      );
+
+      try {
+        await program.methods
+          .mintPair()
+          .accountsPartial({
+            user: admin.publicKey,
+            market: pMarket.marketPda,
+            userUsdc: adminUsdcAta,
+            vault: pMarket.vaultPda,
+            yesMint: pMarket.yesMintPda,
+            noMint: pMarket.noMintPda,
+            userYes,
+            userNo,
+          })
+          .rpc();
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("Paused");
+      }
+    });
+
+    it("unpause sets config.paused = false", async () => {
+      await program.methods
+        .unpause()
+        .accountsPartial({ admin: admin.publicKey })
+        .rpc();
+
+      const config = await program.account.globalConfig.fetch(configPda);
+      expect(config.paused).to.equal(false);
+    });
+
+    it("mint succeeds after unpause", async () => {
+      const userYes = getAssociatedTokenAddressSync(
+        pMarket.yesMintPda,
+        admin.publicKey
+      );
+      const userNo = getAssociatedTokenAddressSync(
+        pMarket.noMintPda,
+        admin.publicKey
+      );
+
+      await program.methods
+        .mintPair()
+        .accountsPartial({
+          user: admin.publicKey,
+          market: pMarket.marketPda,
+          userUsdc: adminUsdcAta,
+          vault: pMarket.vaultPda,
+          yesMint: pMarket.yesMintPda,
+          noMint: pMarket.noMintPda,
+          userYes,
+          userNo,
+        })
+        .rpc();
+
+      const vaultAccount = await getAccount(connection, pMarket.vaultPda);
+      expect(Number(vaultAccount.amount)).to.equal(1_000_000);
+    });
+
+    it("non-admin cannot pause (Unauthorized)", async () => {
+      try {
+        await program.methods
+          .pause()
+          .accountsPartial({ admin: nonAdmin.publicKey })
+          .signers([nonAdmin])
+          .rpc();
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        // Anchor constraint error - has_one = admin
+        expect(err.toString()).to.match(/Unauthorized|ConstraintHasOne|2012/);
+      }
+    });
+
+    it("non-admin cannot unpause (Unauthorized)", async () => {
+      try {
+        await program.methods
+          .unpause()
+          .accountsPartial({ admin: nonAdmin.publicKey })
+          .signers([nonAdmin])
+          .rpc();
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.match(/Unauthorized|ConstraintHasOne|2012/);
+      }
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  VAULT INVARIANT TESTS
+  // ═══════════════════════════════════════════════════════════════
+
+  describe("vault invariants", () => {
+    const connection = provider.connection;
+
+    it("after multiple mints: vault == totalPairsMinted * 1_000_000", async () => {
+      const pdas = await createMarket("IVLT", new anchor.BN(222_000_000), new anchor.BN(1800000010));
+      const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
+      const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, admin.publicKey);
+
+      for (let i = 0; i < 7; i++) {
+        await program.methods
+          .mintPair()
+          .accountsPartial({
+            user: admin.publicKey,
+            market: pdas.marketPda,
+            userUsdc: adminUsdcAta,
+            vault: pdas.vaultPda,
+            yesMint: pdas.yesMintPda,
+            noMint: pdas.noMintPda,
+            userYes,
+            userNo,
+          })
+          .rpc();
+      }
+
+      const vault = await getAccount(connection, pdas.vaultPda);
+      const market = await program.account.strikeMarket.fetch(pdas.marketPda);
+      expect(Number(vault.amount)).to.equal(market.totalPairsMinted.toNumber() * 1_000_000);
+      expect(market.totalPairsMinted.toNumber()).to.equal(7);
+    });
+
+    it("after mint then burn: vault == totalPairsMinted * 1_000_000", async () => {
+      const pdas = await createMarket("IVBU", new anchor.BN(223_000_000), new anchor.BN(1800000011));
+      const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
+      const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, admin.publicKey);
+
+      // Mint 5
+      for (let i = 0; i < 5; i++) {
+        await program.methods
+          .mintPair()
+          .accountsPartial({
+            user: admin.publicKey,
+            market: pdas.marketPda,
+            userUsdc: adminUsdcAta,
+            vault: pdas.vaultPda,
+            yesMint: pdas.yesMintPda,
+            noMint: pdas.noMintPda,
+            userYes,
+            userNo,
+          })
+          .rpc();
+      }
+
+      // Burn 2
+      await program.methods
+        .burnPair(new anchor.BN(2))
+        .accountsPartial({
+          user: admin.publicKey,
+          market: pdas.marketPda,
+          userUsdc: adminUsdcAta,
+          vault: pdas.vaultPda,
+          yesMint: pdas.yesMintPda,
+          noMint: pdas.noMintPda,
+          userYes,
+          userNo,
+        })
+        .rpc();
+
+      const vault = await getAccount(connection, pdas.vaultPda);
+      const market = await program.account.strikeMarket.fetch(pdas.marketPda);
+      expect(market.totalPairsMinted.toNumber()).to.equal(3);
+      expect(Number(vault.amount)).to.equal(3 * 1_000_000);
+    });
+
+    it("after mint, settle, redeem winner: vault == (total - redeemed) * 1_000_000", async () => {
+      const pdas = await createMarket("IVRD", new anchor.BN(224_000_000), new anchor.BN(1800000012));
+      const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
+      const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, admin.publicKey);
+
+      // Mint 6
+      for (let i = 0; i < 6; i++) {
+        await program.methods
+          .mintPair()
+          .accountsPartial({
+            user: admin.publicKey,
+            market: pdas.marketPda,
+            userUsdc: adminUsdcAta,
+            vault: pdas.vaultPda,
+            yesMint: pdas.yesMintPda,
+            noMint: pdas.noMintPda,
+            userYes,
+            userNo,
+          })
+          .rpc();
+      }
+
+      // Settle -> YesWins
+      await program.methods
+        .adminSettle(new anchor.BN(224_000_000))
+        .accountsPartial({ admin: admin.publicKey, market: pdas.marketPda })
+        .rpc();
+
+      // Redeem 4 Yes (winner)
+      await program.methods
+        .redeem(new anchor.BN(4))
+        .accountsPartial({
+          user: admin.publicKey,
+          market: pdas.marketPda,
+          userUsdc: adminUsdcAta,
+          vault: pdas.vaultPda,
+          tokenMint: pdas.yesMintPda,
+          userToken: userYes,
+        })
+        .rpc();
+
+      const vault = await getAccount(connection, pdas.vaultPda);
+      const market = await program.account.strikeMarket.fetch(pdas.marketPda);
+      // 6 minted - 4 redeemed = 2 remaining
+      expect(market.totalPairsMinted.toNumber()).to.equal(2);
+      expect(Number(vault.amount)).to.equal(2 * 1_000_000);
+    });
+
+    it("full lifecycle (mint 10, burn 3, settle, redeem 7 winners): vault empty", async () => {
+      const pdas = await createMarket("IVFL", new anchor.BN(225_000_000), new anchor.BN(1800000013));
+      const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
+      const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, admin.publicKey);
+
+      // Mint 10
+      for (let i = 0; i < 10; i++) {
+        await program.methods
+          .mintPair()
+          .accountsPartial({
+            user: admin.publicKey,
+            market: pdas.marketPda,
+            userUsdc: adminUsdcAta,
+            vault: pdas.vaultPda,
+            yesMint: pdas.yesMintPda,
+            noMint: pdas.noMintPda,
+            userYes,
+            userNo,
+          })
+          .rpc();
+      }
+
+      // Burn 3
+      await program.methods
+        .burnPair(new anchor.BN(3))
+        .accountsPartial({
+          user: admin.publicKey,
+          market: pdas.marketPda,
+          userUsdc: adminUsdcAta,
+          vault: pdas.vaultPda,
+          yesMint: pdas.yesMintPda,
+          noMint: pdas.noMintPda,
+          userYes,
+          userNo,
+        })
+        .rpc();
+
+      // Settle -> NoWins (price below strike)
+      await program.methods
+        .adminSettle(new anchor.BN(200_000_000))
+        .accountsPartial({ admin: admin.publicKey, market: pdas.marketPda })
+        .rpc();
+
+      // Redeem 7 No tokens (winner)
+      await program.methods
+        .redeem(new anchor.BN(7))
+        .accountsPartial({
+          user: admin.publicKey,
+          market: pdas.marketPda,
+          userUsdc: adminUsdcAta,
+          vault: pdas.vaultPda,
+          tokenMint: pdas.noMintPda,
+          userToken: userNo,
+        })
+        .rpc();
+
+      // Redeem 7 Yes tokens (loser - 0 USDC)
+      await program.methods
+        .redeem(new anchor.BN(7))
+        .accountsPartial({
+          user: admin.publicKey,
+          market: pdas.marketPda,
+          userUsdc: adminUsdcAta,
+          vault: pdas.vaultPda,
+          tokenMint: pdas.yesMintPda,
+          userToken: userYes,
+        })
+        .rpc();
+
+      const vault = await getAccount(connection, pdas.vaultPda);
+      expect(Number(vault.amount)).to.equal(0);
+
+      const market = await program.account.strikeMarket.fetch(pdas.marketPda);
+      expect(market.totalPairsMinted.toNumber()).to.equal(0);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  TOKEN SUPPLY INVARIANT TESTS
+  // ═══════════════════════════════════════════════════════════════
+
+  describe("token supply invariants", () => {
+    const connection = provider.connection;
+
+    it("after mint: yes_supply == no_supply == totalPairsMinted", async () => {
+      const pdas = await createMarket("ISUP", new anchor.BN(230_000_000), new anchor.BN(1800000020));
+      const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
+      const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, admin.publicKey);
+
+      for (let i = 0; i < 4; i++) {
+        await program.methods
+          .mintPair()
+          .accountsPartial({
+            user: admin.publicKey,
+            market: pdas.marketPda,
+            userUsdc: adminUsdcAta,
+            vault: pdas.vaultPda,
+            yesMint: pdas.yesMintPda,
+            noMint: pdas.noMintPda,
+            userYes,
+            userNo,
+          })
+          .rpc();
+      }
+
+      const yesMint = await getMint(connection, pdas.yesMintPda);
+      const noMint = await getMint(connection, pdas.noMintPda);
+      const market = await program.account.strikeMarket.fetch(pdas.marketPda);
+
+      expect(Number(yesMint.supply)).to.equal(4);
+      expect(Number(noMint.supply)).to.equal(4);
+      expect(Number(yesMint.supply)).to.equal(Number(noMint.supply));
+      expect(Number(yesMint.supply)).to.equal(market.totalPairsMinted.toNumber());
+    });
+
+    it("after burn: yes_supply == no_supply (still equal)", async () => {
+      const pdas = await createMarket("ISUB", new anchor.BN(231_000_000), new anchor.BN(1800000021));
+      const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
+      const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, admin.publicKey);
+
+      // Mint 6
+      for (let i = 0; i < 6; i++) {
+        await program.methods
+          .mintPair()
+          .accountsPartial({
+            user: admin.publicKey,
+            market: pdas.marketPda,
+            userUsdc: adminUsdcAta,
+            vault: pdas.vaultPda,
+            yesMint: pdas.yesMintPda,
+            noMint: pdas.noMintPda,
+            userYes,
+            userNo,
+          })
+          .rpc();
+      }
+
+      // Burn 2
+      await program.methods
+        .burnPair(new anchor.BN(2))
+        .accountsPartial({
+          user: admin.publicKey,
+          market: pdas.marketPda,
+          userUsdc: adminUsdcAta,
+          vault: pdas.vaultPda,
+          yesMint: pdas.yesMintPda,
+          noMint: pdas.noMintPda,
+          userYes,
+          userNo,
+        })
+        .rpc();
+
+      const yesMint = await getMint(connection, pdas.yesMintPda);
+      const noMint = await getMint(connection, pdas.noMintPda);
+
+      expect(Number(yesMint.supply)).to.equal(4);
+      expect(Number(noMint.supply)).to.equal(4);
+      expect(Number(yesMint.supply)).to.equal(Number(noMint.supply));
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  SETTLEMENT IMMUTABILITY TESTS
+  // ═══════════════════════════════════════════════════════════════
+
+  describe("settlement immutability", () => {
+    it("re-settling raises MarketAlreadySettled", async () => {
+      const pdas = await createMarket("ISIM", new anchor.BN(240_000_000), new anchor.BN(1800000030));
+
+      await program.methods
+        .adminSettle(new anchor.BN(250_000_000))
+        .accountsPartial({ admin: admin.publicKey, market: pdas.marketPda })
+        .rpc();
+
+      try {
+        await program.methods
+          .adminSettle(new anchor.BN(200_000_000))
+          .accountsPartial({ admin: admin.publicKey, market: pdas.marketPda })
+          .rpc();
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("MarketAlreadySettled");
+      }
+    });
+
+    it("outcome does not change on re-fetch after settlement", async () => {
+      const pdas = await createMarket("ISRF", new anchor.BN(241_000_000), new anchor.BN(1800000031));
+
+      // Settle -> YesWins (price above strike)
+      await program.methods
+        .adminSettle(new anchor.BN(300_000_000))
+        .accountsPartial({ admin: admin.publicKey, market: pdas.marketPda })
+        .rpc();
+
+      const market1 = await program.account.strikeMarket.fetch(pdas.marketPda);
+      expect(market1.outcome).to.deep.equal({ yesWins: {} });
+
+      // Re-fetch and verify immutable
+      const market2 = await program.account.strikeMarket.fetch(pdas.marketPda);
+      expect(market2.outcome).to.deep.equal({ yesWins: {} });
+      expect(market2.settledAt.toNumber()).to.equal(market1.settledAt.toNumber());
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  //  EDGE CASE TESTS
+  // ═══════════════════════════════════════════════════════════════
+
+  describe("edge cases", () => {
+    const connection = provider.connection;
+
+    // At-or-above rule: price exactly at strike -> YesWins
+    it("oracle at exactly strike price -> YesWins (at-or-above rule)", async () => {
+      const strikePrice = new anchor.BN(333_000_000);
+      const pdas = await createMarket("EEXA", strikePrice, new anchor.BN(1800000040));
+
+      await program.methods
+        .adminSettle(new anchor.BN(333_000_000)) // exactly at strike
+        .accountsPartial({ admin: admin.publicKey, market: pdas.marketPda })
+        .rpc();
+
+      const market = await program.account.strikeMarket.fetch(pdas.marketPda);
+      expect(market.outcome).to.deep.equal({ yesWins: {} });
+    });
+
+    it("redeem losing tokens: burns tokens, user gets 0 USDC, vault unchanged", async () => {
+      const pdas = await createMarket("ELOSE", new anchor.BN(334_000_000), new anchor.BN(1800000041));
+      const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
+      const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, admin.publicKey);
+
+      // Mint 3 pairs
+      for (let i = 0; i < 3; i++) {
+        await program.methods
+          .mintPair()
+          .accountsPartial({
+            user: admin.publicKey,
+            market: pdas.marketPda,
+            userUsdc: adminUsdcAta,
+            vault: pdas.vaultPda,
+            yesMint: pdas.yesMintPda,
+            noMint: pdas.noMintPda,
+            userYes,
+            userNo,
+          })
+          .rpc();
+      }
+
+      // Settle -> YesWins (No tokens are losers)
+      await program.methods
+        .adminSettle(new anchor.BN(400_000_000))
+        .accountsPartial({ admin: admin.publicKey, market: pdas.marketPda })
+        .rpc();
+
+      const vaultBefore = Number((await getAccount(connection, pdas.vaultPda)).amount);
+      const usdcBefore = Number((await getAccount(connection, adminUsdcAta)).amount);
+
+      // Redeem 3 No tokens (loser)
+      await program.methods
+        .redeem(new anchor.BN(3))
+        .accountsPartial({
+          user: admin.publicKey,
+          market: pdas.marketPda,
+          userUsdc: adminUsdcAta,
+          vault: pdas.vaultPda,
+          tokenMint: pdas.noMintPda,
+          userToken: userNo,
+        })
+        .rpc();
+
+      const vaultAfter = Number((await getAccount(connection, pdas.vaultPda)).amount);
+      const usdcAfter = Number((await getAccount(connection, adminUsdcAta)).amount);
+
+      // Vault unchanged - loser tokens get 0 USDC
+      expect(vaultAfter).to.equal(vaultBefore);
+      expect(usdcAfter).to.equal(usdcBefore);
+
+      // No tokens should be burned
+      const noBalance = Number((await getAccount(connection, userNo)).amount);
+      expect(noBalance).to.equal(0);
+    });
+
+    it("burn_pair returns exactly 1 USDC per pair (verify USDC balance delta)", async () => {
+      const pdas = await createMarket("EBRN", new anchor.BN(335_000_000), new anchor.BN(1800000042));
+      const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
+      const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, admin.publicKey);
+
+      // Mint 5 pairs
+      for (let i = 0; i < 5; i++) {
+        await program.methods
+          .mintPair()
+          .accountsPartial({
+            user: admin.publicKey,
+            market: pdas.marketPda,
+            userUsdc: adminUsdcAta,
+            vault: pdas.vaultPda,
+            yesMint: pdas.yesMintPda,
+            noMint: pdas.noMintPda,
+            userYes,
+            userNo,
+          })
+          .rpc();
+      }
+
+      const usdcBefore = Number((await getAccount(connection, adminUsdcAta)).amount);
+
+      // Burn 3 pairs -> should get exactly 3 USDC back
+      await program.methods
+        .burnPair(new anchor.BN(3))
+        .accountsPartial({
+          user: admin.publicKey,
+          market: pdas.marketPda,
+          userUsdc: adminUsdcAta,
+          vault: pdas.vaultPda,
+          yesMint: pdas.yesMintPda,
+          noMint: pdas.noMintPda,
+          userYes,
+          userNo,
+        })
+        .rpc();
+
+      const usdcAfter = Number((await getAccount(connection, adminUsdcAta)).amount);
+      expect(usdcAfter - usdcBefore).to.equal(3 * 1_000_000); // exactly 3 USDC
     });
   });
 });

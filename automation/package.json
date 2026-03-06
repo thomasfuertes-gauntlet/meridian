@@ -1,0 +1,23 @@
+{
+  "name": "@meridian/automation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "morning-job": "tsx src/morning-job.ts",
+    "test": "tsx --test src/strikes.test.ts"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.32.0",
+    "@solana/web3.js": "^1.95.0",
+    "dotenv": "^16.4.0",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/node-cron": "^3.0.11",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}

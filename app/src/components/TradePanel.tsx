@@ -1,7 +1,8 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import { BN } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
+import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { getProgram } from "../lib/anchor";
 import {
   buildBuyYesTx,
@@ -9,6 +10,7 @@ import {
   buildSellYesTx,
   buildSellNoTx,
 } from "../lib/trade";
+import { getPositionConflict } from "../lib/portfolio";
 import { USDC_PER_PAIR } from "../lib/constants";
 
 type TradeAction = "buyYes" | "buyNo" | "sellYes" | "sellNo";
@@ -54,6 +56,30 @@ export function TradePanel({
   const [quantity, setQuantity] = useState("1");
   const [price, setPrice] = useState("");
   const [status, setStatus] = useState<string | null>(null);
+  const [balanceMap, setBalanceMap] = useState<Map<string, number>>(new Map());
+
+  // Fetch user token balances for position constraint checking
+  useEffect(() => {
+    if (!wallet) return;
+    async function loadBalances() {
+      const accounts = await connection.getTokenAccountsByOwner(
+        wallet!.publicKey,
+        { programId: TOKEN_PROGRAM_ID }
+      );
+      const map = new Map<string, number>();
+      for (const { account } of accounts.value) {
+        const mint = new PublicKey(account.data.subarray(0, 32));
+        const amount = Number(account.data.readBigUInt64LE(64));
+        if (amount > 0) map.set(mint.toString(), amount);
+      }
+      setBalanceMap(map);
+    }
+    loadBalances();
+  }, [wallet, connection, market]);
+
+  const conflict = wallet
+    ? getPositionConflict(balanceMap, yesMint, noMint, action)
+    : null;
 
   const effectivePrice = price
     ? Math.round(parseFloat(price) * USDC_PER_PAIR)
@@ -208,17 +234,28 @@ export function TradePanel({
         </div>
       )}
 
+      {/* Position constraint warning */}
+      {conflict && (
+        <div className="bg-yellow-900/30 border border-yellow-700/50 rounded p-3 mb-4 text-xs text-yellow-400">
+          {conflict}
+        </div>
+      )}
+
       {/* Submit */}
       <button
         onClick={handleTrade}
-        disabled={!wallet || effectivePrice == null}
+        disabled={!wallet || effectivePrice == null || !!conflict}
         className={`w-full py-2.5 rounded font-medium text-sm transition-colors ${
-          wallet
-            ? ACTION_COLORS[action] + " text-white"
-            : "bg-gray-800 text-gray-500 cursor-not-allowed"
+          !wallet || !!conflict
+            ? "bg-gray-800 text-gray-500 cursor-not-allowed"
+            : ACTION_COLORS[action] + " text-white"
         }`}
       >
-        {wallet ? ACTION_LABELS[action] : "Connect wallet"}
+        {!wallet
+          ? "Connect wallet"
+          : conflict
+            ? "Position conflict"
+            : ACTION_LABELS[action]}
       </button>
 
       {status && (

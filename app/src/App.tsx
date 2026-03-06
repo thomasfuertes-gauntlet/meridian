@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Link, useLocation } from "react-router-dom";
 import {
   ConnectionProvider,
   WalletProvider,
@@ -10,8 +10,25 @@ import "@solana/wallet-adapter-react-ui/styles.css";
 
 import { DEVNET_RPC } from "./lib/constants";
 import { WalletButton } from "./components/WalletButton";
+import { Landing } from "./pages/Landing";
 import { Markets } from "./pages/Markets";
 import { Trade } from "./pages/Trade";
+import { Portfolio } from "./pages/Portfolio";
+
+function NavLink({ to, label }: { to: string; label: string }) {
+  const { pathname } = useLocation();
+  const active = pathname === to || pathname.startsWith(to + "/");
+  return (
+    <Link
+      to={to}
+      className={`text-sm transition-colors ${
+        active ? "text-white" : "text-gray-500 hover:text-gray-300"
+      }`}
+    >
+      {label}
+    </Link>
+  );
+}
 
 export default function App() {
   const wallets = useMemo(() => [new PhantomWalletAdapter()], []);
@@ -22,15 +39,23 @@ export default function App() {
         <WalletModalProvider>
           <div className="min-h-screen flex flex-col">
             <header className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
-              <a href="/" className="text-xl font-bold text-green-400">
-                MERIDIAN
-              </a>
+              <div className="flex items-center gap-6">
+                <Link to="/" className="text-xl font-bold text-green-400">
+                  MERIDIAN
+                </Link>
+                <nav className="flex gap-4">
+                  <NavLink to="/markets" label="Markets" />
+                  <NavLink to="/portfolio" label="Portfolio" />
+                </nav>
+              </div>
               <WalletButton />
             </header>
             <main className="flex-1 px-6 py-6">
               <Routes>
-                <Route path="/" element={<Markets />} />
+                <Route path="/" element={<Landing />} />
+                <Route path="/markets" element={<Markets />} />
                 <Route path="/trade/:ticker" element={<Trade />} />
+                <Route path="/portfolio" element={<Portfolio />} />
               </Routes>
             </main>
           </div>

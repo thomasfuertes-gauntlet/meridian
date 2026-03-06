@@ -1,2 +1,7 @@
 gm.local.md
 .claude/
+
+# Anchor / Solana
+target/
+.anchor/
+node_modules/

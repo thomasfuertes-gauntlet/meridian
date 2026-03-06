@@ -5,7 +5,6 @@ pub mod instructions;
 pub mod state;
 
 use instructions::*;
-use state::MarketOutcome;
 
 declare_id!("G8kuCKKgU3uTswZPzkP5iXhSWd15ejKgnpr9atJx7azD");
 
@@ -22,8 +21,10 @@ pub mod meridian {
         ticker: String,
         strike_price: u64,
         date: i64,
+        close_time: i64,
+        pyth_feed_id: [u8; 32],
     ) -> Result<()> {
-        instructions::create_strike_market::handler(ctx, ticker, strike_price, date)
+        instructions::create_strike_market::handler(ctx, ticker, strike_price, date, close_time, pyth_feed_id)
     }
 
     pub fn mint_pair(ctx: Context<MintPair>) -> Result<()> {
@@ -38,7 +39,11 @@ pub mod meridian {
         instructions::redeem::handler(ctx, amount)
     }
 
-    pub fn settle_market(ctx: Context<SettleMarket>, outcome: MarketOutcome) -> Result<()> {
-        instructions::settle_market::handler(ctx, outcome)
+    pub fn settle_market(ctx: Context<SettleMarket>) -> Result<()> {
+        instructions::settle_market::handler(ctx)
+    }
+
+    pub fn admin_settle(ctx: Context<AdminSettle>, price: u64) -> Result<()> {
+        instructions::admin_settle::handler(ctx, price)
     }
 }

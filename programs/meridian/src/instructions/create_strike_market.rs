@@ -73,6 +73,8 @@ pub fn handler(
     ticker: String,
     strike_price: u64,
     date: i64,
+    close_time: i64,
+    pyth_feed_id: [u8; 32],
 ) -> Result<()> {
     require!(
         !ticker.is_empty() && ticker.len() <= StrikeMarket::MAX_TICKER_LEN,
@@ -91,6 +93,8 @@ pub fn handler(
     market.admin = ctx.accounts.admin.key();
     market.bump = ctx.bumps.market;
     market.settled_at = None;
+    market.close_time = close_time;
+    market.pyth_feed_id = pyth_feed_id;
 
     Ok(())
 }

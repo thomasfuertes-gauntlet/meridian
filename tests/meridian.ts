@@ -24,6 +24,11 @@ describe("meridian", () => {
   let mintAuthority: Keypair;
   let adminUsdcAta: PublicKey;
 
+  // Dummy Pyth feed ID (32 zero bytes) for testing
+  const dummyPythFeedId = Array(32).fill(0);
+  // close_time = 0 (epoch) so admin_settle's 1hr check passes (0 + 3600 < any real clock)
+  const pastCloseTime = new anchor.BN(0);
+
   // Helper: derive market PDA and related accounts
   function deriveMarketPdas(
     ticker: string,
@@ -54,15 +59,17 @@ describe("meridian", () => {
     return { marketPda, yesMintPda, noMintPda, vaultPda };
   }
 
-  // Helper: create a strike market
+  // Helper: create a strike market with oracle fields
   async function createMarket(
     ticker: string,
     strikePrice: anchor.BN,
-    date: anchor.BN
+    date: anchor.BN,
+    closeTime: anchor.BN = pastCloseTime,
+    pythFeedId: number[] = dummyPythFeedId
   ) {
     const pdas = deriveMarketPdas(ticker, strikePrice, date);
     await program.methods
-      .createStrikeMarket(ticker, strikePrice, date)
+      .createStrikeMarket(ticker, strikePrice, date, closeTime, pythFeedId)
       .accountsPartial({
         admin: admin.publicKey,
         usdcMint: usdcMint,
@@ -154,6 +161,10 @@ describe("meridian", () => {
     expect(marketAccount.strikePrice.toNumber()).to.equal(680_000_000);
     expect(marketAccount.outcome).to.deep.equal({ pending: {} });
     expect(marketAccount.totalPairsMinted.toNumber()).to.equal(0);
+    expect(marketAccount.closeTime.toNumber()).to.equal(0);
+    expect(Buffer.from(marketAccount.pythFeedId)).to.deep.equal(
+      Buffer.from(dummyPythFeedId)
+    );
   });
 
   it("mints a pair", async () => {
@@ -279,9 +290,9 @@ describe("meridian", () => {
   });
 
   it("rejects mint on settled market", async () => {
-    // Settle the shared market first
+    // Admin-settle the shared market (close_time=0, so 0+3600 < validator clock)
     await program.methods
-      .settleMarket({ yesWins: {} })
+      .adminSettle(new anchor.BN(680_000_000)) // price == strike -> YesWins
       .accountsPartial({
         admin: admin.publicKey,
         market: sharedMarket.marketPda,
@@ -366,7 +377,7 @@ describe("meridian", () => {
     }
   });
 
-  it("full lifecycle - Yes wins", async () => {
+  it("full lifecycle - Yes wins (at-or-above rule)", async () => {
     const ticker = "MSFT";
     const strikePrice = new anchor.BN(400_000_000);
     const date = new anchor.BN(1700000002);
@@ -408,9 +419,9 @@ describe("meridian", () => {
     );
     expect(usdcBefore - usdcAfterMint).to.equal(10_000_000);
 
-    // Settle as YesWins
+    // Admin settle with price exactly at strike (at-or-above -> YesWins)
     await program.methods
-      .settleMarket({ yesWins: {} })
+      .adminSettle(new anchor.BN(400_000_000))
       .accountsPartial({
         admin: admin.publicKey,
         market: pdas.marketPda,
@@ -500,9 +511,9 @@ describe("meridian", () => {
         .rpc();
     }
 
-    // Settle as NoWins
+    // Admin settle with price below strike -> NoWins
     await program.methods
-      .settleMarket({ noWins: {} })
+      .adminSettle(new anchor.BN(140_000_000))
       .accountsPartial({
         admin: admin.publicKey,
         market: pdas.marketPda,
@@ -568,9 +579,9 @@ describe("meridian", () => {
         .rpc();
     }
 
-    // Settle
+    // Admin settle
     await program.methods
-      .settleMarket({ yesWins: {} })
+      .adminSettle(new anchor.BN(200_000_000))
       .accountsPartial({
         admin: admin.publicKey,
         market: pdas.marketPda,
@@ -602,5 +613,103 @@ describe("meridian", () => {
       pdas.marketPda
     );
     expect(marketAccount.totalPairsMinted.toNumber()).to.equal(2);
+  });
+
+  it("admin settle at strike exactly -> YesWins (at-or-above)", async () => {
+    const ticker = "NVDA";
+    const strikePrice = new anchor.BN(500_000_000);
+    const date = new anchor.BN(1700000005);
+    const pdas = await createMarket(ticker, strikePrice, date);
+
+    await program.methods
+      .adminSettle(new anchor.BN(500_000_000)) // exactly at strike
+      .accountsPartial({
+        admin: admin.publicKey,
+        market: pdas.marketPda,
+      })
+      .rpc();
+
+    const marketAccount = await program.account.strikeMarket.fetch(
+      pdas.marketPda
+    );
+    expect(marketAccount.outcome).to.deep.equal({ yesWins: {} });
+    expect(marketAccount.settledAt).to.not.be.null;
+  });
+
+  it("admin settle below strike -> NoWins", async () => {
+    const ticker = "TSLA";
+    const strikePrice = new anchor.BN(300_000_000);
+    const date = new anchor.BN(1700000006);
+    const pdas = await createMarket(ticker, strikePrice, date);
+
+    await program.methods
+      .adminSettle(new anchor.BN(299_999_999)) // 1 micro-cent below strike
+      .accountsPartial({
+        admin: admin.publicKey,
+        market: pdas.marketPda,
+      })
+      .rpc();
+
+    const marketAccount = await program.account.strikeMarket.fetch(
+      pdas.marketPda
+    );
+    expect(marketAccount.outcome).to.deep.equal({ noWins: {} });
+  });
+
+  it("rejects admin settle before 1hr delay", async () => {
+    const ticker = "NFLX";
+    const strikePrice = new anchor.BN(600_000_000);
+    const date = new anchor.BN(1700000007);
+    // Set close_time far in the future so the 1hr delay check fails
+    const futureCloseTime = new anchor.BN(9999999999);
+    const pdas = await createMarket(
+      ticker,
+      strikePrice,
+      date,
+      futureCloseTime
+    );
+
+    try {
+      await program.methods
+        .adminSettle(new anchor.BN(650_000_000))
+        .accountsPartial({
+          admin: admin.publicKey,
+          market: pdas.marketPda,
+        })
+        .rpc();
+      expect.fail("Should have thrown");
+    } catch (err: any) {
+      expect(err.toString()).to.include("AdminSettleTooEarly");
+    }
+  });
+
+  it("rejects admin settle on already settled market", async () => {
+    const ticker = "DIS";
+    const strikePrice = new anchor.BN(100_000_000);
+    const date = new anchor.BN(1700000008);
+    const pdas = await createMarket(ticker, strikePrice, date);
+
+    // Settle once
+    await program.methods
+      .adminSettle(new anchor.BN(110_000_000))
+      .accountsPartial({
+        admin: admin.publicKey,
+        market: pdas.marketPda,
+      })
+      .rpc();
+
+    // Try to settle again
+    try {
+      await program.methods
+        .adminSettle(new anchor.BN(90_000_000))
+        .accountsPartial({
+          admin: admin.publicKey,
+          market: pdas.marketPda,
+        })
+        .rpc();
+      expect.fail("Should have thrown");
+    } catch (err: any) {
+      expect(err.toString()).to.include("MarketAlreadySettled");
+    }
   });
 });

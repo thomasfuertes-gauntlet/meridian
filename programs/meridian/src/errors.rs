@@ -20,4 +20,12 @@ pub enum MeridianError {
     InvalidTokenMint,
     #[msg("Invalid outcome: cannot settle as Pending")]
     InvalidOutcome,
+    #[msg("Settlement too early: market not closed yet")]
+    SettlementTooEarly,
+    #[msg("Admin settle too early: must wait 1 hour after close")]
+    AdminSettleTooEarly,
+    #[msg("Oracle price is stale")]
+    PriceStale,
+    #[msg("Oracle confidence band too wide")]
+    PriceConfidenceTooWide,
 }

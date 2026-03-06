@@ -12,4 +12,12 @@ pub enum MeridianError {
     Paused,
     #[msg("Invalid ticker")]
     InvalidTicker,
+    #[msg("Invalid amount: must be greater than zero")]
+    InvalidAmount,
+    #[msg("Vault invariant violation: balance mismatch")]
+    VaultInvariantViolation,
+    #[msg("Invalid token mint: not a market mint")]
+    InvalidTokenMint,
+    #[msg("Invalid outcome: cannot settle as Pending")]
+    InvalidOutcome,
 }

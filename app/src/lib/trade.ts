@@ -65,8 +65,8 @@ export async function buildBuyYesTx(
       user,
       market,
       orderBook,
-      userTokenAccount: userUsdcAta,
-      userYesAccount: userYesAta,
+      userUsdc: userUsdcAta,
+      userYes: userYesAta,
       obUsdcVault,
       obYesVault,
     })
@@ -106,8 +106,8 @@ export async function buildSellYesTx(
       user,
       market,
       orderBook,
-      userTokenAccount: userYesAta,
-      userYesAccount: userYesAta,
+      userUsdc: userUsdcAta,
+      userYes: userYesAta,
       obUsdcVault,
       obYesVault,
     })
@@ -160,21 +160,22 @@ export async function buildBuyNoTx(
     )
   );
 
-  // Step 1: Mint pair (deposits 1 USDC, gets 1 Yes + 1 No per quantity)
+  // Step 1: Mint pairs (1 per call, need `quantity` pairs for the ask)
   const mintIx = await program.methods
-    .mintPair(quantity)
+    .mintPair()
     .accountsPartial({
       user,
       market,
       yesMint,
       noMint,
       vault,
-      userUsdcAccount: userUsdcAta,
-      userYesAccount: userYesAta,
-      userNoAccount: userNoAta,
+      userUsdc: userUsdcAta,
+      userYes: userYesAta,
+      userNo: userNoAta,
     })
     .instruction();
-  tx.add(mintIx);
+  const qty = quantity.toNumber();
+  for (let i = 0; i < qty; i++) tx.add(mintIx);
 
   // Step 2: Sell the Yes tokens on the order book
   const placeIx = await program.methods
@@ -183,8 +184,8 @@ export async function buildBuyNoTx(
       user,
       market,
       orderBook,
-      userTokenAccount: userYesAta,
-      userYesAccount: userYesAta,
+      userUsdc: userUsdcAta,
+      userYes: userYesAta,
       obUsdcVault,
       obYesVault,
     })
@@ -235,8 +236,8 @@ export async function buildSellNoTx(
       user,
       market,
       orderBook,
-      userTokenAccount: userUsdcAta,
-      userYesAccount: userYesAta,
+      userUsdc: userUsdcAta,
+      userYes: userYesAta,
       obUsdcVault,
       obYesVault,
     })
@@ -252,9 +253,9 @@ export async function buildSellNoTx(
       yesMint,
       noMint,
       vault,
-      userUsdcAccount: userUsdcAta,
-      userYesAccount: userYesAta,
-      userNoAccount: userNoAta,
+      userUsdc: userUsdcAta,
+      userYes: userYesAta,
+      userNo: userNoAta,
     })
     .instruction();
   tx.add(burnIx);

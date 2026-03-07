@@ -177,12 +177,15 @@ async function main() {
     console.log(`  Order book initialized for ${ticker}`);
   }
 
-  // Write config for frontend
+  // Write config for frontend + bot scripts
   const fs = await import("fs");
   const configPath = `${__dirname}/../app/src/lib/local-config.json`;
   fs.writeFileSync(
     configPath,
-    JSON.stringify({ usdcMint: usdcMint.toString() }, null, 2)
+    JSON.stringify({
+      usdcMint: usdcMint.toString(),
+      mintAuthority: Buffer.from(mintAuthority.secretKey).toString("base64"),
+    }, null, 2)
   );
   console.log(`\nWrote ${configPath}`);
 

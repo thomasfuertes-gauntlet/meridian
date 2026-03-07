@@ -1,9 +1,9 @@
-.PHONY: dev dev-frontend dev-validator deploy setup test clean
+.PHONY: dev dev-frontend dev-validator deploy setup bots live test clean
 
 # Source Solana/Rust toolchain
 export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.cargo/bin:$(PATH)
 
-# Local development: validator + deploy + seed + frontend
+# Local development: validator + deploy + seed + frontend (bots seed in background)
 dev: dev-validator deploy setup dev-frontend
 
 # Start local validator in background (kills existing)
@@ -31,10 +31,27 @@ setup:
 	ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(HOME)/.config/solana/id.json \
 		npx tsx scripts/setup-local.ts $(WALLET)
 
-# Start frontend dev server
+# Start frontend dev server (foreground). Bots seed + live trade in background.
 dev-frontend:
+	@echo "Seeding bots + starting live trader in background..."
+	@( ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(HOME)/.config/solana/id.json \
+		npx tsx scripts/seed-bots.ts && \
+	   ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(HOME)/.config/solana/id.json \
+		npx tsx scripts/live-bots.ts ) > /dev/null 2>&1 &
 	@echo "Starting frontend..."
 	npm run dev --prefix app
+
+# Seed order books with bot liquidity (run after setup)
+bots:
+	@echo "Seeding order books with bot liquidity..."
+	ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(HOME)/.config/solana/id.json \
+		npx tsx scripts/seed-bots.ts
+
+# Run live trading bot (continuous order book movement)
+live:
+	@echo "Starting live trading bot (Ctrl+C to stop)..."
+	ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(HOME)/.config/solana/id.json \
+		npx tsx scripts/live-bots.ts
 
 # Deploy to devnet
 deploy-devnet:
@@ -48,4 +65,6 @@ test:
 # Clean up
 clean:
 	@pkill -f solana-test-validator 2>/dev/null || true
-	@echo "Validator stopped"
+	@pkill -f seed-bots 2>/dev/null || true
+	@pkill -f live-bots 2>/dev/null || true
+	@echo "Validator and bots stopped"

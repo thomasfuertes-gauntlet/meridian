@@ -24,15 +24,21 @@ export interface StockPrice {
 export async function fetchPrices(
   feedIds: string[]
 ): Promise<Map<string, StockPrice>> {
-  const params = feedIds.map((id) => `ids[]=${id}`).join("&");
-  const url = `${HERMES_BASE}/v2/updates/price/latest?${params}&parsed=true`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Hermes fetch failed: ${res.status}`);
+  // Fetch individually so one bad/offline feed doesn't 404 the entire batch
+  const results = await Promise.allSettled(
+    feedIds.map(async (id) => {
+      const url = `${HERMES_BASE}/v2/updates/price/latest?ids[]=${id}&parsed=true`;
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const data: HermesResponse = await res.json();
+      return data.parsed[0] ?? null;
+    })
+  );
 
-  const data: HermesResponse = await res.json();
   const map = new Map<string, StockPrice>();
-
-  for (const entry of data.parsed) {
+  for (const result of results) {
+    if (result.status !== "fulfilled" || !result.value) continue;
+    const entry = result.value;
     const p = entry.price;
     const price = Number(p.price) * Math.pow(10, p.expo);
     const confidence = Number(p.conf) * Math.pow(10, p.expo);

@@ -27,19 +27,19 @@ export const MAG7 = [
     ticker: "GOOGL",
     name: "Alphabet",
     pythFeedId:
-      "0xe65ff435be2571461c57e57a118f577cf723883a9af55e5eb1c7acc42f65bbac",
+      "0x5a48c03e9b9cb337801073ed9d166817473697efff0d138874e0f6a33d6d5aa6",
   },
   {
     ticker: "AMZN",
     name: "Amazon",
     pythFeedId:
-      "0xb5d0e0fa58a1fdc967f1a9bc23769c5b6baf8107021e1499c2729976a4e7023e",
+      "0xb5d0e0fa58a1f8b81498ae670ce93c872d14434b72c364885d4fa1b257cbb07a",
   },
   {
     ticker: "NVDA",
     name: "NVIDIA",
     pythFeedId:
-      "0x5de33e26fcc79f4c7ef2e732ec01908ef7cf003e0a3c5e94c9a77af7b9071588",
+      "0xb1073854ed24cbc755dc527418f52b7d271f6cc967bbf8d8129112b18860a593",
   },
   {
     ticker: "META",

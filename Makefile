@@ -1,4 +1,4 @@
-.PHONY: dev dev-frontend dev-validator deploy setup wallets bots live test clean circuit tree deploy-devnet setup-devnet wallet-pubkeys
+.PHONY: dev dev-frontend dev-validator deploy setup wallets bots live test clean circuit tree deploy-devnet setup-devnet wallet-pubkeys health
 
 # Source Solana/Rust toolchain
 export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.cargo/bin:$(PATH)
@@ -76,6 +76,12 @@ setup-devnet: wallets
 	@echo "Setting up devnet markets..."
 	ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/setup-devnet.ts
+
+# Devnet health check - balances, markets, actionable warnings
+health: wallets
+	@ANCHOR_PROVIDER_URL=$${ANCHOR_PROVIDER_URL:-https://api.devnet.solana.com} \
+		ANCHOR_WALLET=$(ADMIN_WALLET) \
+		npx tsx scripts/health-check.ts
 
 # Print dev wallet pubkeys (for faucet funding)
 wallet-pubkeys: wallets

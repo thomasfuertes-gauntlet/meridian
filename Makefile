@@ -24,9 +24,13 @@ dev-validator:
 	@solana config set --url localhost
 
 # Build and deploy to local validator
+# Fund admin wallet first (deterministic wallet starts empty, deploy costs ~3.8 SOL).
 # anchor deploy exits non-zero if IDL account upload fails (race condition
 # with local validator). The program itself deploys fine - ignore the error.
 deploy:
+	@echo "Funding admin wallet..."
+	@solana airdrop 5 $(shell solana-keygen pubkey $(ADMIN_WALLET)) > /dev/null 2>&1 || true
+	@solana airdrop 5 $(shell solana-keygen pubkey $(ADMIN_WALLET)) > /dev/null 2>&1 || true
 	@echo "Building program..."
 	anchor build
 	@echo "Deploying to local validator..."

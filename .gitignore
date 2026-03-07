@@ -9,8 +9,8 @@ tests/*.js
 automation/src/*.js
 app/vite.config.js
 
-# Anchor / Solana
-target/
+# Anchor / Solana (target/* ignores contents, not the dir itself, so negations work)
+target/*
 !target/types/
 !target/idl/
 .anchor/

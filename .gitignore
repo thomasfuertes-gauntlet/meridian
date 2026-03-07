@@ -11,6 +11,8 @@ app/vite.config.js
 
 # Anchor / Solana
 target/
+!target/types/
+!target/idl/
 .anchor/
 test-ledger/
 .wallets/

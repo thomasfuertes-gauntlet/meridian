@@ -52,12 +52,15 @@ async function main() {
   console.log("Program ID:", program.programId.toString());
   console.log("Bot wallet (bot-a):", bot.publicKey.toString());
 
-  // Fund bot with SOL
+  // Fund bot with SOL (only on localhost - devnet faucets rate-limit heavily)
   const botBal = await connection.getBalance(bot.publicKey);
-  if (botBal < 5 * LAMPORTS_PER_SOL) {
+  const isLocalhost = connection.rpcEndpoint.includes("localhost") || connection.rpcEndpoint.includes("127.0.0.1");
+  if (isLocalhost && botBal < 5 * LAMPORTS_PER_SOL) {
     const airdropSig = await connection.requestAirdrop(bot.publicKey, 10 * LAMPORTS_PER_SOL);
     await connection.confirmTransaction(airdropSig);
     console.log("Airdropped 10 SOL to bot");
+  } else {
+    console.log(`Bot SOL balance: ${(botBal / LAMPORTS_PER_SOL).toFixed(2)} SOL`);
   }
 
   // Create bot USDC ATA and mint USDC (10,000 for deep liquidity)

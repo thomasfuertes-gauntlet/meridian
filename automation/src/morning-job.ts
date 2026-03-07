@@ -88,7 +88,7 @@ function sleep(ms: number): Promise<void> {
  */
 function loadAdminKeypair(): Keypair {
   const keypairPath = resolve(
-    process.env.ADMIN_KEYPAIR_PATH || "~/.config/solana/id.json"
+    process.env.ADMIN_KEYPAIR_PATH || ".wallets/admin.json"
   );
   const expanded = keypairPath.replace(/^~/, process.env.HOME || "");
   const secretKey = JSON.parse(readFileSync(expanded, "utf-8"));

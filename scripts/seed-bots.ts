@@ -1,20 +1,22 @@
 /**
  * Seed CLOB order books with bot liquidity.
- * Run after `make setup` (needs local-config.json with USDC mint + mint authority).
+ * Run after `make setup` (needs local-config.json with USDC mint).
  *
- * For each market: mints pairs to get Yes tokens, then places resting
- * bids and asks to create a realistic-looking order book.
+ * Uses deterministic bot-a wallet. For each market: mints pairs to get
+ * Yes tokens, then places resting bids and asks.
  */
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { Meridian } from "../target/types/meridian";
-import { Keypair, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import {
   mintTo,
   getAssociatedTokenAddressSync,
+  createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
 import * as fs from "fs";
 import * as path from "path";
+import { getDevWallet } from "./dev-wallets";
 
 const USDC_PER_PAIR = 1_000_000;
 
@@ -38,50 +40,39 @@ const ASK_LEVELS: [number, number][] = [
   [700_000, 10], // 0.70
 ];
 
-// Total Yes tokens needed per market for asks = 3+5+4+6+8+10 = 36
-// Total USDC needed per market for bids = sum(price*qty) = 1440000+2250000+1680000+2280000+2800000+3000000 = 13_450_000
-// Plus 36 USDC for minting pairs = 36_000_000
-// Per market: ~49.5 USDC. 7 markets = ~346.5 USDC. Mint 500 to be safe.
-
 async function main() {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
   const program = anchor.workspace.Meridian as Program<Meridian>;
   const connection = provider.connection;
 
-  // Load USDC mint + mint authority from local-config
+  // Load USDC mint from local-config
   const configPath = path.join(__dirname, "../app/src/lib/local-config.json");
   if (!fs.existsSync(configPath)) {
     console.error("local-config.json not found. Run `make setup` first.");
     process.exit(1);
   }
   const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-  if (!config.mintAuthority) {
-    console.error("mintAuthority not in local-config.json. Re-run `make setup`.");
-    process.exit(1);
-  }
   const usdcMint = new PublicKey(config.usdcMint);
-  const mintAuthority = Keypair.fromSecretKey(
-    Buffer.from(config.mintAuthority, "base64")
-  );
+
+  // Use deterministic bot-a wallet
+  const bot = getDevWallet("bot-a");
+  const admin = getDevWallet("admin"); // admin is USDC mint authority
 
   console.log("USDC Mint:", usdcMint.toString());
   console.log("Program ID:", program.programId.toString());
-
-  // Create bot wallet
-  const bot = Keypair.generate();
-  console.log("Bot wallet:", bot.publicKey.toString());
+  console.log("Bot wallet (bot-a):", bot.publicKey.toString());
 
   // Fund bot with SOL
-  const airdropSig = await connection.requestAirdrop(bot.publicKey, 10 * LAMPORTS_PER_SOL);
-  await connection.confirmTransaction(airdropSig);
-  console.log("Airdropped 10 SOL to bot");
+  const botBal = await connection.getBalance(bot.publicKey);
+  if (botBal < 5 * LAMPORTS_PER_SOL) {
+    const airdropSig = await connection.requestAirdrop(bot.publicKey, 10 * LAMPORTS_PER_SOL);
+    await connection.confirmTransaction(airdropSig);
+    console.log("Airdropped 10 SOL to bot");
+  }
 
   // Create bot USDC ATA and mint USDC
   const botUsdcAta = getAssociatedTokenAddressSync(usdcMint, bot.publicKey);
-  // Use mintPair's init_if_needed for the ATA, but we need it before that.
-  // Create ATA via a mint_pair call or manually. Let's mint USDC first.
-  const { createAssociatedTokenAccountIdempotentInstruction } = await import("@solana/spl-token");
   const createAtaTx = new anchor.web3.Transaction().add(
     createAssociatedTokenAccountIdempotentInstruction(
       bot.publicKey,
@@ -92,7 +83,7 @@ async function main() {
   );
   await anchor.web3.sendAndConfirmTransaction(connection, createAtaTx, [bot]);
 
-  await mintTo(connection, mintAuthority, usdcMint, botUsdcAta, mintAuthority, 500 * USDC_PER_PAIR);
+  await mintTo(connection, admin, usdcMint, botUsdcAta, admin, 500 * USDC_PER_PAIR);
   console.log("Minted 500 USDC to bot");
 
   // Fetch all markets
@@ -144,9 +135,7 @@ async function main() {
 
     // Mint pairs to get Yes tokens for asks (mint_pair creates ATAs via init_if_needed)
     console.log(`  Minting ${totalAskQty} pairs...`);
-    // Batch mint_pair calls (each mints 1 pair, so we need totalAskQty calls)
-    // Do them in batches to avoid tx size limits
-    const BATCH_SIZE = 6; // ~6 mint_pair ixs fit in a tx
+    const BATCH_SIZE = 6;
     for (let i = 0; i < totalAskQty; i += BATCH_SIZE) {
       const tx = new anchor.web3.Transaction();
       const batchEnd = Math.min(i + BATCH_SIZE, totalAskQty);
@@ -210,11 +199,6 @@ async function main() {
 
     console.log(`  Done: ${BID_LEVELS.length} bids, ${ASK_LEVELS.length} asks\n`);
   }
-
-  // Save bot keypair for live-bots.ts reuse
-  config.botKeypair = Buffer.from(bot.secretKey).toString("base64");
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-  console.log("Saved bot keypair to local-config.json");
 
   console.log("--- Bot seeding complete ---");
   console.log("Run `make live` to start live trading bot");

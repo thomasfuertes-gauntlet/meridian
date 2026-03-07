@@ -13,10 +13,11 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { Meridian } from "../target/types/meridian";
-import { Keypair, PublicKey } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import * as fs from "fs";
 import * as path from "path";
+import { getDevWallet } from "./dev-wallets";
 
 const USDC_PER_PAIR = 1_000_000;
 const MIN_PRICE = 50_000;   // $0.05 floor
@@ -110,14 +111,14 @@ async function main() {
   const connection = provider.connection;
 
   const configPath = path.join(__dirname, "../app/src/lib/local-config.json");
-  const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-  if (!config.botKeypair) {
-    console.error("No botKeypair in local-config.json. Run `make bots` first.");
+  if (!fs.existsSync(configPath)) {
+    console.error("local-config.json not found. Run `make setup` first.");
     process.exit(1);
   }
+  const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
 
   const usdcMint = new PublicKey(config.usdcMint);
-  const bot = Keypair.fromSecretKey(Buffer.from(config.botKeypair, "base64"));
+  const bot = getDevWallet("bot-a");
   const botUsdcAta = getAssociatedTokenAddressSync(usdcMint, bot.publicKey);
 
   console.log("Bot:", bot.publicKey.toString());

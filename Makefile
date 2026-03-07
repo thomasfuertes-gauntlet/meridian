@@ -1,10 +1,17 @@
-.PHONY: dev dev-frontend dev-validator deploy setup bots live test clean
+.PHONY: dev dev-frontend dev-validator deploy setup wallets bots live test clean
 
 # Source Solana/Rust toolchain
 export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.cargo/bin:$(PATH)
 
-# Local development: validator + deploy + seed + frontend (bots seed in background)
-dev: dev-validator deploy setup dev-frontend
+# Dev wallet path (deterministic, per-project)
+ADMIN_WALLET := .wallets/admin.json
+
+# Local development: wallets + validator + deploy + seed + frontend
+dev: wallets dev-validator deploy setup dev-frontend
+
+# Generate deterministic dev wallets (idempotent)
+wallets:
+	@npx tsx scripts/dev-wallets.ts
 
 # Start local validator in background (kills existing)
 dev-validator:
@@ -28,15 +35,15 @@ deploy:
 # Run setup script (pass WALLET=<pubkey> to fund a browser wallet)
 setup:
 	@echo "Setting up markets..."
-	ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(HOME)/.config/solana/id.json \
+	ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/setup-local.ts $(WALLET)
 
 # Start frontend dev server (foreground). Bots seed + live trade in background.
 dev-frontend:
 	@echo "Seeding bots + starting live trader in background..."
-	@( ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(HOME)/.config/solana/id.json \
+	@( ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/seed-bots.ts && \
-	   ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(HOME)/.config/solana/id.json \
+	   ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/live-bots.ts ) > /dev/null 2>&1 &
 	@echo "Starting frontend..."
 	npm run dev --prefix app
@@ -44,13 +51,13 @@ dev-frontend:
 # Seed order books with bot liquidity (run after setup)
 bots:
 	@echo "Seeding order books with bot liquidity..."
-	ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(HOME)/.config/solana/id.json \
+	ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/seed-bots.ts
 
 # Run live trading bot (continuous order book movement)
 live:
 	@echo "Starting live trading bot (Ctrl+C to stop)..."
-	ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(HOME)/.config/solana/id.json \
+	ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/live-bots.ts
 
 # Deploy to devnet
@@ -59,7 +66,7 @@ deploy-devnet:
 	anchor deploy --provider.cluster devnet
 
 # Run tests (local validator started by anchor test)
-test:
+test: wallets
 	anchor test
 
 # Clean up

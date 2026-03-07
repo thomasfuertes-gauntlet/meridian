@@ -46,7 +46,7 @@ function sleep(ms: number): Promise<void> {
  * Load the admin keypair from a JSON file.
  */
 function loadAdminKeypair(): Keypair {
-  const keypairPath = process.env.ADMIN_KEYPAIR_PATH || "~/.config/solana/id.json";
+  const keypairPath = process.env.ADMIN_KEYPAIR_PATH || ".wallets/admin.json";
   const expanded = keypairPath.replace(/^~/, process.env.HOME || "");
   const secretKey = JSON.parse(readFileSync(expanded, "utf-8"));
   return Keypair.fromSecretKey(Uint8Array.from(secretKey));

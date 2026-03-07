@@ -5,11 +5,14 @@
  *
  * Creates: config, USDC mint, 7 test markets (one per MAG7 stock),
  * order books, and airdrops USDC to a specified wallet.
+ *
+ * Uses deterministic dev wallets from scripts/dev-wallets.ts.
+ * Admin wallet is both program admin and USDC mint authority.
  */
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { Meridian } from "../target/types/meridian";
-import { Keypair, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import {
   createMint,
   createAssociatedTokenAccount,
@@ -17,6 +20,7 @@ import {
   getAssociatedTokenAddressSync,
   createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
+import { getDevWallet } from "./dev-wallets";
 
 const MAG7_STRIKES: { ticker: string; strike: number }[] = [
   { ticker: "AAPL", strike: 230_000_000 },
@@ -51,10 +55,22 @@ async function main() {
   const admin = provider.wallet;
   const connection = provider.connection;
 
+  // Admin wallet is also the USDC mint authority (deterministic, no random keypair)
+  const adminKeypair = getDevWallet("admin");
+  const botB = getDevWallet("bot-b");
+
   console.log("Program ID:", program.programId.toString());
   console.log("Admin:", admin.publicKey.toString());
 
-  // Optional: airdrop USDC to a browser wallet (pass as CLI arg)
+  // Fund admin keypair for mint operations (provider.wallet and adminKeypair are the same key,
+  // but the provider wallet is loaded from file by Anchor - we need the Keypair for signing)
+  const adminBal = await connection.getBalance(adminKeypair.publicKey);
+  if (adminBal < 2 * LAMPORTS_PER_SOL) {
+    const sig = await connection.requestAirdrop(adminKeypair.publicKey, 5 * LAMPORTS_PER_SOL);
+    await connection.confirmTransaction(sig);
+  }
+
+  // Optional: fund a browser wallet (pass pubkey as CLI arg)
   const browserWallet = process.argv[2] ? new PublicKey(process.argv[2]) : null;
   if (browserWallet) {
     console.log("Browser wallet:", browserWallet.toString());
@@ -63,18 +79,19 @@ async function main() {
     console.log("Airdropped 5 SOL to browser wallet");
   }
 
-  // 1. Create USDC mint (admin is mint authority)
-  const mintAuthority = Keypair.generate();
-  const mintAuthAirdrop = await connection.requestAirdrop(
-    mintAuthority.publicKey,
-    2 * LAMPORTS_PER_SOL
-  );
-  await connection.confirmTransaction(mintAuthAirdrop);
+  // Fund bot-b for frontend auto-sign
+  const botBBal = await connection.getBalance(botB.publicKey);
+  if (botBBal < 2 * LAMPORTS_PER_SOL) {
+    const sig = await connection.requestAirdrop(botB.publicKey, 5 * LAMPORTS_PER_SOL);
+    await connection.confirmTransaction(sig);
+    console.log("Funded bot-b (frontend auto-sign):", botB.publicKey.toString());
+  }
 
+  // 1. Create USDC mint (admin is mint authority)
   const usdcMint = await createMint(
     connection,
-    mintAuthority,
-    mintAuthority.publicKey,
+    adminKeypair,
+    adminKeypair.publicKey,
     null,
     USDC_DECIMALS
   );
@@ -83,43 +100,63 @@ async function main() {
   // 2. Create admin USDC ATA and mint USDC
   const adminUsdcAta = await createAssociatedTokenAccount(
     connection,
-    mintAuthority,
+    adminKeypair,
     usdcMint,
     admin.publicKey
   );
   await mintTo(
     connection,
-    mintAuthority,
+    adminKeypair,
     usdcMint,
     adminUsdcAta,
-    mintAuthority,
+    adminKeypair,
     1000 * USDC_PER_PAIR
   );
   console.log("Minted 1000 USDC to admin");
 
-  // 3. If browser wallet, create its USDC ATA and mint
+  // 3. Fund browser wallet with USDC
   if (browserWallet) {
     const browserUsdcAta = getAssociatedTokenAddressSync(usdcMint, browserWallet);
     const createAtaIx = createAssociatedTokenAccountIdempotentInstruction(
-      mintAuthority.publicKey,
+      adminKeypair.publicKey,
       browserUsdcAta,
       browserWallet,
       usdcMint
     );
     const tx = new anchor.web3.Transaction().add(createAtaIx);
-    await anchor.web3.sendAndConfirmTransaction(connection, tx, [mintAuthority]);
+    await anchor.web3.sendAndConfirmTransaction(connection, tx, [adminKeypair]);
     await mintTo(
       connection,
-      mintAuthority,
+      adminKeypair,
       usdcMint,
       browserUsdcAta,
-      mintAuthority,
+      adminKeypair,
       100 * USDC_PER_PAIR
     );
     console.log("Minted 100 USDC to browser wallet");
   }
 
-  // 4. Initialize config (skip if already exists)
+  // 4. Fund bot-b with USDC for frontend trading
+  const botBUsdcAta = getAssociatedTokenAddressSync(usdcMint, botB.publicKey);
+  const createBotBAtaIx = createAssociatedTokenAccountIdempotentInstruction(
+    adminKeypair.publicKey,
+    botBUsdcAta,
+    botB.publicKey,
+    usdcMint
+  );
+  const botBAtaTx = new anchor.web3.Transaction().add(createBotBAtaIx);
+  await anchor.web3.sendAndConfirmTransaction(connection, botBAtaTx, [adminKeypair]);
+  await mintTo(
+    connection,
+    adminKeypair,
+    usdcMint,
+    botBUsdcAta,
+    adminKeypair,
+    100 * USDC_PER_PAIR
+  );
+  console.log("Minted 100 USDC to bot-b");
+
+  // 5. Initialize config (skip if already exists)
   const [configPda] = PublicKey.findProgramAddressSync(
     [Buffer.from("config")],
     program.programId
@@ -134,7 +171,7 @@ async function main() {
     console.log("Config initialized");
   }
 
-  // 5. Create markets + order books for each MAG7 stock
+  // 6. Create markets + order books for each MAG7 stock
   for (const { ticker, strike } of MAG7_STRIKES) {
     const strikePrice = new anchor.BN(strike);
     const [marketPda] = PublicKey.findProgramAddressSync(
@@ -184,7 +221,6 @@ async function main() {
     configPath,
     JSON.stringify({
       usdcMint: usdcMint.toString(),
-      mintAuthority: Buffer.from(mintAuthority.secretKey).toString("base64"),
     }, null, 2)
   );
   console.log(`\nWrote ${configPath}`);
@@ -193,8 +229,9 @@ async function main() {
   console.log("\n--- Setup Complete ---");
   console.log(`USDC Mint: ${usdcMint.toString()}`);
   console.log(`Markets created: ${MAG7_STRIKES.length}`);
+  console.log(`bot-b (frontend): ${botB.publicKey.toString()} - 100 USDC + 5 SOL`);
   if (browserWallet) {
-    console.log(`\nBrowser wallet ${browserWallet.toString()} funded with:`);
+    console.log(`Browser wallet ${browserWallet.toString()} funded with:`);
     console.log(`  5 SOL (tx fees) + 100 USDC (trading)`);
   }
 }

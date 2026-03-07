@@ -3,18 +3,13 @@
  * Uses the deterministic bot-b keypair so users can trade without Phantom.
  * Only active when RPC_URL points to localhost.
  */
-import { createHash } from "crypto";
 import { Keypair, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { BaseSignerWalletAdapter, WalletReadyState } from "@solana/wallet-adapter-base";
 import type { WalletName } from "@solana/wallet-adapter-base";
 
-// Same derivation as scripts/dev-wallets.ts
-function deriveKeypair(name: string): Keypair {
-  const seed = createHash("sha256").update(`meridian-dev-${name}`).digest();
-  return Keypair.fromSeed(seed);
-}
-
-const DEV_KEYPAIR = deriveKeypair("bot-b");
+// Pre-computed sha256("meridian-dev-bot-b") - avoids Node crypto import in browser
+const BOT_B_SEED = new Uint8Array([216,203,1,24,131,66,29,212,48,8,128,132,145,120,92,100,20,242,44,6,35,255,181,187,199,94,79,179,255,200,118,232]);
+const DEV_KEYPAIR = Keypair.fromSeed(BOT_B_SEED);
 
 export class LocalDevWalletAdapter extends BaseSignerWalletAdapter {
   name = "Dev Wallet" as WalletName;

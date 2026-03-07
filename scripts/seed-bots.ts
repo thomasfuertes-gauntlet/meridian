@@ -24,6 +24,8 @@ import { fairValue, computeLevels, fetchStockPrices } from "./fair-value";
 
 const USDC_PER_PAIR = 1_000_000;
 const BATCH_SIZE = 10;
+const TX_DELAY_MS = 1200; // throttle for devnet/Helius rate limits (1 tx/s free tier)
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
   const provider = anchor.AnchorProvider.env();
@@ -149,6 +151,7 @@ async function main() {
       createAssociatedTokenAccountIdempotentInstruction(bot.publicKey, botNoAta, bot.publicKey, noMintPda),
     );
     await anchor.web3.sendAndConfirmTransaction(connection, ataSetupTx, [bot]);
+    await sleep(TX_DELAY_MS);
 
     // Total ask quantity needed for Yes token supply
     const totalAskQty = askLevels.reduce((sum, [, qty]) => sum + qty, 0);
@@ -177,6 +180,7 @@ async function main() {
         tx.add(ix);
       }
       await anchor.web3.sendAndConfirmTransaction(connection, tx, [bot]);
+      await sleep(TX_DELAY_MS);
     }
     console.log(`  Minted ${mintQty} pairs`);
 
@@ -197,6 +201,7 @@ async function main() {
         .signers([bot])
         .rpc();
       console.log(`    Ask: ${qty} @ $${(price / USDC_PER_PAIR).toFixed(2)}`);
+      await sleep(TX_DELAY_MS);
     }
 
     // Place bid orders (buy Yes tokens at various prices, escrows USDC)
@@ -216,6 +221,7 @@ async function main() {
         .signers([bot])
         .rpc();
       console.log(`    Bid: ${qty} @ $${(price / USDC_PER_PAIR).toFixed(2)}`);
+      await sleep(TX_DELAY_MS);
     }
 
     console.log(`  Done: ${bidLevels.length} bids, ${askLevels.length} asks (${totalAskQty} depth/side)\n`);

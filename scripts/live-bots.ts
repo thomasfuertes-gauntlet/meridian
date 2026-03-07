@@ -36,6 +36,7 @@ const TICK_MS_MIN = 150;
 const TICK_MS_MAX = 400;
 const PRICE_REFRESH_MS = 30_000;
 const TX_DELAY_MS = Number(process.env.TX_DELAY_MS ?? 1200); // delay between RPCs for rate limits
+const MARKET_REFRESH_TICKS = 100; // re-check which markets are still active every ~100 ticks
 const REPLENISH_THRESHOLD = 500 * USDC_PER_PAIR; // auto-replenish below 500 USDC
 
 // --- Order book parsing ---
@@ -144,7 +145,7 @@ async function main() {
   // Discover markets
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allMarkets = await (program.account as any).strikeMarket.all();
-  const markets: MarketCtx[] = allMarkets
+  let markets: MarketCtx[] = allMarkets
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .filter((m: any) => m.account.outcome?.pending !== undefined)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -424,9 +425,31 @@ async function main() {
   }
 
   let replenishCounter = 0;
+  let tickCounter = 0;
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    // Periodically drop settled markets from the active list
+    if (++tickCounter % MARKET_REFRESH_TICKS === 0) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const refreshed = await (program.account as any).strikeMarket.all();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const activePubkeys = new Set(refreshed.filter((m: any) => m.account.outcome?.pending !== undefined).map((m: any) => m.publicKey.toString()));
+        const before = markets.length;
+        markets = markets.filter((m) => activePubkeys.has(m.pubkey.toString()));
+        if (markets.length < before) {
+          console.log(`[refresh] ${before - markets.length} markets settled, ${markets.length} remaining`);
+        }
+        if (markets.length === 0) {
+          console.log("[done] All markets settled. Exiting gracefully.");
+          process.exit(0);
+        }
+      } catch {
+        // RPC failure - keep going with current list
+      }
+    }
+
     // Refresh stock prices periodically
     if (Date.now() - lastPriceRefresh > PRICE_REFRESH_MS) {
       stockPrices = await fetchStockPrices();

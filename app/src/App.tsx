@@ -14,6 +14,8 @@ import { Landing } from "./pages/Landing";
 import { Markets } from "./pages/Markets";
 import { Trade } from "./pages/Trade";
 import { Portfolio } from "./pages/Portfolio";
+import { Brag } from "./pages/Brag";
+import { Verify } from "./pages/Verify";
 
 function NavLink({ to, label }: { to: string; label: string }) {
   const { pathname } = useLocation();
@@ -50,6 +52,7 @@ export default function App() {
                 <nav className="flex gap-4">
                   <NavLink to="/markets" label="Markets" />
                   <NavLink to="/portfolio" label="Portfolio" />
+                  <NavLink to="/brag" label="Brag" />
                 </nav>
               </div>
               <WalletButton />
@@ -60,6 +63,8 @@ export default function App() {
                 <Route path="/markets" element={<Markets />} />
                 <Route path="/trade/:ticker" element={<Trade />} />
                 <Route path="/portfolio" element={<Portfolio />} />
+                <Route path="/brag" element={<Brag />} />
+                <Route path="/verify" element={<Verify />} />
               </Routes>
             </main>
           </div>

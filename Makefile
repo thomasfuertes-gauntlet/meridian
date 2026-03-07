@@ -1,4 +1,4 @@
-.PHONY: dev dev-frontend dev-validator deploy setup wallets bots live test clean
+.PHONY: dev dev-frontend dev-validator deploy setup wallets bots live test clean circuit tree deploy-devnet setup-devnet wallet-pubkeys
 
 # Source Solana/Rust toolchain
 export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.cargo/bin:$(PATH)
@@ -65,14 +65,36 @@ live:
 	OFFLINE=$(OFFLINE) ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/live-bots.ts
 
-# Deploy to devnet
-deploy-devnet:
+# Deploy to devnet (fund admin wallet first: solana airdrop 2 <admin-pubkey> --url devnet)
+deploy-devnet: wallets
+	@echo "Admin pubkey: $(shell solana-keygen pubkey $(ADMIN_WALLET))"
 	anchor build
-	anchor deploy --provider.cluster devnet
+	anchor deploy --provider.cluster devnet --provider.wallet $(ADMIN_WALLET)
+
+# Setup devnet markets + USDC mint (run once after deploy-devnet)
+setup-devnet: wallets
+	@echo "Setting up devnet markets..."
+	ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=$(ADMIN_WALLET) \
+		npx tsx scripts/setup-devnet.ts
+
+# Print dev wallet pubkeys (for faucet funding)
+wallet-pubkeys: wallets
+	@echo "Admin: $(shell solana-keygen pubkey .wallets/admin.json)"
+	@echo "Bot-A: $(shell solana-keygen pubkey .wallets/bot-a.json)"
+	@echo "Bot-B: $(shell solana-keygen pubkey .wallets/bot-b.json)"
 
 # Run tests (local validator started by anchor test)
 test: wallets
 	anchor test
+
+# Build ZK circuit artifacts (one-time, requires circom: cargo install circom)
+circuit:
+	cd circuits && ./build.sh
+
+# Build Poseidon Merkle tree from settled markets
+tree:
+	ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
+		npx tsx scripts/build-tree.ts
 
 # Clean up
 clean:

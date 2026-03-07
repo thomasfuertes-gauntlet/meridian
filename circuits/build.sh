@@ -12,7 +12,7 @@ mkdir -p "$BUILD_DIR" "$OUTPUT_DIR"
 # Install circuit deps if needed
 if [ ! -d "node_modules" ]; then
   echo "Installing circuit dependencies..."
-  npm ci
+  npm install
 fi
 
 # 1. Compile circuit

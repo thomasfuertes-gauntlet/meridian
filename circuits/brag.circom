@@ -14,7 +14,6 @@ template MerkleProof(depth) {
     hashes[0] <== leaf;
 
     component hashers[depth];
-    component mux[depth][2];
 
     for (var i = 0; i < depth; i++) {
         // pathIndices[i] is 0 or 1

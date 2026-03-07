@@ -9,6 +9,7 @@ import {
 } from "../lib/portfolio";
 import { USDC_PER_PAIR } from "../lib/constants";
 import { useUsdcMint } from "../lib/usdc-mint";
+import { Link } from "react-router-dom";
 
 function OutcomeBadge({ outcome }: { outcome: Position["outcome"] }) {
   if (outcome === "pending")
@@ -126,13 +127,21 @@ export function Portfolio() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-white">Portfolio</h1>
-        <button
-          onClick={loadPositions}
-          disabled={loading}
-          className="text-xs text-gray-500 hover:text-gray-300 border border-gray-700 rounded px-3 py-1"
-        >
-          {loading ? "Loading..." : "Refresh"}
-        </button>
+        <div className="flex items-center gap-3">
+          <Link
+            to="/brag"
+            className="text-xs text-green-400 hover:text-green-300 border border-green-800 rounded px-3 py-1"
+          >
+            Generate ZK Proof
+          </Link>
+          <button
+            onClick={loadPositions}
+            disabled={loading}
+            className="text-xs text-gray-500 hover:text-gray-300 border border-gray-700 rounded px-3 py-1"
+          >
+            {loading ? "Loading..." : "Refresh"}
+          </button>
+        </div>
       </div>
 
       {positions.length === 0 ? (

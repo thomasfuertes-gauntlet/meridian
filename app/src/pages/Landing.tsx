@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { MAG7 } from "../lib/constants";
@@ -48,9 +48,10 @@ export function Landing() {
         {MAG7.map((stock) => {
           const p = prices.get(stock.ticker);
           return (
-            <div
+            <Link
               key={stock.ticker}
-              className="bg-gray-900 border border-gray-800 rounded px-4 py-2 text-sm"
+              to={`/trade/${stock.ticker}`}
+              className="bg-gray-900 border border-gray-800 rounded px-4 py-2 text-sm hover:border-green-800 transition-colors"
             >
               <span className="font-bold text-white mr-2">
                 {stock.ticker}
@@ -58,7 +59,7 @@ export function Landing() {
               <span className="text-green-400 font-mono">
                 {p ? `$${p.price.toFixed(2)}` : "--"}
               </span>
-            </div>
+            </Link>
           );
         })}
       </div>

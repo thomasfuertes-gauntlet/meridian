@@ -94,6 +94,8 @@ async function main() {
   );
   console.log(`Found ${pendingMarkets.length} active markets\n`);
 
+  let seeded = 0;
+  let failed = 0;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const m of pendingMarkets) {
     const marketPda: PublicKey = m.publicKey;
@@ -107,6 +109,8 @@ async function main() {
     const { bids: bidLevels, asks: askLevels } = computeLevels(fair);
 
     console.log(`--- ${ticker} > $${strikeDollars.toFixed(2)} (fair: $${fair.toFixed(2)}) ---`);
+
+    try { // per-market error isolation
 
     const [yesMintPda] = PublicKey.findProgramAddressSync(
       [Buffer.from("yes_mint"), marketPda.toBuffer()],
@@ -212,9 +216,14 @@ async function main() {
     }
 
     console.log(`  Done: ${bidLevels.length} bids, ${askLevels.length} asks (${totalAskQty} depth/side)\n`);
+    seeded++;
+    } catch (err) {
+      failed++;
+      console.error(`  FAILED to seed ${ticker} > $${strikeDollars.toFixed(2)}: ${err instanceof Error ? err.message : err}\n`);
+    }
   }
 
-  console.log("--- Bot seeding complete ---");
+  console.log(`--- Bot seeding complete: ${seeded} markets seeded, ${failed} failed ---`);
   console.log("Run `make live` to start live trading bot");
 }
 

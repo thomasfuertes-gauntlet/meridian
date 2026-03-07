@@ -33,10 +33,13 @@ function NavLink({ to, label }: { to: string; label: string }) {
 }
 
 export default function App() {
-  const isLocalhost = RPC_URL.includes("localhost") || RPC_URL.includes("127.0.0.1");
+  const useDevWallet =
+    RPC_URL.includes("localhost") ||
+    RPC_URL.includes("127.0.0.1") ||
+    import.meta.env.VITE_DEV_WALLET === "true";
   const wallets = useMemo(
-    () => (isLocalhost ? [new LocalDevWalletAdapter()] : []),
-    [isLocalhost]
+    () => (useDevWallet ? [new LocalDevWalletAdapter()] : []),
+    [useDevWallet]
   );
 
   return (

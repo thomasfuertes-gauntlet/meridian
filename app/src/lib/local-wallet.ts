@@ -1,7 +1,7 @@
 /**
- * Auto-sign wallet adapter for localhost development.
+ * Auto-sign wallet adapter for dev environments.
  * Uses the deterministic bot-b keypair so users can trade without Phantom.
- * Only active when RPC_URL points to localhost.
+ * Active on localhost or when VITE_DEV_WALLET=true (e.g. Railway demo).
  */
 import { Keypair, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { BaseSignerWalletAdapter, WalletReadyState } from "@solana/wallet-adapter-base";

@@ -43,11 +43,12 @@ setup:
 		npx tsx scripts/setup-local.ts $(WALLET)
 
 # Start frontend dev server (foreground). Bots seed + live trade in background.
+# Pass OFFLINE=1 to use synthetic prices (for weekends/off-hours dev).
 dev-frontend:
 	@echo "Seeding bots + starting live trader in background..."
-	@( ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
+	@( OFFLINE=$(OFFLINE) ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/seed-bots.ts && \
-	   ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
+	   OFFLINE=$(OFFLINE) ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/live-bots.ts ) > /dev/null 2>&1 &
 	@echo "Starting frontend..."
 	npm run dev --prefix app
@@ -55,13 +56,13 @@ dev-frontend:
 # Seed order books with bot liquidity (run after setup)
 bots:
 	@echo "Seeding order books with bot liquidity..."
-	ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
+	OFFLINE=$(OFFLINE) ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/seed-bots.ts
 
 # Run live trading bot (continuous order book movement)
 live:
 	@echo "Starting live trading bot (Ctrl+C to stop)..."
-	ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
+	OFFLINE=$(OFFLINE) ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/live-bots.ts
 
 # Deploy to devnet

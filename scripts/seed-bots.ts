@@ -78,7 +78,7 @@ async function main() {
     console.log(`  ${ticker}: $${price.toFixed(2)}`);
   });
   if (stockPrices.size === 0) {
-    console.log("  (no prices available - using $0.50 default fair value)");
+    console.log("  (no prices available)");
   }
 
   // Fetch all markets
@@ -132,14 +132,23 @@ async function main() {
     const botYesAta = getAssociatedTokenAddressSync(yesMintPda, bot.publicKey);
     const botNoAta = getAssociatedTokenAddressSync(noMintPda, bot.publicKey);
 
+    // Ensure Yes/No ATAs exist before placing any orders (placeOrder validates both)
+    const ataSetupTx = new anchor.web3.Transaction().add(
+      createAssociatedTokenAccountIdempotentInstruction(bot.publicKey, botYesAta, bot.publicKey, yesMintPda),
+      createAssociatedTokenAccountIdempotentInstruction(bot.publicKey, botNoAta, bot.publicKey, noMintPda),
+    );
+    await anchor.web3.sendAndConfirmTransaction(connection, ataSetupTx, [bot]);
+
     // Total ask quantity needed for Yes token supply
     const totalAskQty = askLevels.reduce((sum, [, qty]) => sum + qty, 0);
 
-    // Mint pairs to get Yes tokens for asks
-    console.log(`  Minting ${totalAskQty} pairs...`);
-    for (let i = 0; i < totalAskQty; i += BATCH_SIZE) {
+    // Mint pairs to get Yes tokens for asks (also funds bids with USDC escrow)
+    // Always mint at least 1 pair so bot has tokens for both sides
+    const mintQty = Math.max(totalAskQty, 1);
+    console.log(`  Minting ${mintQty} pairs...`);
+    for (let i = 0; i < mintQty; i += BATCH_SIZE) {
       const tx = new anchor.web3.Transaction();
-      const batchEnd = Math.min(i + BATCH_SIZE, totalAskQty);
+      const batchEnd = Math.min(i + BATCH_SIZE, mintQty);
       for (let j = i; j < batchEnd; j++) {
         const ix = await program.methods
           .mintPair()
@@ -158,7 +167,7 @@ async function main() {
       }
       await anchor.web3.sendAndConfirmTransaction(connection, tx, [bot]);
     }
-    console.log(`  Minted ${totalAskQty} pairs`);
+    console.log(`  Minted ${mintQty} pairs`);
 
     // Place ask orders (sell Yes tokens at various prices)
     console.log("  Placing asks...");

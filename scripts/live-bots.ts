@@ -19,6 +19,7 @@ import { Meridian } from "../target/types/meridian";
 import { PublicKey } from "@solana/web3.js";
 import {
   getAssociatedTokenAddressSync,
+  createAssociatedTokenAccountIdempotentInstruction,
   mintTo,
 } from "@solana/spl-token";
 import * as fs from "fs";
@@ -187,11 +188,28 @@ async function main() {
   function getFairForMarket(mkt: MarketCtx): number {
     const stockPrice = stockPrices.get(mkt.ticker);
     const strikeDollars = mkt.strikePrice / USDC_PER_PAIR;
+    // fetchStockPrices() now always returns all tickers (synthetic fallback)
     return stockPrice ? fairValue(stockPrice, strikeDollars) : 0.50;
+  }
+
+  // Track which markets have had ATAs initialized this session
+  const atasInitialized = new Set<string>();
+
+  async function ensureAtas(mkt: MarketCtx, botYesAta: PublicKey) {
+    const key = mkt.pubkey.toString();
+    if (atasInitialized.has(key)) return;
+    const botNoAta = getAssociatedTokenAddressSync(mkt.noMint, bot.publicKey);
+    const tx = new anchor.web3.Transaction().add(
+      createAssociatedTokenAccountIdempotentInstruction(bot.publicKey, botYesAta, bot.publicKey, mkt.yesMint),
+      createAssociatedTokenAccountIdempotentInstruction(bot.publicKey, botNoAta, bot.publicKey, mkt.noMint),
+    );
+    await anchor.web3.sendAndConfirmTransaction(connection, tx, [bot]);
+    atasInitialized.add(key);
   }
 
   async function tradeOnMarket(mkt: MarketCtx): Promise<void> {
     const botYesAta = getAssociatedTokenAddressSync(mkt.yesMint, bot.publicKey);
+    await ensureAtas(mkt, botYesAta);
     const fair = getFairForMarket(mkt);
     const fairPrice = Math.round(fair * USDC_PER_PAIR);
 

@@ -5,6 +5,50 @@
  */
 
 const USDC_PER_PAIR = 1_000_000;
+const FETCH_TIMEOUT_MS = 5_000;
+const OFFLINE = process.env.OFFLINE === "1";
+
+/**
+ * US equity market hours check (ET).
+ * Returns true during weekday 9:30 AM - 4:30 PM ET (30min buffer after close).
+ * Used to decide whether missing Pyth data is expected or alarming.
+ */
+function isMarketHours(): boolean {
+  const now = new Date();
+  const et = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const day = et.getDay();
+  if (day === 0 || day === 6) return false; // weekend
+  const minutes = et.getHours() * 60 + et.getMinutes();
+  return minutes >= 570 && minutes <= 990; // 9:30 AM - 4:30 PM
+}
+
+// Fallback prices near setup-local.ts strikes for interesting fair values.
+// Used when Pyth Hermes is unavailable (weekends, off-hours, network issues).
+const FALLBACK_PRICES: Record<string, number> = {
+  AAPL: 237,
+  MSFT: 432,
+  GOOGL: 185,
+  AMZN: 206,
+  NVDA: 134,
+  META: 700,
+  TSLA: 258,
+};
+
+// Synthetic random walk state (persists across calls within a process)
+const syntheticPrices = new Map<string, number>();
+
+function getSyntheticPrice(ticker: string): number {
+  let price = syntheticPrices.get(ticker);
+  if (price === undefined) {
+    price = FALLBACK_PRICES[ticker] ?? 100;
+    syntheticPrices.set(ticker, price);
+  }
+  // Random walk: drift +-0.5% per call
+  const drift = (Math.random() - 0.5) * 0.01 * price;
+  price = Math.max(price * 0.85, Math.min(price * 1.15, price + drift));
+  syntheticPrices.set(ticker, price);
+  return price;
+}
 
 // Pyth Hermes feed IDs (no 0x prefix for API calls)
 const PYTH_FEED_IDS: Record<string, string> = {
@@ -64,30 +108,64 @@ export function computeLevels(fair: number): {
 
 /**
  * Fetch stock prices from Pyth Hermes HTTP API.
- * Returns Map<ticker, priceUsd>. Missing/failed tickers are omitted.
+ *
+ * Modes:
+ *   OFFLINE=1 env var  - skip Hermes entirely, use synthetic random-walk prices
+ *   Outside market hrs - try Hermes, silently fall back to synthetic
+ *   During market hrs  - try Hermes, WARN loudly if falling back to synthetic
+ *
+ * Always returns a price for every ticker in PYTH_FEED_IDS.
  */
 export async function fetchStockPrices(): Promise<Map<string, number>> {
   const prices = new Map<string, number>();
   const entries = Object.entries(PYTH_FEED_IDS);
 
-  const results = await Promise.allSettled(
-    entries.map(async ([ticker, feedId]) => {
-      const url = `https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}&parsed=true`;
-      const res = await fetch(url);
-      if (!res.ok) return null;
-      const data = await res.json();
-      const parsed = data.parsed?.[0];
-      if (!parsed) return null;
-      const p = parsed.price;
-      const price = Number(p.price) * Math.pow(10, p.expo);
-      return { ticker, price };
-    })
-  );
+  if (!OFFLINE) {
+    try {
+      const results = await Promise.allSettled(
+        entries.map(async ([ticker, feedId]) => {
+          const url = `https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}&parsed=true`;
+          const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+          if (!res.ok) return null;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const data: any = await res.json();
+          const parsed = data.parsed?.[0];
+          if (!parsed) return null;
+          const p = parsed.price;
+          const price = Number(p.price) * Math.pow(10, p.expo);
+          if (!Number.isFinite(price) || price <= 0) return null;
+          return { ticker, price };
+        })
+      );
 
-  for (const r of results) {
-    if (r.status === "fulfilled" && r.value) {
-      prices.set(r.value.ticker, r.value.price);
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value) {
+          prices.set(r.value.ticker, r.value.price);
+        }
+      }
+    } catch {
+      // Total fetch failure - fall through to synthetic prices
     }
   }
+
+  // Fill missing tickers with synthetic random-walk prices
+  const missingTickers: string[] = [];
+  for (const [ticker] of entries) {
+    if (!prices.has(ticker)) {
+      prices.set(ticker, getSyntheticPrice(ticker));
+      missingTickers.push(ticker);
+    }
+  }
+
+  if (missingTickers.length > 0) {
+    if (OFFLINE) {
+      console.log("  [OFFLINE] Synthetic prices:", missingTickers.join(", "));
+    } else if (isMarketHours()) {
+      console.warn(`  [WARNING] Pyth Hermes failed during market hours! Synthetic fallback for: ${missingTickers.join(", ")}`);
+    } else {
+      console.log("  [off-hours] Synthetic prices for:", missingTickers.join(", "));
+    }
+  }
+
   return prices;
 }

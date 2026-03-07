@@ -2,8 +2,11 @@
  * Live trading bot - creates visible order book movement across ALL markets.
  * Each tick: picks an action for EVERY market in parallel, then sleeps.
  *
+ * Oracle-anchored: fetches Pyth prices every 30s, computes fair value
+ * per market, and drifts orders toward fair value.
+ *
  * Actions (weighted random per market):
- *   50% - Cancel a random order and replace at +/-$0.01-0.03 jitter
+ *   50% - Cancel a random order and replace at +/-$0.01-0.03 jitter toward fair
  *   25% - Place a new resting order near the spread (qty 1-3)
  *   20% - Cross the spread with qty 1 (creates fills/movement)
  *    5% - Do nothing (natural pause)
@@ -14,10 +17,14 @@ import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { Meridian } from "../target/types/meridian";
 import { PublicKey } from "@solana/web3.js";
-import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import {
+  getAssociatedTokenAddressSync,
+  mintTo,
+} from "@solana/spl-token";
 import * as fs from "fs";
 import * as path from "path";
 import { getDevWallet } from "./dev-wallets";
+import { fairValue, fetchStockPrices } from "./fair-value";
 
 const USDC_PER_PAIR = 1_000_000;
 const MIN_PRICE = 50_000;   // $0.05 floor
@@ -26,6 +33,8 @@ const MIN_ORDERS_PER_SIDE = 3;
 const MAX_PER_SIDE = 32;
 const TICK_MS_MIN = 150;
 const TICK_MS_MAX = 400;
+const PRICE_REFRESH_MS = 30_000;
+const REPLENISH_THRESHOLD = 500 * USDC_PER_PAIR; // auto-replenish below 500 USDC
 
 // --- Order book parsing ---
 const DISC = 8;
@@ -96,6 +105,7 @@ function sleep(ms: number) {
 interface MarketCtx {
   pubkey: PublicKey;
   ticker: string;
+  strikePrice: number; // USDC base units
   yesMint: PublicKey;
   noMint: PublicKey;
   vault: PublicKey;
@@ -119,6 +129,7 @@ async function main() {
 
   const usdcMint = new PublicKey(config.usdcMint);
   const bot = getDevWallet("bot-a");
+  const admin = getDevWallet("admin");
   const botUsdcAta = getAssociatedTokenAddressSync(usdcMint, bot.publicKey);
 
   console.log("Bot:", bot.publicKey.toString());
@@ -137,6 +148,7 @@ async function main() {
       return {
         pubkey: pk,
         ticker: m.account.ticker as string,
+        strikePrice: m.account.strikePrice.toNumber(),
         yesMint: PublicKey.findProgramAddressSync([Buffer.from("yes_mint"), pk.toBuffer()], pid)[0],
         noMint: PublicKey.findProgramAddressSync([Buffer.from("no_mint"), pk.toBuffer()], pid)[0],
         vault: PublicKey.findProgramAddressSync([Buffer.from("vault"), pk.toBuffer()], pid)[0],
@@ -147,12 +159,41 @@ async function main() {
     });
 
   console.log(`Found ${markets.length} active markets`);
+
+  // Fetch initial stock prices
+  let stockPrices = await fetchStockPrices();
+  let lastPriceRefresh = Date.now();
+  const priceStrs: string[] = [];
+  stockPrices.forEach((p, t) => priceStrs.push(`${t}=$${p.toFixed(0)}`));
+  console.log("Stock prices loaded:", priceStrs.length > 0 ? priceStrs.join(", ") : "(none - using $0.50 default)");
   console.log("Starting live trading loop (Ctrl+C to stop)\n");
 
   let txCount = 0;
 
+  // Auto-replenish USDC when balance gets low
+  async function checkReplenish() {
+    try {
+      const info = await connection.getTokenAccountBalance(botUsdcAta);
+      const balance = Number(info.value.amount);
+      if (balance < REPLENISH_THRESHOLD) {
+        await mintTo(connection, admin, usdcMint, botUsdcAta, admin, 5_000 * USDC_PER_PAIR);
+        console.log("  [replenish] Minted 5,000 USDC to bot");
+      }
+    } catch {
+      // ignore - ATA might not exist yet
+    }
+  }
+
+  function getFairForMarket(mkt: MarketCtx): number {
+    const stockPrice = stockPrices.get(mkt.ticker);
+    const strikeDollars = mkt.strikePrice / USDC_PER_PAIR;
+    return stockPrice ? fairValue(stockPrice, strikeDollars) : 0.50;
+  }
+
   async function tradeOnMarket(mkt: MarketCtx): Promise<void> {
     const botYesAta = getAssociatedTokenAddressSync(mkt.yesMint, bot.publicKey);
+    const fair = getFairForMarket(mkt);
+    const fairPrice = Math.round(fair * USDC_PER_PAIR);
 
     const obInfo = await connection.getAccountInfo(mkt.orderBook);
     if (!obInfo) return;
@@ -168,7 +209,7 @@ async function main() {
     }
 
     if (roll < 0.55 && (botBids.length > MIN_ORDERS_PER_SIDE || botAsks.length > MIN_ORDERS_PER_SIDE)) {
-      // 50% - Cancel + replace with jitter ($0.01-$0.03)
+      // 50% - Cancel + replace with drift toward fair value
       const side = botBids.length > MIN_ORDERS_PER_SIDE && (Math.random() < 0.5 || botAsks.length <= MIN_ORDERS_PER_SIDE)
         ? "bid" : "ask";
       const orders = side === "bid" ? botBids : botAsks;
@@ -176,7 +217,11 @@ async function main() {
 
       const order = pick(orders);
       const ticks = randInt(1, 3);
-      const drift = (Math.random() < 0.5 ? 1 : -1) * ticks * 10_000;
+      // Drift toward fair value instead of pure random
+      const towardFair = side === "bid"
+        ? (order.price < fairPrice ? 1 : -1)
+        : (order.price > fairPrice ? -1 : 1);
+      const drift = towardFair * ticks * 10_000;
       const newPrice = clamp(order.price + drift, MIN_PRICE, MAX_PRICE);
 
       const bestAsk = book.asks[0]?.price ?? MAX_PRICE;
@@ -224,9 +269,9 @@ async function main() {
       console.log(`[${mkt.ticker}] ${arrow} ${side} $${(order.price / USDC_PER_PAIR).toFixed(2)}->${(safePrice / USDC_PER_PAIR).toFixed(2)} qty=${order.quantity}  [${txCount}]`);
 
     } else if (roll < 0.80) {
-      // 25% - Place a new resting order near the spread (qty 1-3)
-      const bestBid = book.bids[0]?.price ?? 400_000;
-      const bestAsk = book.asks[0]?.price ?? 600_000;
+      // 25% - Place a new resting order near the spread, anchored to fair
+      const bestBid = book.bids[0]?.price ?? Math.round(fair * USDC_PER_PAIR * 0.8);
+      const bestAsk = book.asks[0]?.price ?? Math.round(fair * USDC_PER_PAIR * 1.2);
       const mid = Math.floor((bestBid + bestAsk) / 2);
       const side = Math.random() < 0.5 ? "bid" : "ask";
 
@@ -349,8 +394,21 @@ async function main() {
     }
   }
 
+  let replenishCounter = 0;
+
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    // Refresh stock prices periodically
+    if (Date.now() - lastPriceRefresh > PRICE_REFRESH_MS) {
+      stockPrices = await fetchStockPrices();
+      lastPriceRefresh = Date.now();
+    }
+
+    // Check USDC balance every 50 ticks
+    if (++replenishCounter % 50 === 0) {
+      await checkReplenish();
+    }
+
     // Pick 2-4 random markets to trade on this tick (parallel)
     const batch = randInt(2, Math.min(4, markets.length));
     const shuffled = [...markets].sort(() => Math.random() - 0.5);
@@ -363,7 +421,7 @@ async function main() {
     for (const r of results) {
       if (r.status === "rejected") {
         const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
-        const transient = ["0x1", "0x0", "blockhash", "OrderBookFull", "NotOrderOwner"];
+        const transient = ["0x1", "0x0", "blockhash", "OrderBookFull", "NotOrderOwner", "debit"];
         if (!transient.some((t) => msg.includes(t))) {
           console.log(`  [err] ${msg.slice(0, 120)}`);
         }

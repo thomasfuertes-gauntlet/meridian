@@ -152,9 +152,9 @@ async function main() {
     usdcMint,
     botBUsdcAta,
     adminKeypair,
-    100 * USDC_PER_PAIR
+    10_000 * USDC_PER_PAIR
   );
-  console.log("Minted 100 USDC to bot-b");
+  console.log("Minted 10,000 USDC to bot-b");
 
   // 5. Initialize config (skip if already exists)
   const [configPda] = PublicKey.findProgramAddressSync(

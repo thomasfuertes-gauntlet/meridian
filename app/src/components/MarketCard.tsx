@@ -3,12 +3,14 @@ import { useNavigate } from "react-router-dom";
 import type { StockPrice } from "../lib/pyth";
 import { usePriceHistory } from "../lib/usePriceHistory";
 import { PriceSparkline } from "./PriceSparkline";
+import { USDC_PER_PAIR } from "../lib/constants";
 
 interface MarketCardProps {
   ticker: string;
   name: string;
   price: StockPrice | null;
   strikeCount: number;
+  yesMid: number | null; // CLOB mid-price in USDC base units
 }
 
 export function MarketCard({
@@ -16,13 +18,16 @@ export function MarketCard({
   name,
   price,
   strikeCount,
+  yesMid,
 }: MarketCardProps) {
   const navigate = useNavigate();
-  const { history, push } = usePriceHistory(ticker);
+  // Separate history for CLOB mid-price (moves with bot activity, even outside market hours)
+  const { history: clobHistory, push: pushClob } = usePriceHistory(`${ticker}-clob`);
 
+  // Feed CLOB mid-price into sparkline history
   useEffect(() => {
-    if (price) push(price.price);
-  }, [price, push]);
+    if (yesMid != null) pushClob(yesMid / USDC_PER_PAIR);
+  }, [yesMid, pushClob]);
 
   return (
     <button
@@ -34,11 +39,21 @@ export function MarketCard({
         <span className="text-xs text-gray-500">{name}</span>
       </div>
       <div className="flex items-end justify-between gap-2 mb-2">
-        <div className="text-2xl font-bold text-green-400">
-          {price ? `$${price.price.toFixed(2)}` : "--"}
+        <div>
+          <div className="text-2xl font-bold text-green-400">
+            {price ? `$${price.price.toFixed(2)}` : "--"}
+          </div>
+          {yesMid != null && (
+            <div className="text-sm text-gray-400 mt-0.5">
+              Yes{" "}
+              <span className="text-white font-mono">
+                ${(yesMid / USDC_PER_PAIR).toFixed(2)}
+              </span>
+            </div>
+          )}
         </div>
-        {history.length >= 2 && (
-          <PriceSparkline prices={[...history]} width={80} height={32} />
+        {clobHistory.length >= 2 && (
+          <PriceSparkline prices={[...clobHistory]} width={80} height={32} />
         )}
       </div>
       <div className="text-xs text-gray-500">

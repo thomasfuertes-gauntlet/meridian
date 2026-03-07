@@ -5,7 +5,6 @@ import {
   WalletProvider,
 } from "@solana/wallet-adapter-react";
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
-import { PhantomWalletAdapter } from "@solana/wallet-adapter-wallets";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 import { RPC_URL } from "./lib/constants";
@@ -34,10 +33,7 @@ function NavLink({ to, label }: { to: string; label: string }) {
 export default function App() {
   const isLocalhost = RPC_URL.includes("localhost") || RPC_URL.includes("127.0.0.1");
   const wallets = useMemo(
-    () =>
-      isLocalhost
-        ? [new LocalDevWalletAdapter(), new PhantomWalletAdapter()]
-        : [new PhantomWalletAdapter()],
+    () => (isLocalhost ? [new LocalDevWalletAdapter()] : []),
     [isLocalhost]
   );
 

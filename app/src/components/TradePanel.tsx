@@ -53,7 +53,7 @@ export function TradePanel({
   const wallet = useAnchorWallet();
   const { connection } = useConnection();
   const [action, setAction] = useState<TradeAction>("buyYes");
-  const [quantity, setQuantity] = useState("1");
+  const [quantity, setQuantity] = useState("100");
   const [price, setPrice] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [balanceMap, setBalanceMap] = useState<Map<string, number>>(new Map());

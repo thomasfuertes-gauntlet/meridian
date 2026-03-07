@@ -17,6 +17,12 @@ import { fetchPrices, type StockPrice } from "../lib/pyth";
 import { usePriceHistory } from "../lib/usePriceHistory";
 import { PriceSparkline } from "../components/PriceSparkline";
 
+/** Summary stats for a market's order book */
+interface BookSummary {
+  midPrice: number | null; // USDC base units
+  totalDepth: number; // total contracts on both sides
+}
+
 interface MarketInfo {
   pubkey: PublicKey;
   ticker: string;
@@ -42,6 +48,7 @@ export function Trade() {
   );
   const [orderBook, setOrderBook] = useState<ParsedOrderBook | null>(null);
   const [price, setPrice] = useState<StockPrice | null>(null);
+  const [bookSummaries, setBookSummaries] = useState<Map<string, BookSummary>>(new Map());
 
   // Fetch markets for this ticker (read-only, no wallet needed)
   const loadMarkets = useCallback(async () => {
@@ -135,6 +142,38 @@ export function Trade() {
     };
   }, [selectedMarket, connection, loadOrderBook]);
 
+  // Fetch all order books for this ticker's markets (for strike list stats)
+  useEffect(() => {
+    if (markets.length === 0) return;
+    async function loadAllBooks() {
+      const pdas = markets.map(
+        (m) =>
+          PublicKey.findProgramAddressSync(
+            [Buffer.from("orderbook"), m.pubkey.toBuffer()],
+            PROGRAM_ID
+          )[0]
+      );
+      const accounts = await connection.getMultipleAccountsInfo(pdas);
+      const summaries = new Map<string, BookSummary>();
+      accounts.forEach((acc, i) => {
+        if (!acc) return;
+        const book = parseOrderBook(acc);
+        const mid =
+          book.bids.length > 0 && book.asks.length > 0
+            ? Math.round((book.bids[0].price + book.asks[0].price) / 2)
+            : null;
+        const totalDepth =
+          book.bids.reduce((s, o) => s + o.quantity, 0) +
+          book.asks.reduce((s, o) => s + o.quantity, 0);
+        summaries.set(markets[i].pubkey.toString(), { midPrice: mid, totalDepth });
+      });
+      setBookSummaries(summaries);
+    }
+    loadAllBooks();
+    const id = setInterval(loadAllBooks, 3000);
+    return () => clearInterval(id);
+  }, [markets, connection]);
+
   if (!stock) {
     return (
       <div className="text-gray-500">
@@ -189,26 +228,45 @@ export function Trade() {
               </p>
             ) : (
               <div className="space-y-1">
-                {markets.map((m) => (
-                  <button
-                    key={m.pubkey.toString()}
-                    onClick={() => setSelectedMarket(m)}
-                    className={`w-full text-left text-sm px-3 py-2 rounded transition-colors ${
-                      selectedMarket?.pubkey.equals(m.pubkey)
-                        ? "bg-gray-800 text-white"
-                        : "text-gray-400 hover:bg-gray-800/50"
-                    }`}
-                  >
-                    <span className="font-mono">
-                      ${(m.strikePrice / USDC_PER_PAIR).toFixed(2)}
-                    </span>
-                    {m.settled && (
-                      <span className="ml-2 text-xs text-yellow-400">
-                        Settled
-                      </span>
-                    )}
-                  </button>
-                ))}
+                {markets.map((m) => {
+                  const summary = bookSummaries.get(m.pubkey.toString());
+                  return (
+                    <button
+                      key={m.pubkey.toString()}
+                      onClick={() => setSelectedMarket(m)}
+                      className={`w-full text-left text-sm px-3 py-2 rounded transition-colors ${
+                        selectedMarket?.pubkey.equals(m.pubkey)
+                          ? "bg-gray-800 text-white"
+                          : "text-gray-400 hover:bg-gray-800/50"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono">
+                          ${(m.strikePrice / USDC_PER_PAIR).toFixed(2)}
+                        </span>
+                        {summary?.midPrice != null && (
+                          <span className="text-green-400 text-xs font-mono">
+                            Yes ${(summary.midPrice / USDC_PER_PAIR).toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between mt-0.5">
+                        {summary && summary.totalDepth > 0 ? (
+                          <span className="text-xs text-gray-600">
+                            {summary.totalDepth} contracts
+                          </span>
+                        ) : (
+                          <span />
+                        )}
+                        {m.settled && (
+                          <span className="text-xs text-yellow-400">
+                            Settled
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>

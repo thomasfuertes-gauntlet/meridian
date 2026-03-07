@@ -184,7 +184,8 @@ async function main() {
     if (emptyBooks.length > 0) {
       console.log(`  [WARN] ${emptyBooks.length} markets with ZERO orders (not seeded): ${emptyBooks.slice(0, 5).join(", ")}${emptyBooks.length > 5 ? "..." : ""}`);
       if (emptyBooks.length > pending.length / 2) {
-        console.log(`         -> Bots may have crashed mid-seed. Redeploy: railway up -s bots`);
+        console.log(`         -> Bots may have crashed mid-seed. Unset SKIP_SEED and redeploy:`);
+        console.log(`            railway variable set SKIP_SEED= -s bots && railway up -s bots`);
       }
     }
     console.log(`  Seeded: ${seededBooks.length}/${pending.length} markets  Orders: ${totalBids} bids, ${totalAsks} asks`);
@@ -250,7 +251,8 @@ async function main() {
           console.log(`         -> Then redeploy bots: railway up -s bots`);
         } else {
           console.log(`         -> No action needed until Monday. Bots use synthetic prices on weekends.`);
-          console.log(`         -> Monday morning: make setup-devnet && railway up -s bots`);
+          console.log(`         -> Monday morning: make setup-devnet`);
+          console.log(`         -> Then: railway variable set SKIP_SEED= -s bots && railway up -s bots`);
         }
       } else if (allExpired) {
         console.log(`  [INFO] Markets past close time (${closeDateET}). Settlement window open.`);
@@ -272,9 +274,11 @@ async function main() {
         const todayET = et.toLocaleDateString("en-US");
         if (closeDayET !== todayET) {
           console.log(`\n  ** WEEKDAY MORNING CHECKLIST **`);
-          console.log(`  1. make setup-devnet             # create today's markets`);
-          console.log(`  2. railway up -s bots            # redeploy bots to seed new markets`);
-          console.log(`  3. make health                   # verify everything is fresh`);
+          console.log(`  1. make setup-devnet                              # create today's markets`);
+          console.log(`  2. railway variable set SKIP_SEED= -s bots        # ensure seeding runs`);
+          console.log(`  3. railway up -s bots                             # redeploy + seed + live`);
+          console.log(`  4. make health                                    # verify everything is fresh`);
+          console.log(`  NOTE: Set SKIP_SEED=1 for code-only redeploys (no re-seeding).`);
         }
       }
     }

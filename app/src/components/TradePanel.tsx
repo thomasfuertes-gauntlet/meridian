@@ -131,8 +131,9 @@ export function TradePanel({
 
       setStatus(`Confirmed: ${sig.slice(0, 8)}...`);
     } catch (err: unknown) {
+      console.error("Trade failed:", err);
       const msg = err instanceof Error ? err.message : String(err);
-      setStatus(`Error: ${msg.slice(0, 100)}`);
+      setStatus(`Error: ${msg.slice(0, 200)}`);
     }
   }, [
     wallet,

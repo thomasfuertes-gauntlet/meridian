@@ -1,4 +1,5 @@
 const HERMES_BASE = "https://hermes.pyth.network";
+const debugRpc = new URLSearchParams(window.location.search).has("debug");
 
 interface PythPrice {
   price: string;
@@ -28,6 +29,7 @@ export async function fetchPrices(
   const results = await Promise.allSettled(
     feedIds.map(async (id) => {
       const url = `${HERMES_BASE}/v2/updates/price/latest?ids[]=${id}&parsed=true`;
+      if (debugRpc) console.debug(`[pyth] fetch ${id.slice(0, 8)}...`);
       const res = await fetch(url);
       if (!res.ok) return null;
       const data: HermesResponse = await res.json();

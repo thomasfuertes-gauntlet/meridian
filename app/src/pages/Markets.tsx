@@ -54,7 +54,7 @@ export function Markets() {
       }
     }
     load();
-    const id = setInterval(load, 5000);
+    const id = setInterval(load, 15_000);
     return () => clearInterval(id);
   }, []);
 
@@ -97,7 +97,7 @@ export function Markets() {
       }
     }
     loadMids();
-    const id = setInterval(loadMids, 3000);
+    const id = setInterval(loadMids, 10_000);
     return () => clearInterval(id);
   }, []);
 

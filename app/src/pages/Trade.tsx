@@ -119,7 +119,7 @@ export function Trade() {
       }
     }
     load();
-    const id = setInterval(load, 5000);
+    const id = setInterval(load, 15_000);
     return () => clearInterval(id);
   }, [stock, pushPrice]);
 
@@ -171,7 +171,7 @@ export function Trade() {
       setBookSummaries(summaries);
     }
     loadAllBooks();
-    const id = setInterval(loadAllBooks, 3000);
+    const id = setInterval(loadAllBooks, 10_000);
     return () => clearInterval(id);
   }, [markets, connection]);
 

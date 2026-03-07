@@ -1,4 +1,4 @@
-.PHONY: dev dev-frontend dev-validator deploy setup wallets bots live test clean circuit tree deploy-devnet setup-devnet wallet-pubkeys health
+.PHONY: dev dev-frontend dev-validator deploy setup wallets bots live test clean circuit tree deploy-devnet setup-devnet wallet-pubkeys health settle morning
 
 # Source Solana/Rust toolchain
 export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.cargo/bin:$(PATH)
@@ -88,6 +88,22 @@ wallet-pubkeys: wallets
 	@echo "Admin: $(shell solana-keygen pubkey .wallets/admin.json)"
 	@echo "Bot-A: $(shell solana-keygen pubkey .wallets/bot-a.json)"
 	@echo "Bot-B: $(shell solana-keygen pubkey .wallets/bot-b.json)"
+
+# Settle devnet markets (one-shot, uses admin_settle + Pyth Hermes)
+settle: wallets
+	@echo "Running settlement job against devnet..."
+	cd automation && RPC_URL=$${RPC_URL:-https://api.devnet.solana.com} \
+		USDC_MINT=$${USDC_MINT:-AKmi2ZrBwWi49xf5EdvVRB7679QM7wSVGxPMbFKZ7rqE} \
+		ADMIN_KEYPAIR_PATH=../.wallets/admin.json \
+		npx tsx src/index.ts --settle
+
+# Create today's markets via automation morning job (one-shot)
+morning: wallets
+	@echo "Running morning job against devnet..."
+	cd automation && RPC_URL=$${RPC_URL:-https://api.devnet.solana.com} \
+		USDC_MINT=$${USDC_MINT:-AKmi2ZrBwWi49xf5EdvVRB7679QM7wSVGxPMbFKZ7rqE} \
+		ADMIN_KEYPAIR_PATH=../.wallets/admin.json \
+		npx tsx src/index.ts --now
 
 # Run tests (local validator started by anchor test)
 test: wallets

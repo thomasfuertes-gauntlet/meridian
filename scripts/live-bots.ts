@@ -121,14 +121,18 @@ async function main() {
   const program = anchor.workspace.Meridian as Program<Meridian>;
   const connection = provider.connection;
 
-  const configPath = path.join(__dirname, "../app/src/lib/local-config.json");
-  if (!fs.existsSync(configPath)) {
-    console.error("local-config.json not found. Run `make setup` first.");
-    process.exit(1);
+  // Load USDC mint from env var or local-config.json
+  let usdcMintStr = process.env.USDC_MINT;
+  if (!usdcMintStr) {
+    const configPath = path.join(__dirname, "../app/src/lib/local-config.json");
+    if (!fs.existsSync(configPath)) {
+      console.error("USDC mint not found. Set USDC_MINT env var or run `make setup`.");
+      process.exit(1);
+    }
+    const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    usdcMintStr = config.usdcMint;
   }
-  const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-
-  const usdcMint = new PublicKey(config.usdcMint);
+  const usdcMint = new PublicKey(usdcMintStr!);
   const bot = getDevWallet("bot-a");
   const admin = getDevWallet("admin");
   const botUsdcAta = getAssociatedTokenAddressSync(usdcMint, bot.publicKey);

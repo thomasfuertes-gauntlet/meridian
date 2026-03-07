@@ -40,6 +40,25 @@ const PYTH_FEED_IDS: Record<string, number[]> = {
   TSLA: hexToBytes("16dad506d7db8da01c87581c87ca897a012a153557d4d578c3b9c9e1bc0632f1"),
 };
 
+const DEVNET_DELAY_MS = 1500; // throttle to stay under devnet rate limits
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Retry an async fn with exponential backoff (handles 429s and transient failures) */
+async function withRetry<T>(fn: () => Promise<T>, label: string, retries = 3): Promise<T> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (i === retries - 1) throw err;
+      const delay = DEVNET_DELAY_MS * (i + 1);
+      console.log(`    Retry ${i + 1}/${retries} for ${label} (${delay}ms): ${msg.slice(0, 80)}`);
+      await sleep(delay);
+    }
+  }
+  throw new Error("unreachable");
+}
+
 function hexToBytes(hex: string): number[] {
   const bytes: number[] = [];
   for (let i = 0; i < hex.length; i += 2) {
@@ -159,6 +178,7 @@ async function main() {
   }
   await mintTo(connection, adminKeypair, usdcMint, adminUsdcAta, adminKeypair, 1000 * USDC_PER_PAIR);
   console.log("Minted 1000 USDC to admin");
+  await sleep(DEVNET_DELAY_MS);
 
   // Fund bot-b with USDC for frontend trading
   const botBUsdcAta = getAssociatedTokenAddressSync(usdcMint, botB.publicKey);
@@ -172,6 +192,7 @@ async function main() {
   await anchor.web3.sendAndConfirmTransaction(connection, botBAtaTx, [adminKeypair]);
   await mintTo(connection, adminKeypair, usdcMint, botBUsdcAta, adminKeypair, 10_000 * USDC_PER_PAIR);
   console.log("Minted 10,000 USDC to bot-b");
+  await sleep(DEVNET_DELAY_MS);
 
   // Initialize config
   const [configPda] = PublicKey.findProgramAddressSync(
@@ -239,27 +260,37 @@ async function main() {
         continue;
       }
 
-      await program.methods
-        .createStrikeMarket(ticker, strikePrice, today, closeTime, pythFeedId)
-        .accountsPartial({ admin: admin.publicKey, usdcMint })
-        .rpc();
+      await withRetry(
+        () => program.methods
+          .createStrikeMarket(ticker, strikePrice, today, closeTime, pythFeedId)
+          .accountsPartial({ admin: admin.publicKey, usdcMint })
+          .rpc(),
+        `createStrikeMarket ${ticker} > $${strikeDollars}`
+      );
+
+      await sleep(DEVNET_DELAY_MS);
 
       // Initialize order book
       const [yesMintPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("yes_mint"), marketPda.toBuffer()],
         program.programId
       );
-      await program.methods
-        .initializeOrderBook()
-        .accountsPartial({
-          admin: admin.publicKey,
-          market: marketPda,
-          yesMint: yesMintPda,
-          usdcMint,
-        })
-        .rpc();
+      await withRetry(
+        () => program.methods
+          .initializeOrderBook()
+          .accountsPartial({
+            admin: admin.publicKey,
+            market: marketPda,
+            yesMint: yesMintPda,
+            usdcMint,
+          })
+          .rpc(),
+        `initializeOrderBook ${ticker} > $${strikeDollars}`
+      );
       console.log(`    Created: ${ticker} > $${strikeDollars} + order book`);
       totalMarkets++;
+
+      await sleep(DEVNET_DELAY_MS);
     }
   }
 
@@ -279,6 +310,7 @@ async function main() {
   console.log(`  ANCHOR_PROVIDER_URL=https://api.devnet.solana.com`);
   console.log(`  VITE_RPC_URL=https://api.devnet.solana.com`);
   console.log(`  VITE_USDC_MINT=${usdcMint.toString()}`);
+  console.log(`  VITE_DEV_WALLET=true`);
 }
 
 main().catch((err) => {

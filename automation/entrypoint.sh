@@ -22,8 +22,12 @@ echo "  RPC: $ANCHOR_PROVIDER_URL"
 echo "  USDC: $USDC_MINT"
 echo "  Wallet: $(npx tsx -e "const {getDevWallet}=require('./scripts/dev-wallets');console.log(getDevWallet('bot-a').publicKey.toString())" 2>/dev/null || echo 'bot-a')"
 
-echo "Seeding order books..."
-npx tsx scripts/seed-bots.ts
+if [ "${SKIP_SEED:-}" = "1" ]; then
+  echo "Skipping seed-bots (SKIP_SEED=1)"
+else
+  echo "Seeding order books..."
+  npx tsx scripts/seed-bots.ts
+fi
 
 echo "Starting live trading bot..."
 exec npx tsx scripts/live-bots.ts

@@ -6,16 +6,15 @@ type Status = "parsing" | "verifying" | "valid" | "invalid" | "error";
 
 export function Verify() {
   const { hash } = useLocation();
-  const [status, setStatus] = useState<Status>("parsing");
+  const noProof = !hash || hash === "#";
+  const [status, setStatus] = useState<Status>(noProof ? "error" : "parsing");
   const [data, setData] = useState<ProofUrlData | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(
+    noProof ? "No proof provided. Get a proof link from the Brag page." : null
+  );
 
   useEffect(() => {
-    if (!hash || hash === "#") {
-      setStatus("error");
-      setErrorMsg("No proof provided. Get a proof link from the Brag page.");
-      return;
-    }
+    if (!hash || hash === "#") return;
 
     let cancelled = false;
 

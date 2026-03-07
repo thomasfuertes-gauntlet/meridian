@@ -35,6 +35,7 @@ const MAX_PER_SIDE = 32;
 const TICK_MS_MIN = 150;
 const TICK_MS_MAX = 400;
 const PRICE_REFRESH_MS = 30_000;
+const TX_DELAY_MS = Number(process.env.TX_DELAY_MS ?? 1200); // delay between RPCs for rate limits
 const REPLENISH_THRESHOLD = 500 * USDC_PER_PAIR; // auto-replenish below 500 USDC
 
 // --- Order book parsing ---
@@ -267,6 +268,8 @@ async function main() {
         })
         .signers([bot])
         .rpc();
+      txCount++;
+      await sleep(TX_DELAY_MS);
 
       await program.methods
         .placeOrder(
@@ -285,8 +288,8 @@ async function main() {
         })
         .signers([bot])
         .rpc();
+      txCount++;
 
-      txCount += 2;
       const arrow = drift > 0 ? "↑" : "↓";
       console.log(`[${mkt.ticker}] ${arrow} ${side} $${(order.price / USDC_PER_PAIR).toFixed(2)}->${(safePrice / USDC_PER_PAIR).toFixed(2)} qty=${order.quantity}  [${txCount}]`);
 
@@ -329,6 +332,8 @@ async function main() {
         tx.add(ix);
       }
       await anchor.web3.sendAndConfirmTransaction(connection, tx, [bot]);
+      txCount++;
+      await sleep(TX_DELAY_MS);
 
       await program.methods
         .placeOrder(
@@ -347,8 +352,8 @@ async function main() {
         })
         .signers([bot])
         .rpc();
+      txCount++;
 
-      txCount += 2;
       console.log(`[${mkt.ticker}] + ${side} ${qty} @ $${(price / USDC_PER_PAIR).toFixed(2)}  [${txCount}]`);
 
     } else if (book.bids.length > MIN_ORDERS_PER_SIDE && book.asks.length > MIN_ORDERS_PER_SIDE) {
@@ -367,6 +372,8 @@ async function main() {
         })
         .signers([bot])
         .rpc();
+      txCount++;
+      await sleep(TX_DELAY_MS);
 
       const side = Math.random() < 0.5 ? "bid" : "ask";
 
@@ -388,8 +395,8 @@ async function main() {
           ])
           .signers([bot])
           .rpc();
+        txCount++;
 
-        txCount += 2;
         console.log(`[${mkt.ticker}] * BUY 1 @ $${(hitPrice / USDC_PER_PAIR).toFixed(2)}  [${txCount}]`);
       } else {
         const hitPrice = book.bids[0].price;
@@ -409,8 +416,8 @@ async function main() {
           ])
           .signers([bot])
           .rpc();
+        txCount++;
 
-        txCount += 2;
         console.log(`[${mkt.ticker}] * SELL 1 @ $${(hitPrice / USDC_PER_PAIR).toFixed(2)}  [${txCount}]`);
       }
     }
@@ -431,23 +438,22 @@ async function main() {
       await checkReplenish();
     }
 
-    // Pick 2-4 random markets to trade on this tick (parallel)
-    const batch = randInt(2, Math.min(4, markets.length));
+    // Pick 1-2 random markets to trade on this tick (serialized for rate limits)
+    const batch = randInt(1, Math.min(2, markets.length));
     const shuffled = [...markets].sort(() => Math.random() - 0.5);
     const selected = shuffled.slice(0, batch);
 
-    const results = await Promise.allSettled(
-      selected.map((mkt) => tradeOnMarket(mkt))
-    );
-
-    for (const r of results) {
-      if (r.status === "rejected") {
-        const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+    for (const mkt of selected) {
+      try {
+        await tradeOnMarket(mkt);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
         const transient = ["0x1", "0x0", "blockhash", "OrderBookFull", "NotOrderOwner", "debit"];
         if (!transient.some((t) => msg.includes(t))) {
           console.log(`  [err] ${msg.slice(0, 120)}`);
         }
       }
+      await sleep(TX_DELAY_MS);
     }
 
     await sleep(randInt(TICK_MS_MIN, TICK_MS_MAX));

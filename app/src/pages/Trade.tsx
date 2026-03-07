@@ -42,6 +42,7 @@ export function Trade() {
 
   const stock = MAG7.find((s) => s.ticker === ticker);
   const { history: priceHistory, push: pushPrice } = usePriceHistory(ticker ?? "");
+  const DEVNET_USDC_MINT = useUsdcMint();
   const [markets, setMarkets] = useState<MarketInfo[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<MarketInfo | null>(
     null
@@ -120,14 +121,14 @@ export function Trade() {
     load();
     const id = setInterval(load, 5000);
     return () => clearInterval(id);
-  }, [stock]);
+  }, [stock, pushPrice]);
 
   useEffect(() => {
-    loadMarkets();
+    loadMarkets(); // eslint-disable-line react-hooks/set-state-in-effect -- async RPC fetch, not synchronous setState
   }, [loadMarkets]);
 
   useEffect(() => {
-    loadOrderBook();
+    loadOrderBook(); // eslint-disable-line react-hooks/set-state-in-effect -- async RPC fetch, not synchronous setState
     if (!selectedMarket) return;
     // Subscribe to order book account changes
     const [obPda] = PublicKey.findProgramAddressSync(
@@ -190,8 +191,6 @@ export function Trade() {
     orderBook && orderBook.bids.length > 0 ? orderBook.bids[0].price : null;
   const bestAsk =
     orderBook && orderBook.asks.length > 0 ? orderBook.asks[0].price : null;
-
-  const DEVNET_USDC_MINT = useUsdcMint();
 
   return (
     <div>

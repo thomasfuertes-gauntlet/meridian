@@ -174,6 +174,80 @@ async function main() {
     console.log(`  [CRIT] Cannot fetch markets: ${err instanceof Error ? err.message : err}`);
   }
 
+  // Market freshness & schedule awareness
+  console.log("\n--- Schedule ---");
+  const now = new Date();
+  const et = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const dayOfWeek = et.getDay(); // 0=Sun, 6=Sat
+  const etHour = et.getHours();
+  const etMin = et.getMinutes();
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+  const isMarketHours = !isWeekend && etHour * 60 + etMin >= 570 && etHour * 60 + etMin <= 960; // 9:30-16:00
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+  console.log(`  ET: ${dayNames[dayOfWeek]} ${et.toLocaleTimeString("en-US", { timeZone: "America/New_York" })}`);
+  console.log(`  Market hours: ${isMarketHours ? "OPEN" : isWeekend ? "WEEKEND" : "CLOSED"}`);
+  console.log(`  Bot price mode: ${process.env.OFFLINE === "1" ? "OFFLINE (synthetic)" : isMarketHours ? "Pyth Hermes (live)" : "auto-fallback (synthetic)"}`);
+
+  // Check if markets are stale (close_time in the past = need fresh markets)
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allMarketsForSchedule = await (program.account as any).strikeMarket.all();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const activeMarkets = allMarketsForSchedule.filter((m: any) => m.account.outcome?.pending !== undefined);
+    const nowUnix = Date.now() / 1000;
+
+    if (activeMarkets.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const closeTimes = activeMarkets.map((m: any) => m.account.closeTime.toNumber());
+      const earliest = Math.min(...closeTimes);
+      const allExpired = earliest < nowUnix;
+      const hoursStale = allExpired ? (nowUnix - earliest) / 3600 : 0;
+
+      // Compute the close date in ET for display
+      const closeDate = new Date(earliest * 1000);
+      const closeDateET = closeDate.toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric" });
+
+      if (allExpired && hoursStale > 24) {
+        console.log(`  [WARN] Markets are stale! Close time was ${closeDateET} (${hoursStale.toFixed(0)}h ago)`);
+        console.log(`         These markets were created for a previous trading day.`);
+        if (!isWeekend) {
+          console.log(`         -> Run: make setup-devnet  (creates fresh markets for today)`);
+          console.log(`         -> Then redeploy bots: railway up -s bots`);
+        } else {
+          console.log(`         -> No action needed until Monday. Bots use synthetic prices on weekends.`);
+          console.log(`         -> Monday morning: make setup-devnet && railway up -s bots`);
+        }
+      } else if (allExpired) {
+        console.log(`  [INFO] Markets past close time (${closeDateET}). Settlement window open.`);
+        if (isWeekend) {
+          console.log(`         -> Pyth has no weekend equity data. settle_market won't work.`);
+          console.log(`         -> Use admin_settle for manual resolution, or wait for Monday.`);
+        } else {
+          console.log(`         -> settle_market can be cranked if Pyth has a fresh price.`);
+          console.log(`         -> Or create tomorrow's markets: make setup-devnet`);
+        }
+      } else {
+        const hoursUntilClose = (earliest - nowUnix) / 3600;
+        console.log(`  [OK] Markets are fresh (close: ${closeDateET}, ${hoursUntilClose.toFixed(1)}h from now)`);
+      }
+
+      // Check if it's a weekday morning and markets are from a previous day
+      if (!isWeekend && etHour < 10) {
+        const closeDayET = new Date(earliest * 1000).toLocaleDateString("en-US", { timeZone: "America/New_York" });
+        const todayET = et.toLocaleDateString("en-US");
+        if (closeDayET !== todayET) {
+          console.log(`\n  ** WEEKDAY MORNING CHECKLIST **`);
+          console.log(`  1. make setup-devnet             # create today's markets`);
+          console.log(`  2. railway up -s bots            # redeploy bots to seed new markets`);
+          console.log(`  3. make health                   # verify everything is fresh`);
+        }
+      }
+    }
+  } catch {
+    // Market fetch already reported above, skip duplicate error
+  }
+
   // Actionable summary
   console.log("\n--- Actions Needed ---");
   const actions: string[] = [];

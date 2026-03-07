@@ -16,3 +16,11 @@ export function getProgram(wallet: AnchorWallet): Program {
   const provider = getProvider(wallet);
   return new Program(idl as Idl, provider);
 }
+
+/** Read-only program instance (no wallet needed for account fetches) */
+export function getReadOnlyProgram(): Program {
+  const provider = new AnchorProvider(connection, {} as AnchorWallet, {
+    preflightCommitment: "confirmed",
+  });
+  return new Program(idl as Idl, provider);
+}

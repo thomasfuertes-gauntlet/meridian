@@ -11,7 +11,7 @@ dev-validator:
 	@echo "Starting local validator..."
 	@pkill -f solana-test-validator 2>/dev/null || true
 	@sleep 1
-	solana-test-validator --reset > /dev/null 2>&1 &
+	solana-test-validator --reset --limit-ledger-size 50000000 > /dev/null 2>&1 &
 	@echo "Waiting for validator..."
 	@sleep 5
 	@solana config set --url localhost

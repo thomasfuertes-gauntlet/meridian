@@ -4,4 +4,5 @@ gm.local.md
 # Anchor / Solana
 target/
 .anchor/
+test-ledger/
 node_modules/

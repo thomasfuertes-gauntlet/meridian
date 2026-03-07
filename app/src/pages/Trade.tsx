@@ -1,19 +1,21 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect, useCallback } from "react";
-import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
+import { useConnection } from "@solana/wallet-adapter-react";
 import { PublicKey } from "@solana/web3.js";
 import { OrderBook } from "../components/OrderBook";
 import { TradePanel } from "../components/TradePanel";
 import { SettlementCountdown } from "../components/SettlementCountdown";
 import { MAG7, PROGRAM_ID, USDC_PER_PAIR } from "../lib/constants";
 import { useUsdcMint } from "../lib/usdc-mint";
-import { getProgram } from "../lib/anchor";
+import { getReadOnlyProgram } from "../lib/anchor";
 import {
   parseOrderBook,
   flipToNoPerspective,
   type ParsedOrderBook,
 } from "../lib/orderbook";
 import { fetchPrices, type StockPrice } from "../lib/pyth";
+import { usePriceHistory } from "../lib/usePriceHistory";
+import { PriceSparkline } from "../components/PriceSparkline";
 
 interface MarketInfo {
   pubkey: PublicKey;
@@ -30,10 +32,10 @@ interface MarketInfo {
 export function Trade() {
   const { ticker } = useParams<{ ticker: string }>();
   const navigate = useNavigate();
-  const wallet = useAnchorWallet();
   const { connection } = useConnection();
 
   const stock = MAG7.find((s) => s.ticker === ticker);
+  const { history: priceHistory, push: pushPrice } = usePriceHistory(ticker ?? "");
   const [markets, setMarkets] = useState<MarketInfo[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<MarketInfo | null>(
     null
@@ -41,11 +43,11 @@ export function Trade() {
   const [orderBook, setOrderBook] = useState<ParsedOrderBook | null>(null);
   const [price, setPrice] = useState<StockPrice | null>(null);
 
-  // Fetch markets for this ticker
+  // Fetch markets for this ticker (read-only, no wallet needed)
   const loadMarkets = useCallback(async () => {
-    if (!wallet || !ticker) return;
+    if (!ticker) return;
     try {
-      const program = getProgram(wallet);
+      const program = getReadOnlyProgram();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const allMarkets = await (program.account as any).strikeMarket.all();
       const tickerMarkets = allMarkets
@@ -73,7 +75,7 @@ export function Trade() {
     } catch (err) {
       console.error("Failed to load markets:", err);
     }
-  }, [wallet, ticker, selectedMarket]);
+  }, [ticker, selectedMarket]);
 
   // Fetch order book for selected market
   const loadOrderBook = useCallback(async () => {
@@ -100,7 +102,10 @@ export function Trade() {
         const priceMap = await fetchPrices([stock!.pythFeedId]);
         const id = stock!.pythFeedId.replace("0x", "");
         const p = priceMap.get(id);
-        if (p) setPrice({ ...p, ticker: stock!.ticker });
+        if (p) {
+          setPrice({ ...p, ticker: stock!.ticker });
+          pushPrice(p.price);
+        }
       } catch (err) {
         console.error("Failed to fetch price:", err);
       }
@@ -166,6 +171,9 @@ export function Trade() {
               ${price.price.toFixed(2)}
             </span>
           )}
+          {priceHistory.length >= 2 && (
+            <PriceSparkline prices={[...priceHistory]} width={200} height={40} />
+          )}
         </div>
         <SettlementCountdown />
       </div>
@@ -177,9 +185,7 @@ export function Trade() {
             <h3 className="text-sm font-bold text-gray-300 mb-3">Strikes</h3>
             {markets.length === 0 ? (
               <p className="text-xs text-gray-600">
-                {wallet
-                  ? "No active markets for this ticker"
-                  : "Connect wallet to view markets"}
+                No active markets for this ticker
               </p>
             ) : (
               <div className="space-y-1">

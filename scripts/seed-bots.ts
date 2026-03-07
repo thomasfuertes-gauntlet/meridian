@@ -68,8 +68,8 @@ async function main() {
   );
   await anchor.web3.sendAndConfirmTransaction(connection, createAtaTx, [bot]);
 
-  await mintTo(connection, admin, usdcMint, botUsdcAta, admin, 10_000 * USDC_PER_PAIR);
-  console.log("Minted 10,000 USDC to bot");
+  await mintTo(connection, admin, usdcMint, botUsdcAta, admin, 20_000 * USDC_PER_PAIR);
+  console.log("Minted 20,000 USDC to bot");
 
   // Fetch live stock prices from Pyth Hermes
   console.log("Fetching stock prices from Pyth Hermes...");

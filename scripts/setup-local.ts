@@ -21,16 +21,24 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
+import { fetchStockPrices } from "./fair-value";
 
-const MAG7_STRIKES: { ticker: string; strike: number }[] = [
-  { ticker: "AAPL", strike: 230_000_000 },
-  { ticker: "MSFT", strike: 420_000_000 },
-  { ticker: "GOOGL", strike: 180_000_000 },
-  { ticker: "AMZN", strike: 200_000_000 },
-  { ticker: "NVDA", strike: 130_000_000 },
-  { ticker: "META", strike: 680_000_000 },
-  { ticker: "TSLA", strike: 250_000_000 },
-];
+const MAG7_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"];
+const STRIKE_OFFSETS = [-0.09, -0.06, -0.03, 0.03, 0.06, 0.09];
+
+/**
+ * Generate strikes at +/-3%, +/-6%, +/-9% from reference price.
+ * Rounded to nearest $10, deduplicated, stored in USDC base units.
+ */
+function generateStrikes(refPrice: number): number[] {
+  const strikes = new Set<number>();
+  for (const offset of STRIKE_OFFSETS) {
+    const raw = refPrice * (1 + offset);
+    const rounded = Math.round(raw / 10) * 10; // nearest $10
+    if (rounded > 0) strikes.add(rounded);
+  }
+  return [...strikes].sort((a, b) => a - b);
+}
 
 const USDC_DECIMALS = 6;
 const USDC_PER_PAIR = 1_000_000;
@@ -171,47 +179,62 @@ async function main() {
     console.log("Config initialized");
   }
 
-  // 6. Create markets + order books for each MAG7 stock
-  for (const { ticker, strike } of MAG7_STRIKES) {
-    const strikePrice = new anchor.BN(strike);
-    const [marketPda] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("market"),
-        Buffer.from(ticker),
-        strikePrice.toArrayLike(Buffer, "le", 8),
-        today.toArrayLike(Buffer, "le", 8),
-      ],
-      program.programId
-    );
+  // 6. Fetch reference prices and generate strikes per ticker
+  console.log("Fetching reference prices for strike generation...");
+  const refPrices = await fetchStockPrices();
+  let totalMarkets = 0;
 
-    // Skip if market already exists
-    if (await accountExists(connection, marketPda)) {
-      console.log(`Market already exists: ${ticker} > $${strike / USDC_PER_PAIR}, skipping`);
+  for (const ticker of MAG7_TICKERS) {
+    const refPrice = refPrices.get(ticker);
+    if (!refPrice) {
+      console.warn(`  No reference price for ${ticker}, skipping`);
       continue;
     }
+    const strikes = generateStrikes(refPrice);
+    console.log(`  ${ticker} ref=$${refPrice.toFixed(2)} -> strikes: ${strikes.map((s) => `$${s}`).join(", ")}`);
 
-    await program.methods
-      .createStrikeMarket(ticker, strikePrice, today, pastCloseTime, dummyPythFeedId)
-      .accountsPartial({ admin: admin.publicKey, usdcMint })
-      .rpc();
-    console.log(`Created market: ${ticker} > $${strike / USDC_PER_PAIR}`);
+    for (const strikeDollars of strikes) {
+      const strike = strikeDollars * USDC_PER_PAIR; // convert to USDC base units
+      const strikePrice = new anchor.BN(strike);
+      const [marketPda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("market"),
+          Buffer.from(ticker),
+          strikePrice.toArrayLike(Buffer, "le", 8),
+          today.toArrayLike(Buffer, "le", 8),
+        ],
+        program.programId
+      );
 
-    // Initialize order book
-    const [yesMintPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("yes_mint"), marketPda.toBuffer()],
-      program.programId
-    );
+      // Skip if market already exists
+      if (await accountExists(connection, marketPda)) {
+        console.log(`    ${ticker} > $${strikeDollars} already exists, skipping`);
+        totalMarkets++;
+        continue;
+      }
 
-    await program.methods
-      .initializeOrderBook()
-      .accountsPartial({
-        admin: admin.publicKey,
-        market: marketPda,
-        yesMint: yesMintPda,
-        usdcMint,
-      })
-      .rpc();
-    console.log(`  Order book initialized for ${ticker}`);
+      await program.methods
+        .createStrikeMarket(ticker, strikePrice, today, pastCloseTime, dummyPythFeedId)
+        .accountsPartial({ admin: admin.publicKey, usdcMint })
+        .rpc();
+
+      // Initialize order book
+      const [yesMintPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("yes_mint"), marketPda.toBuffer()],
+        program.programId
+      );
+      await program.methods
+        .initializeOrderBook()
+        .accountsPartial({
+          admin: admin.publicKey,
+          market: marketPda,
+          yesMint: yesMintPda,
+          usdcMint,
+        })
+        .rpc();
+      console.log(`    Created: ${ticker} > $${strikeDollars} + order book`);
+      totalMarkets++;
+    }
   }
 
   // Write config for frontend + bot scripts
@@ -228,7 +251,7 @@ async function main() {
   // Print summary
   console.log("\n--- Setup Complete ---");
   console.log(`USDC Mint: ${usdcMint.toString()}`);
-  console.log(`Markets created: ${MAG7_STRIKES.length}`);
+  console.log(`Markets created: ${totalMarkets}`);
   console.log(`bot-b (frontend): ${botB.publicKey.toString()} - 100 USDC + 5 SOL`);
   if (browserWallet) {
     console.log(`Browser wallet ${browserWallet.toString()} funded with:`);

@@ -39,7 +39,7 @@ deploy:
 # Run setup script (pass WALLET=<pubkey> to fund a browser wallet)
 setup:
 	@echo "Setting up markets..."
-	ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
+	OFFLINE=$(OFFLINE) ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/setup-local.ts $(WALLET)
 
 # Start frontend dev server (foreground). Bots seed + live trade in background.

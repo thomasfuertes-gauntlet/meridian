@@ -136,26 +136,60 @@ async function main() {
 
     console.log(`  Total: ${allMarkets.length}  Active: ${pending.length}  Settled: ${settled.length}`);
 
-    // Check order book fill rates
+    // Check order book fill rates by reading bid_count/ask_count from raw data
+    // OrderBook layout: 8 (discriminator) + ... + bid_count(u16) at offset 104, ask_count(u16) at offset 106
+    const OB_BID_COUNT_OFFSET = 8 + 104; // 8-byte Anchor discriminator + 104 bytes to bid_count
+    const OB_ASK_COUNT_OFFSET = OB_BID_COUNT_OFFSET + 2;
+    const missingBooks: string[] = [];
     const emptyBooks: string[] = [];
-    for (const m of pending) {
+    const seededBooks: string[] = [];
+    let totalBids = 0;
+    let totalAsks = 0;
+
+    // Batch fetch all order book accounts
+    const obPdas = pending.map((m: { publicKey: PublicKey }) => {
       const [obPda] = PublicKey.findProgramAddressSync(
         [Buffer.from("orderbook"), m.publicKey.toBuffer()],
         program.programId
       );
-      const obInfo = await connection.getAccountInfo(obPda);
+      return obPda;
+    });
+    const obAccounts = await connection.getMultipleAccountsInfo(obPdas);
+
+    for (let i = 0; i < pending.length; i++) {
+      const m = pending[i];
+      const label = `${m.account.ticker} > $${(m.account.strikePrice.toNumber() / 1_000_000).toFixed(0)}`;
+      const obInfo = obAccounts[i];
+
       if (!obInfo) {
-        emptyBooks.push(`${m.account.ticker} > $${(m.account.strikePrice.toNumber() / 1_000_000).toFixed(0)}`);
+        missingBooks.push(label);
         continue;
       }
-      // Check if order book has any active orders (quick heuristic: data beyond header)
-      // Full parse would require zero_copy deserialization, just check byte activity
+
+      const bidCount = obInfo.data.readUInt16LE(OB_BID_COUNT_OFFSET);
+      const askCount = obInfo.data.readUInt16LE(OB_ASK_COUNT_OFFSET);
+      totalBids += bidCount;
+      totalAsks += askCount;
+
+      if (bidCount === 0 && askCount === 0) {
+        emptyBooks.push(label);
+      } else {
+        seededBooks.push(label);
+      }
     }
 
+    if (missingBooks.length > 0) {
+      console.log(`  [CRIT] ${missingBooks.length} markets missing order book account: ${missingBooks.slice(0, 3).join(", ")}${missingBooks.length > 3 ? "..." : ""}`);
+    }
     if (emptyBooks.length > 0) {
-      console.log(`  [WARN] ${emptyBooks.length} markets missing order books: ${emptyBooks.slice(0, 5).join(", ")}${emptyBooks.length > 5 ? "..." : ""}`);
-    } else {
-      console.log(`  [OK] All active markets have order books`);
+      console.log(`  [WARN] ${emptyBooks.length} markets with ZERO orders (not seeded): ${emptyBooks.slice(0, 5).join(", ")}${emptyBooks.length > 5 ? "..." : ""}`);
+      if (emptyBooks.length > pending.length / 2) {
+        console.log(`         -> Bots may have crashed mid-seed. Redeploy: railway up -s bots`);
+      }
+    }
+    console.log(`  Seeded: ${seededBooks.length}/${pending.length} markets  Orders: ${totalBids} bids, ${totalAsks} asks`);
+    if (seededBooks.length === pending.length && emptyBooks.length === 0 && missingBooks.length === 0) {
+      console.log(`  [OK] All markets fully seeded`);
     }
 
     // Check close times

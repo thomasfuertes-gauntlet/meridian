@@ -1,5 +1,6 @@
 gm.local.md
 .claude/
+.env
 
 # TypeScript build artifacts (tsc -b emits in-place without outDir)
 tsconfig.tsbuildinfo

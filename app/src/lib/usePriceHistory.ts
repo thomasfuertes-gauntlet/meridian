@@ -21,8 +21,7 @@ export function usePriceHistory(ticker: string) {
   const push = useCallback(
     (price: number) => {
       const hist = getHistory(ticker);
-      // Skip duplicate consecutive values (Pyth returns same price outside market hours)
-      if (hist.length > 0 && hist[hist.length - 1] === price) return hist;
+      // Cap at MAX_POINTS but always push (flat lines are better than no sparkline)
       hist.push(price);
       if (hist.length > MAX_POINTS) hist.shift();
       return hist;

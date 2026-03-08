@@ -293,6 +293,8 @@ export function Trade() {
               ticker={stock.ticker}
               bestBid={bestBid}
               bestAsk={bestAsk}
+              bids={orderBook?.bids ?? []}
+              asks={orderBook?.asks ?? []}
             />
           ) : (
             <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm text-gray-500">

@@ -1,10 +1,11 @@
 import { type Program, type BN } from "@coral-xyz/anchor";
-import { PublicKey, Transaction } from "@solana/web3.js";
+import { type AccountMeta, PublicKey, Transaction } from "@solana/web3.js";
 import {
   getAssociatedTokenAddressSync,
   createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
 import { PROGRAM_ID } from "./constants";
+import { type ParsedOrder } from "./orderbook";
 
 function findOrderBookPda(market: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
@@ -32,13 +33,51 @@ interface TradeParams {
   usdcMint: PublicKey;
   price: BN;
   quantity: BN;
+  /** Active orders on the opposite side of the book (asks for bids, bids for asks). */
+  oppositeOrders?: ParsedOrder[];
+}
+
+/**
+ * Simulate fills against sorted opposite-side orders and return
+ * counterparty ATAs as remainingAccounts.
+ *
+ * For bids filling asks: counterparty needs USDC (seller receives USDC)
+ * For asks filling bids: counterparty needs Yes tokens (buyer receives Yes)
+ */
+function buildRemainingAccounts(
+  side: "bid" | "ask",
+  price: number,
+  quantity: number,
+  oppositeOrders: ParsedOrder[],
+  usdcMint: PublicKey,
+  yesMint: PublicKey,
+): AccountMeta[] {
+  const accounts: AccountMeta[] = [];
+  let remaining = quantity;
+
+  for (const order of oppositeOrders) {
+    if (remaining <= 0) break;
+    // Bids match asks priced <= bid price; asks match bids priced >= ask price
+    if (side === "bid" && order.price > price) break;
+    if (side === "ask" && order.price < price) break;
+
+    // Bid fills ask -> counterparty (seller) gets USDC back
+    // Ask fills bid -> counterparty (buyer) gets Yes tokens
+    const mint = side === "bid" ? usdcMint : yesMint;
+    const counterpartyAta = getAssociatedTokenAddressSync(mint, order.owner);
+    accounts.push({ pubkey: counterpartyAta, isWritable: true, isSigner: false });
+
+    remaining -= Math.min(remaining, order.quantity);
+  }
+
+  return accounts;
 }
 
 // Buy Yes = place a bid on the order book (USDC -> Yes tokens)
 export async function buildBuyYesTx(
   params: TradeParams
 ): Promise<Transaction> {
-  const { program, user, market, yesMint, usdcMint, price, quantity } =
+  const { program, user, market, yesMint, usdcMint, price, quantity, oppositeOrders } =
     params;
 
   const [orderBook] = findOrderBookPda(market);
@@ -46,6 +85,10 @@ export async function buildBuyYesTx(
   const userYesAta = getAssociatedTokenAddressSync(yesMint, user);
   const [obUsdcVault] = findVaultPda("ob_usdc_vault", market);
   const [obYesVault] = findVaultPda("ob_yes_vault", market);
+
+  const remaining = oppositeOrders
+    ? buildRemainingAccounts("bid", price.toNumber(), quantity.toNumber(), oppositeOrders, usdcMint, yesMint)
+    : [];
 
   const tx = new Transaction();
 
@@ -70,6 +113,7 @@ export async function buildBuyYesTx(
       obUsdcVault,
       obYesVault,
     })
+    .remainingAccounts(remaining)
     .instruction();
 
   tx.add(ix);
@@ -80,7 +124,7 @@ export async function buildBuyYesTx(
 export async function buildSellYesTx(
   params: TradeParams
 ): Promise<Transaction> {
-  const { program, user, market, yesMint, usdcMint, price, quantity } =
+  const { program, user, market, yesMint, usdcMint, price, quantity, oppositeOrders } =
     params;
 
   const [orderBook] = findOrderBookPda(market);
@@ -88,6 +132,10 @@ export async function buildSellYesTx(
   const userYesAta = getAssociatedTokenAddressSync(yesMint, user);
   const [obUsdcVault] = findVaultPda("ob_usdc_vault", market);
   const [obYesVault] = findVaultPda("ob_yes_vault", market);
+
+  const remaining = oppositeOrders
+    ? buildRemainingAccounts("ask", price.toNumber(), quantity.toNumber(), oppositeOrders, usdcMint, yesMint)
+    : [];
 
   const tx = new Transaction();
 
@@ -111,6 +159,7 @@ export async function buildSellYesTx(
       obUsdcVault,
       obYesVault,
     })
+    .remainingAccounts(remaining)
     .instruction();
 
   tx.add(ix);
@@ -130,6 +179,7 @@ export async function buildBuyNoTx(
     usdcMint,
     price,
     quantity,
+    oppositeOrders,
   } = params;
 
   const [orderBook] = findOrderBookPda(market);
@@ -139,6 +189,11 @@ export async function buildBuyNoTx(
   const [vault] = findVaultPda("vault", market);
   const [obUsdcVault] = findVaultPda("ob_usdc_vault", market);
   const [obYesVault] = findVaultPda("ob_yes_vault", market);
+
+  // Buy No places an ask, so opposite side is bids
+  const remaining = oppositeOrders
+    ? buildRemainingAccounts("ask", price.toNumber(), quantity.toNumber(), oppositeOrders, usdcMint, yesMint)
+    : [];
 
   const tx = new Transaction();
 
@@ -189,6 +244,7 @@ export async function buildBuyNoTx(
       obUsdcVault,
       obYesVault,
     })
+    .remainingAccounts(remaining)
     .instruction();
   tx.add(placeIx);
 
@@ -208,6 +264,7 @@ export async function buildSellNoTx(
     usdcMint,
     price,
     quantity,
+    oppositeOrders,
   } = params;
 
   const [orderBook] = findOrderBookPda(market);
@@ -217,6 +274,11 @@ export async function buildSellNoTx(
   const [vault] = findVaultPda("vault", market);
   const [obUsdcVault] = findVaultPda("ob_usdc_vault", market);
   const [obYesVault] = findVaultPda("ob_yes_vault", market);
+
+  // Sell No places a bid, so opposite side is asks
+  const remaining = oppositeOrders
+    ? buildRemainingAccounts("bid", price.toNumber(), quantity.toNumber(), oppositeOrders, usdcMint, yesMint)
+    : [];
 
   const tx = new Transaction();
 
@@ -241,6 +303,7 @@ export async function buildSellNoTx(
       obUsdcVault,
       obYesVault,
     })
+    .remainingAccounts(remaining)
     .instruction();
   tx.add(placeIx);
 

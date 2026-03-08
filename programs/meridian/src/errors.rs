@@ -38,4 +38,6 @@ pub enum MeridianError {
     OrderNotFound,
     #[msg("Not the order owner")]
     NotOrderOwner,
+    #[msg("Missing counterparty account for fill")]
+    MissingCounterpartyAccount,
 }

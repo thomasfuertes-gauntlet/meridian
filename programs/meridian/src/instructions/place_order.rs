@@ -181,7 +181,7 @@ pub fn handler<'info>(
     for fill in &fills {
         require!(
             fill.remaining_acct_idx < ctx.remaining_accounts.len(),
-            MeridianError::InvalidAmount
+            MeridianError::MissingCounterpartyAccount
         );
         let counterparty_ata = &ctx.remaining_accounts[fill.remaining_acct_idx];
 

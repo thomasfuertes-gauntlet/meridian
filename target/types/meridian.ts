@@ -1683,6 +1683,11 @@ export type Meridian = {
       "code": 6017,
       "name": "notOrderOwner",
       "msg": "Not the order owner"
+    },
+    {
+      "code": 6018,
+      "name": "missingCounterpartyAccount",
+      "msg": "Missing counterparty account for fill"
     }
   ],
   "types": [

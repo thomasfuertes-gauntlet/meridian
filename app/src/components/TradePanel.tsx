@@ -12,6 +12,7 @@ import {
 } from "../lib/trade";
 import { getPositionConflict } from "../lib/portfolio";
 import { USDC_PER_PAIR } from "../lib/constants";
+import { type ParsedOrder } from "../lib/orderbook";
 
 type TradeAction = "buyYes" | "buyNo" | "sellYes" | "sellNo";
 
@@ -24,6 +25,8 @@ interface TradePanelProps {
   ticker: string;
   bestBid: number | null;
   bestAsk: number | null;
+  bids: ParsedOrder[];
+  asks: ParsedOrder[];
 }
 
 const ACTION_LABELS: Record<TradeAction, string> = {
@@ -49,6 +52,8 @@ export function TradePanel({
   ticker,
   bestBid,
   bestAsk,
+  bids,
+  asks,
 }: TradePanelProps) {
   const wallet = useAnchorWallet();
   const { connection } = useConnection();
@@ -100,6 +105,10 @@ export function TradePanel({
     setStatus("Building transaction...");
     try {
       const program = getProgram(wallet);
+      // Bids cross asks, asks cross bids
+      const oppositeOrders =
+        action === "buyYes" || action === "sellNo" ? asks : bids;
+
       const params = {
         program,
         user: wallet.publicKey,
@@ -109,6 +118,7 @@ export function TradePanel({
         usdcMint,
         price: new BN(effectivePrice),
         quantity: new BN(parseInt(quantity) || 1),
+        oppositeOrders,
       };
 
       const builders: Record<TradeAction, typeof buildBuyYesTx> = {
@@ -145,6 +155,8 @@ export function TradePanel({
     yesMint,
     noMint,
     usdcMint,
+    bids,
+    asks,
   ]);
 
   const strikeDollars = (strikePrice / USDC_PER_PAIR).toFixed(2);

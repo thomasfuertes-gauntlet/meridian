@@ -22,72 +22,19 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
   mintTo,
 } from "@solana/spl-token";
-import * as fs from "fs";
-import * as path from "path";
 import { getDevWallet } from "./dev-wallets";
 import { fairValue, fetchStockPrices } from "./fair-value";
+import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR, MAX_PER_SIDE } from "./bot-utils";
 
-const USDC_PER_PAIR = 1_000_000;
 const MIN_PRICE = 50_000;   // $0.05 floor
 const MAX_PRICE = 950_000;  // $0.95 ceiling
 const MIN_ORDERS_PER_SIDE = 3;
-const MAX_PER_SIDE = 32;
 const TICK_MS_MIN = 150;
 const TICK_MS_MAX = 400;
 const PRICE_REFRESH_MS = 30_000;
 const TX_DELAY_MS = Number(process.env.TX_DELAY_MS ?? 1200); // delay between RPCs for rate limits
 const MARKET_REFRESH_TICKS = 100; // re-check which markets are still active every ~100 ticks
 const REPLENISH_THRESHOLD = 500 * USDC_PER_PAIR; // auto-replenish below 500 USDC
-
-// --- Order book parsing ---
-const DISC = 8;
-const HEADER = 112;
-const ORDER_SZ = 72;
-
-interface Order {
-  owner: PublicKey;
-  price: number;
-  quantity: number;
-  orderId: number;
-  isActive: boolean;
-}
-
-interface Book {
-  bidCount: number;
-  askCount: number;
-  bids: Order[];
-  asks: Order[];
-}
-
-function parseBook(data: Buffer): Book {
-  const base = DISC;
-  const bidCount = data.readUInt16LE(base + 104);
-  const askCount = data.readUInt16LE(base + 106);
-  const bidsOff = base + HEADER;
-  const asksOff = bidsOff + MAX_PER_SIDE * ORDER_SZ;
-
-  const readOrder = (off: number): Order => ({
-    owner: new PublicKey(data.subarray(off, off + 32)),
-    price: Number(data.readBigUInt64LE(off + 32)),
-    quantity: Number(data.readBigUInt64LE(off + 40)),
-    orderId: Number(data.readBigUInt64LE(off + 56)),
-    isActive: data[off + 64] === 1,
-  });
-
-  const bids: Order[] = [];
-  for (let i = 0; i < MAX_PER_SIDE; i++) {
-    const o = readOrder(bidsOff + i * ORDER_SZ);
-    if (o.isActive) bids.push(o);
-  }
-  const asks: Order[] = [];
-  for (let i = 0; i < MAX_PER_SIDE; i++) {
-    const o = readOrder(asksOff + i * ORDER_SZ);
-    if (o.isActive) asks.push(o);
-  }
-  bids.sort((a, b) => b.price - a.price);
-  asks.sort((a, b) => a.price - b.price);
-  return { bidCount, askCount, bids, asks };
-}
 
 function randInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -101,41 +48,13 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-interface MarketCtx {
-  pubkey: PublicKey;
-  ticker: string;
-  strikePrice: number; // USDC base units
-  closeTime: number;   // Unix seconds
-  yesMint: PublicKey;
-  noMint: PublicKey;
-  vault: PublicKey;
-  orderBook: PublicKey;
-  obUsdcVault: PublicKey;
-  obYesVault: PublicKey;
-}
-
 async function main() {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
   const program = anchor.workspace.Meridian as Program<Meridian>;
   const connection = provider.connection;
 
-  // Load USDC mint from env var or local-config.json
-  let usdcMintStr = process.env.USDC_MINT;
-  if (!usdcMintStr) {
-    const configPath = path.join(__dirname, "../app/src/lib/local-config.json");
-    if (!fs.existsSync(configPath)) {
-      console.error("USDC mint not found. Set USDC_MINT env var or run `make setup`.");
-      process.exit(1);
-    }
-    const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    usdcMintStr = config.usdcMint;
-  }
-  const usdcMint = new PublicKey(usdcMintStr!);
+  const usdcMint = loadUsdcMint();
   const bot = getDevWallet("bot-a");
   const admin = getDevWallet("admin");
   const botUsdcAta = getAssociatedTokenAddressSync(usdcMint, bot.publicKey);
@@ -143,29 +62,7 @@ async function main() {
   console.log("Bot:", bot.publicKey.toString());
   console.log("USDC Mint:", usdcMint.toString());
 
-  // Discover markets
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const allMarkets = await (program.account as any).strikeMarket.all();
-  let markets: MarketCtx[] = allMarkets
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .filter((m: any) => m.account.outcome?.pending !== undefined)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((m: any) => {
-      const pk: PublicKey = m.publicKey;
-      const pid = program.programId;
-      return {
-        pubkey: pk,
-        ticker: m.account.ticker as string,
-        strikePrice: m.account.strikePrice.toNumber(),
-        closeTime: m.account.closeTime.toNumber(),
-        yesMint: PublicKey.findProgramAddressSync([Buffer.from("yes_mint"), pk.toBuffer()], pid)[0],
-        noMint: PublicKey.findProgramAddressSync([Buffer.from("no_mint"), pk.toBuffer()], pid)[0],
-        vault: PublicKey.findProgramAddressSync([Buffer.from("vault"), pk.toBuffer()], pid)[0],
-        orderBook: PublicKey.findProgramAddressSync([Buffer.from("orderbook"), pk.toBuffer()], pid)[0],
-        obUsdcVault: PublicKey.findProgramAddressSync([Buffer.from("ob_usdc_vault"), pk.toBuffer()], pid)[0],
-        obYesVault: PublicKey.findProgramAddressSync([Buffer.from("ob_yes_vault"), pk.toBuffer()], pid)[0],
-      };
-    });
+  let markets = await discoverMarkets(program);
 
   console.log(`Found ${markets.length} active markets`);
 

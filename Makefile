@@ -50,9 +50,10 @@ dev-frontend:
 	@( OFFLINE=$(OFFLINE) ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/seed-bots.ts && \
 	   OFFLINE=$(OFFLINE) ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
-		npx tsx scripts/live-bots.ts ) > /dev/null 2>&1 &
+		npx tsx scripts/live-bots.ts ) > /tmp/meridian-bots.log 2>&1 &
 	@( sleep 30 && OFFLINE=$(OFFLINE) ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
-		npx tsx scripts/strategy-bots.ts ) > /dev/null 2>&1 &
+		npx tsx scripts/strategy-bots.ts ) >> /tmp/meridian-bots.log 2>&1 &
+	@echo "Bot logs: /tmp/meridian-bots.log"
 	@echo "Starting frontend..."
 	npm run dev --prefix app
 

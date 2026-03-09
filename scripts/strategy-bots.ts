@@ -1,6 +1,7 @@
 /**
- * Multi-strategy directional trading bots (bot-c through bot-f).
- * Uses bot-b wallet (the frontend dev wallet) so trades show in Portfolio.
+ * Multi-strategy directional trading bots.
+ * All strategies share the bot-b wallet (frontend dev wallet) so trades
+ * appear in the Portfolio page. bot-c/d/e/f are strategy labels, not wallets.
  * Taker-only: crosses bot-a's spread to generate fills and visible P&L.
  *
  * Strategies:
@@ -18,59 +19,16 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
   mintTo,
 } from "@solana/spl-token";
-import * as fs from "fs";
-import * as path from "path";
 import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
+import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR } from "./bot-utils";
 
-const USDC_PER_PAIR = 1_000_000;
 const TICK_MS = 45_000;
 const TX_DELAY_MS = Number(process.env.TX_DELAY_MS ?? 1200);
 const MAX_TRADES_PER_TICK = 2;
 const COOLDOWN_TICKS = 5;
+const MARKET_REFRESH_TICKS = 50;
 const REPLENISH_THRESHOLD = 500 * USDC_PER_PAIR;
-const MAX_PER_SIDE = 32;
-
-// --- Order book parsing (inlined from live-bots) ---
-const DISC = 8;
-const HEADER = 112;
-const ORDER_SZ = 72;
-
-interface Order {
-  owner: PublicKey;
-  price: number;
-  quantity: number;
-  orderId: number;
-  isActive: boolean;
-}
-
-function parseBook(data: Buffer) {
-  const base = DISC;
-  const bidsOff = base + HEADER;
-  const asksOff = bidsOff + MAX_PER_SIDE * ORDER_SZ;
-
-  const readOrder = (off: number): Order => ({
-    owner: new PublicKey(data.subarray(off, off + 32)),
-    price: Number(data.readBigUInt64LE(off + 32)),
-    quantity: Number(data.readBigUInt64LE(off + 40)),
-    orderId: Number(data.readBigUInt64LE(off + 56)),
-    isActive: data[off + 64] === 1,
-  });
-
-  const bids: Order[] = [];
-  for (let i = 0; i < MAX_PER_SIDE; i++) {
-    const o = readOrder(bidsOff + i * ORDER_SZ);
-    if (o.isActive) bids.push(o);
-  }
-  const asks: Order[] = [];
-  for (let i = 0; i < MAX_PER_SIDE; i++) {
-    const o = readOrder(asksOff + i * ORDER_SZ);
-    if (o.isActive) asks.push(o);
-  }
-  bids.sort((a, b) => b.price - a.price);
-  asks.sort((a, b) => a.price - b.price);
-  return { bids, asks };
-}
 
 // --- Types ---
 
@@ -165,8 +123,9 @@ const CORRELATION_PAIRS: Record<string, string[]> = {
 
 const correlationArbitrage: BotStrategy = {
   name: "bot-e",
-  signal(market, _history, allHistories) {
+  signal(market, history, allHistories) {
     if (market.bestBid === null || market.bestAsk === null) return null;
+    if (history.prices.length < 5) return null;
 
     // Check if this market's ticker is a follower of any leader
     for (const [leader, followers] of Object.entries(CORRELATION_PAIRS)) {
@@ -175,9 +134,6 @@ const correlationArbitrage: BotStrategy = {
       const leaderHist = allHistories.get(leader);
       if (!leaderHist || leaderHist.prices.length < 5) continue;
 
-      const followerHist = allHistories.get(market.ticker);
-      if (!followerHist || followerHist.prices.length < 5) continue;
-
       // Leader move over last 5 samples
       const leaderStart = leaderHist.prices[leaderHist.prices.length - 5];
       const leaderNow = leaderHist.prices[leaderHist.prices.length - 1];
@@ -185,15 +141,15 @@ const correlationArbitrage: BotStrategy = {
 
       if (Math.abs(leaderMove) < 0.01) continue; // need >1% leader move
 
-      // Follower move
-      const followerStart = followerHist.prices[followerHist.prices.length - 5];
-      const followerNow = followerHist.prices[followerHist.prices.length - 1];
+      // Follower move (history is this market's ticker)
+      const followerStart = history.prices[history.prices.length - 5];
+      const followerNow = history.prices[history.prices.length - 1];
       const followerMove = (followerNow - followerStart) / followerStart;
 
       // Follower lags if it moved < 30% of leader's move
       if (Math.abs(followerMove) > Math.abs(leaderMove) * 0.3) continue;
 
-      const stockPrice = followerHist.prices[followerHist.prices.length - 1];
+      const stockPrice = history.prices[history.prices.length - 1];
       if (leaderMove > 0 && market.strikeDollars < stockPrice) {
         return { market, direction: "yes", qty: 2, reason: `${leader} up ${(leaderMove * 100).toFixed(1)}%, ${market.ticker} lagging` };
       }
@@ -230,12 +186,6 @@ const timeDecayExploiter: BotStrategy = {
 
 const STRATEGIES: BotStrategy[] = [momentumSniper, bollingerReversion, correlationArbitrage, timeDecayExploiter];
 
-// --- Helpers ---
-
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
 function computeVelocity(prices: number[]): number {
   if (prices.length < 5) return 0;
   const recent = prices.slice(-5);
@@ -250,18 +200,7 @@ async function main() {
   const program = anchor.workspace.Meridian as Program<Meridian>;
   const connection = provider.connection;
 
-  // Load USDC mint
-  let usdcMintStr = process.env.USDC_MINT;
-  if (!usdcMintStr) {
-    const configPath = path.join(__dirname, "../app/src/lib/local-config.json");
-    if (!fs.existsSync(configPath)) {
-      console.error("USDC mint not found. Set USDC_MINT env var or run `make setup`.");
-      process.exit(1);
-    }
-    const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    usdcMintStr = config.usdcMint;
-  }
-  const usdcMint = new PublicKey(usdcMintStr!);
+  const usdcMint = loadUsdcMint();
 
   // Strategy bots use bot-b (frontend dev wallet) so trades appear in Portfolio
   const bot = getDevWallet("bot-b");
@@ -271,42 +210,7 @@ async function main() {
   console.log("Strategy Bots (bot-c/d/e/f) using wallet:", bot.publicKey.toString());
   console.log("USDC Mint:", usdcMint.toString());
 
-  // Discover active markets
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const allMarkets = await (program.account as any).strikeMarket.all();
-  const pid = program.programId;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const marketAccounts = allMarkets.filter((m: any) => m.account.outcome?.pending !== undefined);
-
-  interface MarketAccount {
-    pubkey: PublicKey;
-    ticker: string;
-    strikePrice: number;
-    closeTime: number;
-    yesMint: PublicKey;
-    noMint: PublicKey;
-    vault: PublicKey;
-    orderBook: PublicKey;
-    obUsdcVault: PublicKey;
-    obYesVault: PublicKey;
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const markets: MarketAccount[] = marketAccounts.map((m: any) => {
-    const pk: PublicKey = m.publicKey;
-    return {
-      pubkey: pk,
-      ticker: m.account.ticker as string,
-      strikePrice: m.account.strikePrice.toNumber(),
-      closeTime: m.account.closeTime.toNumber(),
-      yesMint: PublicKey.findProgramAddressSync([Buffer.from("yes_mint"), pk.toBuffer()], pid)[0],
-      noMint: PublicKey.findProgramAddressSync([Buffer.from("no_mint"), pk.toBuffer()], pid)[0],
-      vault: PublicKey.findProgramAddressSync([Buffer.from("vault"), pk.toBuffer()], pid)[0],
-      orderBook: PublicKey.findProgramAddressSync([Buffer.from("orderbook"), pk.toBuffer()], pid)[0],
-      obUsdcVault: PublicKey.findProgramAddressSync([Buffer.from("ob_usdc_vault"), pk.toBuffer()], pid)[0],
-      obYesVault: PublicKey.findProgramAddressSync([Buffer.from("ob_yes_vault"), pk.toBuffer()], pid)[0],
-    };
-  });
+  let markets = await discoverMarkets(program);
 
   console.log(`Found ${markets.length} active markets`);
   if (markets.length === 0) {
@@ -316,7 +220,7 @@ async function main() {
 
   // Ensure ATAs exist for all markets
   const atasInitialized = new Set<string>();
-  async function ensureAtas(mkt: MarketAccount) {
+  async function ensureAtas(mkt: MarketCtx) {
     const key = mkt.pubkey.toString();
     if (atasInitialized.has(key)) return;
     const botYesAta = getAssociatedTokenAddressSync(mkt.yesMint, bot.publicKey);
@@ -335,8 +239,9 @@ async function main() {
     try {
       await ensureAtas(mkt);
       await sleep(TX_DELAY_MS);
-    } catch {
-      // May already exist
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`  [warn] ATA init failed for ${mkt.ticker}: ${msg.slice(0, 120)}`);
     }
   }
 
@@ -363,8 +268,9 @@ async function main() {
         await mintTo(connection, admin, usdcMint, botUsdcAta, admin, 5_000 * USDC_PER_PAIR);
         console.log("  [replenish] Minted 5,000 USDC to bot-b");
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`  [replenish] FAILED: ${msg.slice(0, 150)}`);
     }
   }
 
@@ -458,6 +364,27 @@ async function main() {
   while (true) {
     tickCount++;
 
+    // Drop settled markets periodically
+    if (tickCount % MARKET_REFRESH_TICKS === 0) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const refreshed = await (program.account as any).strikeMarket.all();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const activePubkeys = new Set(refreshed.filter((m: any) => m.account.outcome?.pending !== undefined).map((m: any) => m.publicKey.toString()));
+        const before = markets.length;
+        markets = markets.filter((m) => activePubkeys.has(m.pubkey.toString()));
+        if (markets.length < before) {
+          console.log(`[refresh] ${before - markets.length} markets settled, ${markets.length} remaining`);
+        }
+        if (markets.length === 0) {
+          console.log("[done] All markets settled. Exiting.");
+          process.exit(0);
+        }
+      } catch {
+        // RPC failure - keep going with current list
+      }
+    }
+
     // Refresh stock prices every 30s
     if (Date.now() - lastPriceRefresh > 30_000) {
       stockPrices = await fetchStockPrices();
@@ -480,8 +407,9 @@ async function main() {
     let obInfos: (anchor.web3.AccountInfo<Buffer> | null)[];
     try {
       obInfos = await connection.getMultipleAccountsInfo(obKeys);
-    } catch {
-      console.log("  [err] Failed to fetch order books, skipping tick");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`  [err] Failed to fetch order books: ${msg.slice(0, 120)}, skipping tick`);
       await sleep(TICK_MS);
       continue;
     }
@@ -556,8 +484,13 @@ async function main() {
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        const transient = ["0x1", "0x0", "blockhash", "OrderBookFull", "NotOrderOwner", "debit", "insufficient"];
-        if (!transient.some((t) => msg.includes(t))) {
+        // Match on Anchor error names/full hex codes, not broad substrings
+        const transient = ["blockhash", "OrderBookFull", "NotOrderOwner", "NoMatchingOrders", "OrderNotFound"];
+        if (transient.some((t) => msg.includes(t))) {
+          // Expected during normal operation - suppress
+        } else if (msg.includes("insufficient") || msg.includes("debit")) {
+          console.warn(`  [${stratName}] resource: ${msg.slice(0, 120)}`);
+        } else {
           console.log(`  [${stratName}] err: ${msg.slice(0, 120)}`);
         }
       }

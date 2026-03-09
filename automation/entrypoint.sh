@@ -25,11 +25,18 @@ echo "  Wallet: $(npx tsx -e "const {getDevWallet}=require('./scripts/dev-wallet
 echo "Running seed-bots (auto-skips if already seeded)..."
 npx tsx scripts/seed-bots.ts
 
-echo "Starting live trading bot in background..."
+echo "Starting live trading bot..."
 npx tsx scripts/live-bots.ts &
+LIVE_PID=$!
 
 echo "Waiting 30s for order book liquidity..."
 sleep 30
 
 echo "Starting strategy bots..."
-exec npx tsx scripts/strategy-bots.ts
+npx tsx scripts/strategy-bots.ts &
+STRAT_PID=$!
+
+# Exit container if either bot dies (Railway will restart)
+wait -n $LIVE_PID $STRAT_PID
+echo "FATAL: a bot process died, exiting for container restart"
+exit 1

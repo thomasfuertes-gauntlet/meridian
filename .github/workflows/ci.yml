@@ -41,19 +41,20 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      # NOTE: Pin to 1.94.0. Newer Rust auto-upgrades Cargo.lock to v4 which
-      # requires -Znext-lockfile-bump (nightly only). Keep Cargo.lock at v3.
+      # setup-anchor installs Solana CLI which bundles an older Cargo.
+      # dtolnay MUST run AFTER so its Cargo (1.94) takes PATH precedence
+      # over the bundled one (1.75). edition2024 crates need Cargo 1.85+.
+      - uses: heyAyushh/setup-anchor@v4.1
+        with:
+          anchor-version: 0.32.0
       - uses: dtolnay/rust-toolchain@1.94.0
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: programs/meridian
-      - uses: heyAyushh/setup-anchor@v4.1
-        with:
-          anchor-version: 0.32.0
       - run: anchor build
 
   anchor-test:
-    name: Anchor test (46 tests)
+    name: Anchor test (52 tests)
     runs-on: ubuntu-latest
     needs: anchor-build
     steps:
@@ -63,13 +64,13 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - uses: heyAyushh/setup-anchor@v4.1
+        with:
+          anchor-version: 0.32.0
       - uses: dtolnay/rust-toolchain@1.94.0
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: programs/meridian
-      - uses: heyAyushh/setup-anchor@v4.1
-        with:
-          anchor-version: 0.32.0
       - name: Generate dev wallets
         run: npx tsx scripts/dev-wallets.ts
       - name: Run tests

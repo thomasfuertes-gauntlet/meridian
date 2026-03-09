@@ -51,6 +51,12 @@ export function Trade() {
   const [price, setPrice] = useState<StockPrice | null>(null);
   const [bookSummaries, setBookSummaries] = useState<Map<string, BookSummary>>(new Map());
 
+  // Signal active ticker to bots (dev server only, fire-and-forget)
+  useEffect(() => {
+    if (!ticker) return;
+    fetch(`/api/active-ticker?ticker=${ticker}`).catch(() => {});
+  }, [ticker]);
+
   // Fetch markets for this ticker (read-only, no wallet needed)
   const loadMarkets = useCallback(async () => {
     if (!ticker) return;

@@ -24,7 +24,7 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fairValue, fetchStockPrices } from "./fair-value";
-import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR, MAX_PER_SIDE } from "./bot-utils";
+import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR, MAX_PER_SIDE, weightedMarketSelect } from "./bot-utils";
 
 const MIN_PRICE = 50_000;   // $0.05 floor
 const MAX_PRICE = 950_000;  // $0.95 ceiling
@@ -32,7 +32,7 @@ const MIN_ORDERS_PER_SIDE = 3;
 const TICK_MS_MIN = 150;
 const TICK_MS_MAX = 400;
 const PRICE_REFRESH_MS = 30_000;
-const TX_DELAY_MS = Number(process.env.TX_DELAY_MS ?? 1200); // delay between RPCs for rate limits
+const TX_DELAY_MS = Number(process.env.TX_DELAY_MS ?? 1000); // 1s global throttle between RPCs
 const MARKET_REFRESH_TICKS = 100; // re-check which markets are still active every ~100 ticks
 const REPLENISH_THRESHOLD = 500 * USDC_PER_PAIR; // auto-replenish below 500 USDC
 
@@ -357,10 +357,9 @@ async function main() {
       await checkReplenish();
     }
 
-    // Pick 1-2 random markets to trade on this tick (serialized for rate limits)
+    // Pick 1-2 markets weighted toward active frontend ticker
     const batch = randInt(1, Math.min(2, markets.length));
-    const shuffled = [...markets].sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, batch);
+    const selected = weightedMarketSelect(markets, batch);
 
     for (const mkt of selected) {
       try {

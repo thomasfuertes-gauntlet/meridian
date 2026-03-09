@@ -21,10 +21,10 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
-import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR } from "./bot-utils";
+import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveTicker } from "./bot-utils";
 
 const TICK_MS = 45_000;
-const TX_DELAY_MS = Number(process.env.TX_DELAY_MS ?? 1200);
+const TX_DELAY_MS = Number(process.env.TX_DELAY_MS ?? 1000); // 1s global throttle
 const MAX_TRADES_PER_TICK = 2;
 const COOLDOWN_TICKS = 5;
 const MARKET_REFRESH_TICKS = 50;
@@ -466,7 +466,8 @@ async function main() {
       else cooldowns.set(key, ticks - 1);
     }
 
-    // Collect signals from all strategies
+    // Collect signals from all strategies, prioritizing active ticker
+    const activeTicker = getActiveTicker();
     const signals: { signal: TradeSignal; stratName: string }[] = [];
     for (const strategy of STRATEGIES) {
       for (const mi of marketInfos) {
@@ -480,6 +481,15 @@ async function main() {
         const sig = strategy.signal(mi, hist, histMap);
         if (sig) signals.push({ signal: sig, stratName: strategy.name });
       }
+    }
+
+    // Sort active ticker signals first
+    if (activeTicker) {
+      signals.sort((a, b) => {
+        const aActive = a.signal.market.ticker === activeTicker ? 0 : 1;
+        const bActive = b.signal.market.ticker === activeTicker ? 0 : 1;
+        return aActive - bActive;
+      });
     }
 
     // Execute top signals (max MAX_TRADES_PER_TICK)

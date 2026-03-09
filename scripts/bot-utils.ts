@@ -129,3 +129,38 @@ export const USDC_PER_PAIR = 1_000_000;
 export function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
+
+const ACTIVE_MARKET_FILE = "/tmp/meridian-active-market.txt";
+
+/** Read the active ticker from env or file signal. Returns null if none set. */
+export function getActiveTicker(): string | null {
+  if (process.env.ACTIVE_TICKER) return process.env.ACTIVE_TICKER;
+  try {
+    return fs.readFileSync(ACTIVE_MARKET_FILE, "utf-8").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Select markets weighted toward the active ticker.
+ * 80% chance of picking from active ticker's markets, 20% from the rest.
+ * Falls back to uniform random if no active ticker or no matching markets.
+ */
+export function weightedMarketSelect(markets: MarketCtx[], count: number): MarketCtx[] {
+  const activeTicker = getActiveTicker();
+  if (!activeTicker || count >= markets.length) {
+    return [...markets].sort(() => Math.random() - 0.5).slice(0, count);
+  }
+  const active = markets.filter((m) => m.ticker === activeTicker);
+  const rest = markets.filter((m) => m.ticker !== activeTicker);
+  if (active.length === 0) {
+    return [...markets].sort(() => Math.random() - 0.5).slice(0, count);
+  }
+  const selected: MarketCtx[] = [];
+  for (let i = 0; i < count; i++) {
+    const pool = Math.random() < 0.8 && active.length > 0 ? active : rest.length > 0 ? rest : active;
+    selected.push(pool[Math.floor(Math.random() * pool.length)]);
+  }
+  return selected;
+}

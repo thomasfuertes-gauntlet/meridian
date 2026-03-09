@@ -290,6 +290,79 @@ describe("meridian", () => {
     expect(marketAccount.totalPairsMinted.toNumber()).to.equal(3);
   });
 
+  it("mints 10 pairs in a single batch call (amount=10)", async () => {
+    const userYes = getAssociatedTokenAddressSync(
+      sharedMarket.yesMintPda,
+      admin.publicKey
+    );
+    const userNo = getAssociatedTokenAddressSync(
+      sharedMarket.noMintPda,
+      admin.publicKey
+    );
+
+    await program.methods
+      .mintPair(new anchor.BN(10))
+      .accountsPartial({
+        user: admin.publicKey,
+        market: sharedMarket.marketPda,
+        userUsdc: adminUsdcAta,
+        vault: sharedMarket.vaultPda,
+        yesMint: sharedMarket.yesMintPda,
+        noMint: sharedMarket.noMintPda,
+        userYes: userYes,
+        userNo: userNo,
+      })
+      .rpc();
+
+    // Vault: 3 remaining + 10 new = 13 pairs * 1_000_000 = 13_000_000
+    const vaultAccount = await getAccount(
+      provider.connection,
+      sharedMarket.vaultPda
+    );
+    expect(Number(vaultAccount.amount)).to.equal(13_000_000);
+
+    // User token balances: 3 + 10 = 13
+    const yesAccount = await getAccount(provider.connection, userYes);
+    expect(Number(yesAccount.amount)).to.equal(13);
+    const noAccount = await getAccount(provider.connection, userNo);
+    expect(Number(noAccount.amount)).to.equal(13);
+
+    const marketAccount = await program.account.strikeMarket.fetch(
+      sharedMarket.marketPda
+    );
+    expect(marketAccount.totalPairsMinted.toNumber()).to.equal(13);
+  });
+
+  it("rejects mint_pair with amount=0 (InvalidAmount)", async () => {
+    const userYes = getAssociatedTokenAddressSync(
+      sharedMarket.yesMintPda,
+      admin.publicKey
+    );
+    const userNo = getAssociatedTokenAddressSync(
+      sharedMarket.noMintPda,
+      admin.publicKey
+    );
+
+    try {
+      await program.methods
+        .mintPair(new anchor.BN(0))
+        .accountsPartial({
+          user: admin.publicKey,
+          market: sharedMarket.marketPda,
+          userUsdc: adminUsdcAta,
+          vault: sharedMarket.vaultPda,
+          yesMint: sharedMarket.yesMintPda,
+          noMint: sharedMarket.noMintPda,
+          userYes: userYes,
+          userNo: userNo,
+        })
+        .rpc();
+      expect.fail("Should have thrown");
+    } catch (err: any) {
+      expect(err.toString()).to.include("InvalidAmount");
+    }
+  });
+
   it("rejects mint on settled market", async () => {
     // Admin-settle the shared market (close_time=0, so 0+3600 < validator clock)
     await program.methods
@@ -992,6 +1065,56 @@ describe("meridian", () => {
       expect(ob.askCount).to.equal(0);
       expect(ob.bids[0].quantity.toNumber()).to.equal(1);
       expect(ob.bids[0].price.toNumber()).to.equal(600_000);
+    });
+
+    it("crossing bid without counterparty ATA fails with MissingCounterpartyAccount", async () => {
+      const m = await createMarketWithOB("OB_M", new anchor.BN(100_000_000));
+
+      // Admin places resting ask at 500_000 for qty 1
+      await mintPairsFor(m, admin.publicKey, adminUsdcAta, 1);
+      const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
+
+      await program.methods
+        .placeOrder({ ask: {} }, new anchor.BN(500_000), new anchor.BN(1))
+        .accountsPartial({
+          user: admin.publicKey,
+          market: m.marketPda,
+          orderBook: m.orderBookPda,
+          obUsdcVault: m.obUsdcVault,
+          obYesVault: m.obYesVault,
+          userUsdc: adminUsdcAta,
+          userYes: adminYes,
+        })
+        .rpc();
+
+      // Fund userB for crossing bid
+      await mintUsdc(userBUsdc, 1_000_000);
+      const userBYes = await createAssociatedTokenAccount(
+        connection,
+        userB,
+        m.yesMintPda,
+        userB.publicKey
+      );
+
+      // Place crossing bid WITHOUT remainingAccounts (missing counterparty ATA)
+      try {
+        await program.methods
+          .placeOrder({ bid: {} }, new anchor.BN(500_000), new anchor.BN(1))
+          .accountsPartial({
+            user: userB.publicKey,
+            market: m.marketPda,
+            orderBook: m.orderBookPda,
+            obUsdcVault: m.obUsdcVault,
+            obYesVault: m.obYesVault,
+            userUsdc: userBUsdc,
+            userYes: userBYes,
+          })
+          .signers([userB])
+          .rpc();
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("MissingCounterpartyAccount");
+      }
     });
 
     // ── place_order - partial fill ─────────────────────────────

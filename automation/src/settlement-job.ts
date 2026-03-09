@@ -12,6 +12,7 @@
 
 import * as anchor from "@coral-xyz/anchor";
 import { PublicKey, Keypair, Connection } from "@solana/web3.js";
+import BN from "bn.js";
 import { readFileSync } from "node:fs";
 import "dotenv/config";
 
@@ -74,8 +75,8 @@ function isOutcomePending(outcome: Record<string, unknown>): boolean {
 /**
  * Convert a dollar price to USDC base units (6 decimals).
  */
-function dollarToUsdcBaseUnits(dollars: number): anchor.BN {
-  return new anchor.BN(Math.round(dollars * 1_000_000));
+function dollarToUsdcBaseUnits(dollars: number): BN {
+  return new BN(Math.round(dollars * 1_000_000));
 }
 
 /**
@@ -103,7 +104,7 @@ async function settleMarketWithRetry(
   hermesUrl: string
 ): Promise<SettlementResult> {
   const ticker = feedIdToTicker(marketAccount.pythFeedId) || marketAccount.ticker || "UNKNOWN";
-  const strikeDollars = (marketAccount.strikePrice as anchor.BN).toNumber() / 1_000_000;
+  const strikeDollars = (marketAccount.strikePrice as BN).toNumber() / 1_000_000;
   const marketKey = marketPubkey.toBase58();
 
   const startTime = Date.now();

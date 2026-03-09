@@ -12,6 +12,7 @@
 
 import * as anchor from "@coral-xyz/anchor";
 import { PublicKey, Keypair, Connection } from "@solana/web3.js";
+import BN from "bn.js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import "dotenv/config";
@@ -72,8 +73,8 @@ function getCloseTimeTimestamp(): number {
  * Convert a dollar strike price to USDC base units (6 decimals).
  * $680.00 -> 680_000_000
  */
-function dollarToUsdcBaseUnits(dollars: number): anchor.BN {
-  return new anchor.BN(Math.round(dollars * 1_000_000));
+function dollarToUsdcBaseUnits(dollars: number): BN {
+  return new BN(Math.round(dollars * 1_000_000));
 }
 
 /**
@@ -104,8 +105,8 @@ async function createMarketWithRetry(
   usdcMint: PublicKey,
   ticker: string,
   strikePriceDollars: number,
-  date: anchor.BN,
-  closeTime: anchor.BN,
+  date: BN,
+  closeTime: BN,
   pythFeedId: number[]
 ): Promise<MarketResult> {
   const strikePriceBaseUnits = dollarToUsdcBaseUnits(strikePriceDollars);
@@ -212,8 +213,8 @@ export async function runMorningJob(): Promise<void> {
   const program = new anchor.Program(idl as anchor.Idl, provider);
 
   // Timestamps for today
-  const date = new anchor.BN(getTradingDayTimestamp());
-  const closeTime = new anchor.BN(getCloseTimeTimestamp());
+  const date = new BN(getTradingDayTimestamp());
+  const closeTime = new BN(getCloseTimeTimestamp());
 
   console.log(`Trading date: ${new Date(date.toNumber() * 1000).toISOString().slice(0, 10)}`);
   console.log(`Close time:   ${new Date(closeTime.toNumber() * 1000).toISOString()}`);

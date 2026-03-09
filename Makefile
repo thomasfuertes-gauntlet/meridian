@@ -33,6 +33,7 @@ deploy:
 	@solana airdrop 5 $(shell solana-keygen pubkey $(ADMIN_WALLET)) > /dev/null 2>&1 || true
 	@echo "Building program..."
 	anchor build
+	@cp target/idl/meridian.json app/src/idl/meridian.json
 	@echo "Deploying to local validator..."
 	anchor deploy --provider.cluster localnet || echo "Deploy completed (IDL upload may have failed - this is OK)"
 
@@ -77,6 +78,7 @@ strategy-bots:
 deploy-devnet: wallets
 	@echo "Admin pubkey: $(shell solana-keygen pubkey $(ADMIN_WALLET))"
 	anchor build
+	@cp target/idl/meridian.json app/src/idl/meridian.json
 	anchor deploy --provider.cluster devnet --provider.wallet $(ADMIN_WALLET)
 
 # Setup devnet markets + USDC mint (run once after deploy-devnet)

@@ -248,7 +248,7 @@ export async function runSettlementJob(): Promise<void> {
     // Load configuration
     const rpcUrl = process.env.RPC_URL || "https://api.devnet.solana.com";
     const programId = new PublicKey(
-      process.env.PROGRAM_ID || "GMwKXYNKRkN3wGdgAwR4BzG2RfPGGLGjehuoNwUzBGk2"
+      process.env.PROGRAM_ID || (idl as { address: string }).address
     );
     const hermesUrl = process.env.HERMES_URL || "https://hermes.pyth.network";
 

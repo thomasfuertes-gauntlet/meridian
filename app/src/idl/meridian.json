@@ -1677,6 +1677,11 @@
       "code": 6017,
       "name": "NotOrderOwner",
       "msg": "Not the order owner"
+    },
+    {
+      "code": 6018,
+      "name": "MissingCounterpartyAccount",
+      "msg": "Missing counterparty account for fill"
     }
   ],
   "types": [

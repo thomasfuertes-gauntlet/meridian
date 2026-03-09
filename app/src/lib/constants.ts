@@ -45,7 +45,7 @@ export const MAG7 = [
     ticker: "META",
     name: "Meta Platforms",
     pythFeedId:
-      "0x2b9ab1e972a281585084148ba1389800799bd4be63b957507db1349314e47445",
+      "0x78a3e3b8e676a8f73c439f5d749737034b139bbbe899ba5775216fba596607fe",
   },
   {
     ticker: "TSLA",

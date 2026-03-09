@@ -6,10 +6,10 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-meridian = "G8kuCKKgU3uTswZPzkP5iXhSWd15ejKgnpr9atJx7azD"
+meridian = "C77THDyWuGX5tKXYarWPHRHG9XV3j1resWUet9EWs5ck"
 
 [programs.localnet]
-meridian = "GMwKXYNKRkN3wGdgAwR4BzG2RfPGGLGjehuoNwUzBGk2"
+meridian = "C77THDyWuGX5tKXYarWPHRHG9XV3j1resWUet9EWs5ck"
 
 [registry]
 url = "https://api.apr.dev"

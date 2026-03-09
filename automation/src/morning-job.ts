@@ -12,6 +12,9 @@
 
 import * as anchor from "@coral-xyz/anchor";
 import { PublicKey, Keypair, Connection } from "@solana/web3.js";
+// KEY-DECISION 2026-03-09: import BN from bn.js directly, not anchor.BN.
+// automation/ uses "type": "module" so `import * as anchor` gets ESM semantics
+// where anchor.BN is undefined.
 import BN from "bn.js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -186,7 +189,7 @@ export async function runMorningJob(): Promise<void> {
   // Load configuration
   const rpcUrl = process.env.RPC_URL || "https://api.devnet.solana.com";
   const programId = new PublicKey(
-    process.env.PROGRAM_ID || "G8kuCKKgU3uTswZPzkP5iXhSWd15ejKgnpr9atJx7azD"
+    process.env.PROGRAM_ID || "C77THDyWuGX5tKXYarWPHRHG9XV3j1resWUet9EWs5ck"
   );
   const usdcMint = new PublicKey(process.env.USDC_MINT || PublicKey.default);
   const hermesUrl = process.env.HERMES_URL || "https://hermes.pyth.network";

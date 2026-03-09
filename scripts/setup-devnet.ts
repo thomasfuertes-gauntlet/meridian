@@ -27,7 +27,7 @@ import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
 
 const MAG7_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"];
-// Strike generation uses +/-$10 from nearest rounded reference (see generateStrikes)
+// Strike generation uses +/-$10 from nearest rounded reference, no ATM (see generateStrikes)
 
 // Real Pyth Hermes feed IDs for equity prices (hex bytes, no 0x prefix)
 const PYTH_FEED_IDS: Record<string, number[]> = {
@@ -68,15 +68,12 @@ function hexToBytes(hex: string): number[] {
 }
 
 /**
- * Generate 3 strikes: nearest $10 below, at, and above reference price.
+ * Generate 2 strikes: nearest $10 below and above reference price.
+ * Drops ATM to concentrate liquidity on directional brackets.
  */
 function generateStrikes(refPrice: number): number[] {
   const at = Math.round(refPrice / 10) * 10;
-  const strikes = new Set<number>();
-  strikes.add(at - 10);
-  strikes.add(at);
-  strikes.add(at + 10);
-  return [...strikes].sort((a, b) => a - b);
+  return [at - 10, at + 10];
 }
 
 const USDC_DECIMALS = 6;

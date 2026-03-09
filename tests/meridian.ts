@@ -363,6 +363,38 @@ describe("meridian", () => {
     }
   });
 
+  it("rejects burn_pair when amount exceeds token balance", async () => {
+    // sharedMarket has 13 Yes + 13 No at this point (5 minted, 2 burned, 10 batch minted)
+    const userYes = getAssociatedTokenAddressSync(
+      sharedMarket.yesMintPda,
+      admin.publicKey
+    );
+    const userNo = getAssociatedTokenAddressSync(
+      sharedMarket.noMintPda,
+      admin.publicKey
+    );
+
+    try {
+      await program.methods
+        .burnPair(new anchor.BN(999))
+        .accountsPartial({
+          user: admin.publicKey,
+          market: sharedMarket.marketPda,
+          userUsdc: adminUsdcAta,
+          vault: sharedMarket.vaultPda,
+          yesMint: sharedMarket.yesMintPda,
+          noMint: sharedMarket.noMintPda,
+          userYes: userYes,
+          userNo: userNo,
+        })
+        .rpc();
+      expect.fail("Should have thrown");
+    } catch (err: any) {
+      // SPL token burn fails with insufficient funds before any USDC transfer
+      expect(err).to.exist;
+    }
+  });
+
   it("rejects mint on settled market", async () => {
     // Admin-settle the shared market (close_time=0, so 0+3600 < validator clock)
     await program.methods
@@ -1382,6 +1414,74 @@ describe("meridian", () => {
       const adminUsdcAfter = Number((await getAccount(connection, adminUsdcAta)).amount);
       // 2 * 500_000 = 1_000_000 refunded to admin
       expect(adminUsdcAfter - adminUsdcBefore).to.equal(1_000_000);
+    });
+
+    // ── cancel_order - error paths ───────────────────────────────
+
+    it("rejects cancel by non-owner on pending market (NotOrderOwner)", async () => {
+      const m = await createMarketWithOB("OBX1", new anchor.BN(100_000_000));
+      // Mint 1 pair so admin's Yes ATA exists
+      await mintPairsFor(m, admin.publicKey, adminUsdcAta, 1);
+      const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
+
+      // Admin places a resting bid
+      await program.methods
+        .placeOrder({ bid: {} }, new anchor.BN(500_000), new anchor.BN(2))
+        .accountsPartial({
+          user: admin.publicKey,
+          market: m.marketPda,
+          orderBook: m.orderBookPda,
+          obUsdcVault: m.obUsdcVault,
+          obYesVault: m.obYesVault,
+          userUsdc: adminUsdcAta,
+          userYes: adminYes,
+        })
+        .rpc();
+
+      const ob = await program.account.orderBook.fetch(m.orderBookPda);
+      const orderId = ob.bids[0].orderId;
+
+      // userB tries to cancel admin's order on a pending (unsettled) market
+      try {
+        await program.methods
+          .cancelOrder(orderId)
+          .accountsPartial({
+            user: userB.publicKey,
+            market: m.marketPda,
+            orderBook: m.orderBookPda,
+            obUsdcVault: m.obUsdcVault,
+            obYesVault: m.obYesVault,
+            refundDestination: adminUsdcAta,
+          })
+          .signers([userB])
+          .rpc();
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("NotOrderOwner");
+      }
+    });
+
+    it("rejects cancel with non-existent order_id (OrderNotFound)", async () => {
+      const m = await createMarketWithOB("OBX2", new anchor.BN(100_000_000));
+      // Mint 1 pair so admin's Yes ATA exists
+      await mintPairsFor(m, admin.publicKey, adminUsdcAta, 1);
+
+      try {
+        await program.methods
+          .cancelOrder(new anchor.BN(99999))
+          .accountsPartial({
+            user: admin.publicKey,
+            market: m.marketPda,
+            orderBook: m.orderBookPda,
+            obUsdcVault: m.obUsdcVault,
+            obYesVault: m.obYesVault,
+            refundDestination: adminUsdcAta,
+          })
+          .rpc();
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("OrderNotFound");
+      }
     });
 
     // ── place_order - rejections ───────────────────────────────

@@ -268,6 +268,18 @@ async function main() {
         await mintTo(connection, admin, usdcMint, botUsdcAta, admin, 5_000 * USDC_PER_PAIR);
         console.log("  [replenish] Minted 5,000 USDC to bot-b");
       }
+      // SOL check: airdrop on localhost if low (devnet faucets rate-limit, skip there)
+      const solBal = await connection.getBalance(bot.publicKey);
+      if (solBal < 1_000_000_000) { // < 1 SOL
+        const rpc = connection.rpcEndpoint;
+        if (rpc.includes("localhost") || rpc.includes("127.0.0.1")) {
+          const sig = await connection.requestAirdrop(bot.publicKey, 2_000_000_000);
+          await connection.confirmTransaction(sig);
+          console.log("  [replenish] Airdropped 2 SOL to bot-b");
+        } else {
+          console.warn("  [replenish] bot-b SOL low (<1), fund manually on devnet");
+        }
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`  [replenish] FAILED: ${msg.slice(0, 150)}`);

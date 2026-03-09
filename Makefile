@@ -35,7 +35,7 @@ deploy:
 	anchor build
 	@cp target/idl/meridian.json app/src/idl/meridian.json
 	@echo "Deploying to local validator..."
-	anchor deploy --provider.cluster localnet || echo "Deploy completed (IDL upload may have failed - this is OK)"
+	anchor deploy --provider.cluster localnet --no-idl
 
 # Run setup script (pass WALLET=<pubkey> to fund a browser wallet)
 setup:
@@ -46,6 +46,7 @@ setup:
 # Start frontend dev server (foreground). Bots seed + live trade in background.
 # Pass OFFLINE=1 to use synthetic prices (for weekends/off-hours dev).
 dev-frontend:
+	@npm ci --prefix app --silent
 	@echo "Seeding bots + starting live trader in background..."
 	@( OFFLINE=$(OFFLINE) ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/seed-bots.ts && \

@@ -1,4 +1,4 @@
-.PHONY: dev dev-frontend dev-validator deploy setup wallets bots live test clean circuit tree deploy-devnet setup-devnet wallet-pubkeys health settle morning
+.PHONY: dev dev-frontend dev-validator deploy setup wallets bots live test clean circuit tree deploy-devnet setup-devnet wallet-pubkeys health settle morning nuke
 
 # Source Solana/Rust toolchain
 export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.cargo/bin:$(PATH)
@@ -117,6 +117,19 @@ circuit:
 tree:
 	ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/build-tree.ts
+
+# Devnet nuke: settle stale markets, create fresh ones, seed bots
+nuke: wallets settle morning
+	@echo "Seeding devnet order books..."
+	ANCHOR_PROVIDER_URL=$${ANCHOR_PROVIDER_URL:-https://api.devnet.solana.com} ANCHOR_WALLET=$(ADMIN_WALLET) \
+		npx tsx scripts/seed-bots.ts
+	@echo ""
+	@echo "=== Nuke complete ==="
+	@echo "  - Stale markets settled"
+	@echo "  - Today's markets created"
+	@echo "  - Order books seeded"
+	@echo ""
+	@echo "Next: railway up -s bots -d && railway up app --path-as-root -s frontend -d"
 
 # Clean up
 clean:

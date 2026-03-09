@@ -1,4 +1,4 @@
-.PHONY: dev dev-frontend dev-validator deploy setup wallets bots live test clean circuit tree deploy-devnet setup-devnet wallet-pubkeys health settle morning nuke
+.PHONY: dev dev-frontend dev-validator deploy setup wallets bots live test check clean circuit tree deploy-devnet setup-devnet wallet-pubkeys health settle morning nuke
 
 # Source Solana/Rust toolchain (Anza installer, not Homebrew - brew's solana lacks build-sbf)
 export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.cargo/bin:$(PATH)
@@ -108,6 +108,19 @@ morning: wallets
 # Run tests (local validator started by anchor test)
 test: wallets
 	anchor test
+
+## Pre-push smoke test: contract tests + frontend build + lint
+check: wallets
+	@echo "=== Anchor tests ==="
+	anchor test
+	@echo ""
+	@echo "=== Frontend build ==="
+	VITE_USDC_MINT="11111111111111111111111111111111" npm run build --prefix app
+	@echo ""
+	@echo "=== Lint ==="
+	npm run lint --prefix app
+	@echo ""
+	@echo "=== All checks passed ==="
 
 # Build ZK circuit artifacts (one-time, requires circom: cargo install circom)
 circuit:

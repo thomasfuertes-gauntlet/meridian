@@ -64,10 +64,23 @@ const PYTH_FEED_IDS: Record<string, string> = {
 /**
  * Sigmoid fair value for a binary option.
  * Returns probability [0.05, 0.95] that stock closes above strike.
- * k=10 gives: at strike -> 0.50, 5% above -> ~0.62, 10% above -> ~0.73
+ *
+ * Dynamic k: steepens as close approaches (prices snap toward 0/1).
+ *   hoursUntilClose >= 8h  -> k=10 (gentle, wide spreads)
+ *   hoursUntilClose ~= 1h  -> k=25 (moderate compression)
+ *   hoursUntilClose ~= 0h  -> k=40 (steep, tight spreads)
+ * Falls back to k=10 when hoursUntilClose is omitted (seed-bots, tests).
  */
-export function fairValue(stockPriceUsd: number, strikePriceUsd: number): number {
-  const k = 10;
+export function fairValue(stockPriceUsd: number, strikePriceUsd: number, hoursUntilClose?: number): number {
+  // KEY-DECISION 2026-03-09: linear interpolation k=10..40 over 8h..0h window
+  const K_MIN = 10;
+  const K_MAX = 40;
+  const DECAY_WINDOW_HOURS = 8;
+  let k = K_MIN;
+  if (hoursUntilClose !== undefined && hoursUntilClose < DECAY_WINDOW_HOURS) {
+    const t = Math.max(0, hoursUntilClose) / DECAY_WINDOW_HOURS; // 1 at 8h, 0 at close
+    k = K_MIN + (K_MAX - K_MIN) * (1 - t);
+  }
   const x = (stockPriceUsd - strikePriceUsd) / strikePriceUsd;
   const raw = 1 / (1 + Math.exp(-k * x));
   return Math.max(0.05, Math.min(0.95, raw));

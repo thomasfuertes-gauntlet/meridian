@@ -109,6 +109,7 @@ interface MarketCtx {
   pubkey: PublicKey;
   ticker: string;
   strikePrice: number; // USDC base units
+  closeTime: number;   // Unix seconds
   yesMint: PublicKey;
   noMint: PublicKey;
   vault: PublicKey;
@@ -156,6 +157,7 @@ async function main() {
         pubkey: pk,
         ticker: m.account.ticker as string,
         strikePrice: m.account.strikePrice.toNumber(),
+        closeTime: m.account.closeTime.toNumber(),
         yesMint: PublicKey.findProgramAddressSync([Buffer.from("yes_mint"), pk.toBuffer()], pid)[0],
         noMint: PublicKey.findProgramAddressSync([Buffer.from("no_mint"), pk.toBuffer()], pid)[0],
         vault: PublicKey.findProgramAddressSync([Buffer.from("vault"), pk.toBuffer()], pid)[0],
@@ -194,8 +196,9 @@ async function main() {
   function getFairForMarket(mkt: MarketCtx): number {
     const stockPrice = stockPrices.get(mkt.ticker);
     const strikeDollars = mkt.strikePrice / USDC_PER_PAIR;
+    const hoursUntilClose = (mkt.closeTime - Date.now() / 1000) / 3600;
     // fetchStockPrices() now always returns all tickers (synthetic fallback)
-    return stockPrice ? fairValue(stockPrice, strikeDollars) : 0.50;
+    return stockPrice ? fairValue(stockPrice, strikeDollars, hoursUntilClose) : 0.50;
   }
 
   // Track which markets have had ATAs initialized this session

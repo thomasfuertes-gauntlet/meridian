@@ -126,10 +126,12 @@ async function main() {
     const ticker: string = m.account.ticker;
     const strikePrice: number = m.account.strikePrice.toNumber();
     const strikeDollars = strikePrice / USDC_PER_PAIR;
+    const closeTime: number = m.account.closeTime.toNumber();
+    const hoursUntilClose = (closeTime - Date.now() / 1000) / 3600;
 
     // Compute fair value from oracle price
     const stockPrice = stockPrices.get(ticker);
-    const fair = stockPrice ? fairValue(stockPrice, strikeDollars) : 0.50;
+    const fair = stockPrice ? fairValue(stockPrice, strikeDollars, hoursUntilClose) : 0.50;
     const { bids: bidLevels, asks: askLevels } = computeLevels(fair);
 
     console.log(`--- ${ticker} > $${strikeDollars.toFixed(2)} (fair: $${fair.toFixed(2)}) ---`);

@@ -42,9 +42,14 @@ export function ensureWalletFiles(): void {
   }
 }
 
-/** Ensure deterministic program keypair exists in target/deploy/ */
+// KEY-DECISION 2026-03-09: Canonical deploy keypair for C77THDyWuGX5tKXYarWPHRHG9XV3j1resWUet9EWs5ck.
+// Hardcoded because this keypair predates the sha256 derivation scheme.
+// Private repo only - devnet keypair, no real funds.
+const DEPLOY_KEYPAIR_BYTES = new Uint8Array([145,164,177,254,247,223,6,162,73,58,196,211,181,57,36,238,153,29,246,172,144,5,172,198,153,89,102,158,233,131,126,6,165,1,86,108,12,54,232,73,152,181,91,111,222,29,71,241,59,179,157,160,41,119,159,215,94,35,94,140,108,163,12,233]);
+
+/** Ensure canonical program keypair exists in target/deploy/ */
 export function ensureProgramKeypair(): Keypair {
-  const kp = deriveKeypair("program");
+  const kp = Keypair.fromSecretKey(DEPLOY_KEYPAIR_BYTES);
   const dir = path.dirname(PROGRAM_KEYPAIR_PATH);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });

@@ -1,4 +1,4 @@
-.PHONY: dev dev-frontend dev-validator deploy setup wallets bots live test check clean circuit tree deploy-devnet setup-devnet wallet-pubkeys health settle morning nuke
+.PHONY: dev dev-frontend dev-validator deploy setup wallets bots live strategy-bots test check clean circuit tree deploy-devnet setup-devnet wallet-pubkeys health settle morning nuke
 
 # Source Solana/Rust toolchain (Anza installer, not Homebrew - brew's solana lacks build-sbf)
 export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.cargo/bin:$(PATH)
@@ -50,6 +50,8 @@ dev-frontend:
 		npx tsx scripts/seed-bots.ts && \
 	   OFFLINE=$(OFFLINE) ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/live-bots.ts ) > /dev/null 2>&1 &
+	@( sleep 30 && OFFLINE=$(OFFLINE) ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
+		npx tsx scripts/strategy-bots.ts ) > /dev/null 2>&1 &
 	@echo "Starting frontend..."
 	npm run dev --prefix app
 
@@ -64,6 +66,12 @@ live:
 	@echo "Starting live trading bot (Ctrl+C to stop)..."
 	OFFLINE=$(OFFLINE) ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/live-bots.ts
+
+# Run strategy bots (directional traders using bot-b wallet)
+strategy-bots:
+	@echo "Starting strategy bots (Ctrl+C to stop)..."
+	OFFLINE=$(OFFLINE) ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
+		npx tsx scripts/strategy-bots.ts
 
 # Deploy to devnet (fund admin wallet first: solana airdrop 2 <admin-pubkey> --url devnet)
 deploy-devnet: wallets
@@ -149,4 +157,5 @@ clean:
 	@pkill -f solana-test-validator 2>/dev/null || true
 	@pkill -f seed-bots 2>/dev/null || true
 	@pkill -f live-bots 2>/dev/null || true
+	@pkill -f strategy-bots 2>/dev/null || true
 	@echo "Validator and bots stopped"

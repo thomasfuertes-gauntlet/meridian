@@ -72,13 +72,17 @@ export function Trade() {
           vault: m.account.vault as PublicKey,
           settled: m.account.outcome?.pending === undefined,
           outcome: JSON.stringify(m.account.outcome),
-        }))
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .sort((a: any, b: any) => a.strikePrice - b.strikePrice);
+        }));
 
-      setMarkets(tickerMarkets);
-      if (tickerMarkets.length > 0 && !selectedMarket) {
-        setSelectedMarket(tickerMarkets[0]);
+      // Show only the most recent date's markets
+      const maxDate = Math.max(...tickerMarkets.map((m: MarketInfo) => m.date));
+      const filteredMarkets = tickerMarkets
+        .filter((m: MarketInfo) => m.date === maxDate)
+        .sort((a: MarketInfo, b: MarketInfo) => a.strikePrice - b.strikePrice);
+
+      setMarkets(filteredMarkets);
+      if (filteredMarkets.length > 0 && !selectedMarket) {
+        setSelectedMarket(filteredMarkets[0]);
       }
     } catch (err) {
       console.error("Failed to load markets:", err);

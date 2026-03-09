@@ -21,11 +21,22 @@ export function Markets() {
         const program = getReadOnlyProgram();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const allMarkets = await (program.account as any).strikeMarket.all();
-        const counts = new Map<string, number>();
+        // Group by ticker, keep only the most recent date per ticker
+        const byTicker = new Map<string, { date: number; count: number }>();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         for (const m of allMarkets) {
           const ticker = m.account.ticker as string;
-          counts.set(ticker, (counts.get(ticker) ?? 0) + 1);
+          const date = m.account.date.toNumber() as number;
+          const existing = byTicker.get(ticker);
+          if (!existing || date > existing.date) {
+            byTicker.set(ticker, { date, count: 1 });
+          } else if (date === existing.date) {
+            existing.count++;
+          }
+        }
+        const counts = new Map<string, number>();
+        for (const [ticker, { count }] of byTicker) {
+          counts.set(ticker, count);
         }
         setStrikeCounts(counts);
       } catch (err) {

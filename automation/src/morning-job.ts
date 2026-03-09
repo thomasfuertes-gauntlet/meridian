@@ -189,7 +189,7 @@ export async function runMorningJob(): Promise<void> {
   // Load configuration
   const rpcUrl = process.env.RPC_URL || "https://api.devnet.solana.com";
   const programId = new PublicKey(
-    process.env.PROGRAM_ID || "C77THDyWuGX5tKXYarWPHRHG9XV3j1resWUet9EWs5ck"
+    process.env.PROGRAM_ID || "GMwKXYNKRkN3wGdgAwR4BzG2RfPGGLGjehuoNwUzBGk2"
   );
   const usdcMint = new PublicKey(process.env.USDC_MINT || PublicKey.default);
   const hermesUrl = process.env.HERMES_URL || "https://hermes.pyth.network";

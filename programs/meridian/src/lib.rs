@@ -7,7 +7,7 @@ pub mod state;
 use instructions::*;
 use state::OrderSide;
 
-declare_id!("C77THDyWuGX5tKXYarWPHRHG9XV3j1resWUet9EWs5ck");
+declare_id!("GMwKXYNKRkN3wGdgAwR4BzG2RfPGGLGjehuoNwUzBGk2");
 
 #[program]
 pub mod meridian {

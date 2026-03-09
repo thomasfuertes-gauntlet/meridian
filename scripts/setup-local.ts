@@ -24,19 +24,16 @@ import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
 
 const MAG7_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"];
-const STRIKE_OFFSETS = [-0.09, -0.06, -0.03, 0.03, 0.06, 0.09];
-
 /**
- * Generate strikes at +/-3%, +/-6%, +/-9% from reference price.
- * Rounded to nearest $10, deduplicated, stored in USDC base units.
+ * Generate 3 strikes: nearest $10 below, at, and above reference price.
+ * E.g., ref=$255 -> [$250, $260, $270] or ref=$390 -> [$380, $390, $400].
  */
 function generateStrikes(refPrice: number): number[] {
+  const at = Math.round(refPrice / 10) * 10;
   const strikes = new Set<number>();
-  for (const offset of STRIKE_OFFSETS) {
-    const raw = refPrice * (1 + offset);
-    const rounded = Math.round(raw / 10) * 10; // nearest $10
-    if (rounded > 0) strikes.add(rounded);
-  }
+  strikes.add(at - 10);
+  strikes.add(at);
+  strikes.add(at + 10);
   return [...strikes].sort((a, b) => a - b);
 }
 

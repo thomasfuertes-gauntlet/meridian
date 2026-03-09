@@ -99,6 +99,25 @@ async function main() {
   );
   console.log(`Found ${pendingMarkets.length} active markets\n`);
 
+  // Auto-skip if order books already have orders (idempotent seeding)
+  if (pendingMarkets.length > 0) {
+    const sampleMarket = pendingMarkets[0].publicKey;
+    const [sampleOb] = PublicKey.findProgramAddressSync(
+      [Buffer.from("orderbook"), sampleMarket.toBuffer()],
+      program.programId,
+    );
+    const obAccount = await connection.getAccountInfo(sampleOb);
+    if (obAccount && obAccount.data.length >= 8 + 108) {
+      // bid_count at offset 8+104, ask_count at offset 8+106 (discriminator + header)
+      const bidCount = obAccount.data.readUInt16LE(8 + 104);
+      const askCount = obAccount.data.readUInt16LE(8 + 106);
+      if (bidCount + askCount > 0) {
+        console.log(`Order books already seeded (${bidCount} bids, ${askCount} asks on first market). Skipping.`);
+        return;
+      }
+    }
+  }
+
   let seeded = 0;
   let failed = 0;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

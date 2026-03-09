@@ -16,6 +16,7 @@ const WALLET_NAMES = ["admin", "bot-a", "bot-b"] as const;
 export type WalletName = (typeof WALLET_NAMES)[number];
 
 const WALLETS_DIR = path.join(__dirname, "../.wallets");
+const PROGRAM_KEYPAIR_PATH = path.join(__dirname, "../target/deploy/meridian-keypair.json");
 
 function deriveKeypair(name: string): Keypair {
   const seed = createHash("sha256").update(`meridian-dev-${name}`).digest();
@@ -41,12 +42,25 @@ export function ensureWalletFiles(): void {
   }
 }
 
+/** Ensure deterministic program keypair exists in target/deploy/ */
+export function ensureProgramKeypair(): Keypair {
+  const kp = deriveKeypair("program");
+  const dir = path.dirname(PROGRAM_KEYPAIR_PATH);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  fs.writeFileSync(PROGRAM_KEYPAIR_PATH, JSON.stringify(Array.from(kp.secretKey)));
+  return kp;
+}
+
 // When run directly, generate wallet files and print pubkeys
 if (require.main === module) {
   ensureWalletFiles();
+  const programKp = ensureProgramKeypair();
   console.log("Dev wallets written to .wallets/");
   for (const name of WALLET_NAMES) {
     const kp = deriveKeypair(name);
     console.log(`  ${name}: ${kp.publicKey.toString()}`);
   }
+  console.log(`  program: ${programKp.publicKey.toString()}`);
 }

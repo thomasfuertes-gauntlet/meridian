@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/meridian.json`.
  */
 export type Meridian = {
-  "address": "G8kuCKKgU3uTswZPzkP5iXhSWd15ejKgnpr9atJx7azD",
+  "address": "GMwKXYNKRkN3wGdgAwR4BzG2RfPGGLGjehuoNwUzBGk2",
   "metadata": {
     "name": "meridian",
     "version": "0.1.0",

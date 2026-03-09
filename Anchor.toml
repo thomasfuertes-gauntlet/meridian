@@ -5,17 +5,17 @@ anchor_version = "0.32.0"
 resolution = true
 skip-lint = false
 
-[programs.localnet]
-meridian = "G8kuCKKgU3uTswZPzkP5iXhSWd15ejKgnpr9atJx7azD"
-
 [programs.devnet]
 meridian = "G8kuCKKgU3uTswZPzkP5iXhSWd15ejKgnpr9atJx7azD"
+
+[programs.localnet]
+meridian = "GMwKXYNKRkN3wGdgAwR4BzG2RfPGGLGjehuoNwUzBGk2"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "Localnet"
+cluster = "localnet"
 wallet = ".wallets/admin.json"
 
 [scripts]

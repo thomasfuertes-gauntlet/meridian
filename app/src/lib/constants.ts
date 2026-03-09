@@ -1,7 +1,12 @@
 import { PublicKey } from "@solana/web3.js";
 
+// Deterministic local: GMwKXYNKRkN3wGdgAwR4BzG2RfPGGLGjehuoNwUzBGk2
+// Devnet: G8kuCKKgU3uTswZPzkP5iXhSWd15ejKgnpr9atJx7azD
+const DEVNET_PROGRAM_ID = "G8kuCKKgU3uTswZPzkP5iXhSWd15ejKgnpr9atJx7azD";
+const LOCAL_PROGRAM_ID = "GMwKXYNKRkN3wGdgAwR4BzG2RfPGGLGjehuoNwUzBGk2";
+const isLocalhost = !import.meta.env.VITE_RPC_URL;
 export const PROGRAM_ID = new PublicKey(
-  "G8kuCKKgU3uTswZPzkP5iXhSWd15ejKgnpr9atJx7azD"
+  import.meta.env.VITE_PROGRAM_ID || (isLocalhost ? LOCAL_PROGRAM_ID : DEVNET_PROGRAM_ID)
 );
 
 // Vite exposes env vars prefixed with VITE_

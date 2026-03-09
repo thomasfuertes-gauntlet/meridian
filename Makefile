@@ -1,6 +1,6 @@
 .PHONY: dev dev-frontend dev-validator deploy setup wallets bots live test clean circuit tree deploy-devnet setup-devnet wallet-pubkeys health settle morning nuke
 
-# Source Solana/Rust toolchain
+# Source Solana/Rust toolchain (Anza installer, not Homebrew - brew's solana lacks build-sbf)
 export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.cargo/bin:$(PATH)
 
 # Dev wallet path (deterministic, per-project)

@@ -41,6 +41,8 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      # NOTE: Pin to 1.94.0. Newer Rust auto-upgrades Cargo.lock to v4 which
+      # requires -Znext-lockfile-bump (nightly only). Keep Cargo.lock at v3.
       - uses: dtolnay/rust-toolchain@1.94.0
       - uses: Swatinem/rust-cache@v2
         with:

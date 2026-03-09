@@ -2,6 +2,7 @@
   "name": "meridian",
   "version": "0.1.0",
   "description": "Binary outcome markets for MAG7 stocks on Solana",
+  "type": "module",
   "scripts": {
     "test": "ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
   },

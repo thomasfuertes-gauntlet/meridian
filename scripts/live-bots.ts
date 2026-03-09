@@ -215,24 +215,20 @@ async function main() {
       const qty = randInt(1, 3);
 
       // Mint pairs for token supply
-      const tx = new anchor.web3.Transaction();
-      for (let i = 0; i < qty; i++) {
-        const ix = await program.methods
-          .mintPair()
-          .accountsPartial({
-            user: bot.publicKey,
-            market: mkt.pubkey,
-            yesMint: mkt.yesMint,
-            noMint: mkt.noMint,
-            vault: mkt.vault,
-            userUsdc: botUsdcAta,
-            userYes: botYesAta,
-            userNo: getAssociatedTokenAddressSync(mkt.noMint, bot.publicKey),
-          })
-          .instruction();
-        tx.add(ix);
-      }
-      await anchor.web3.sendAndConfirmTransaction(connection, tx, [bot]);
+      await program.methods
+        .mintPair(new anchor.BN(qty))
+        .accountsPartial({
+          user: bot.publicKey,
+          market: mkt.pubkey,
+          yesMint: mkt.yesMint,
+          noMint: mkt.noMint,
+          vault: mkt.vault,
+          userUsdc: botUsdcAta,
+          userYes: botYesAta,
+          userNo: getAssociatedTokenAddressSync(mkt.noMint, bot.publicKey),
+        })
+        .signers([bot])
+        .rpc();
       txCount++;
       await sleep(TX_DELAY_MS);
 
@@ -260,7 +256,7 @@ async function main() {
     } else if (book.bids.length > MIN_ORDERS_PER_SIDE && book.asks.length > MIN_ORDERS_PER_SIDE) {
       // 20% - Cross the spread with qty 1 (visible fill)
       await program.methods
-        .mintPair()
+        .mintPair(new anchor.BN(1))
         .accountsPartial({
           user: bot.publicKey,
           market: mkt.pubkey,

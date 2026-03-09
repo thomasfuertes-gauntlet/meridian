@@ -215,9 +215,9 @@ export async function buildBuyNoTx(
     )
   );
 
-  // Step 1: Mint pairs (1 per call, need `quantity` pairs for the ask)
+  // Step 1: Mint pairs
   const mintIx = await program.methods
-    .mintPair()
+    .mintPair(quantity)
     .accountsPartial({
       user,
       market,
@@ -229,8 +229,7 @@ export async function buildBuyNoTx(
       userNo: userNoAta,
     })
     .instruction();
-  const qty = quantity.toNumber();
-  for (let i = 0; i < qty; i++) tx.add(mintIx);
+  tx.add(mintIx);
 
   // Step 2: Sell the Yes tokens on the order book
   const placeIx = await program.methods

@@ -75,7 +75,8 @@ pub struct MintPair<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<MintPair>) -> Result<()> {
+pub fn handler(ctx: Context<MintPair>, amount: u64) -> Result<()> {
+    require!(amount > 0, MeridianError::InvalidAmount);
     require!(!ctx.accounts.config.paused, MeridianError::Paused);
     require!(
         ctx.accounts.market.outcome == MarketOutcome::Pending,
@@ -92,7 +93,8 @@ pub fn handler(ctx: Context<MintPair>) -> Result<()> {
     ];
     let signer_seeds = &[&market_seeds[..]];
 
-    // Transfer 1 USDC from user to vault
+    // Transfer USDC from user to vault
+    let usdc_amount = amount.checked_mul(USDC_PER_PAIR).unwrap();
     token::transfer(
         CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -102,10 +104,10 @@ pub fn handler(ctx: Context<MintPair>) -> Result<()> {
                 authority: ctx.accounts.user.to_account_info(),
             },
         ),
-        USDC_PER_PAIR,
+        usdc_amount,
     )?;
 
-    // Mint 1 Yes token to user
+    // Mint Yes tokens to user
     token::mint_to(
         CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
@@ -116,10 +118,10 @@ pub fn handler(ctx: Context<MintPair>) -> Result<()> {
             },
             signer_seeds,
         ),
-        1,
+        amount,
     )?;
 
-    // Mint 1 No token to user
+    // Mint No tokens to user
     token::mint_to(
         CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
@@ -130,11 +132,11 @@ pub fn handler(ctx: Context<MintPair>) -> Result<()> {
             },
             signer_seeds,
         ),
-        1,
+        amount,
     )?;
 
     let market = &mut ctx.accounts.market;
-    market.total_pairs_minted += 1;
+    market.total_pairs_minted = market.total_pairs_minted.checked_add(amount).unwrap();
 
     // Reload vault and assert invariant
     ctx.accounts.vault.reload()?;

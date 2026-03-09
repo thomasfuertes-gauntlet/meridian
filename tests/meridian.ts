@@ -179,7 +179,7 @@ describe("meridian", () => {
     );
 
     await program.methods
-      .mintPair()
+      .mintPair(new anchor.BN(1))
       .accountsPartial({
         user: admin.publicKey,
         market: sharedMarket.marketPda,
@@ -223,7 +223,7 @@ describe("meridian", () => {
 
     for (let i = 0; i < 4; i++) {
       await program.methods
-        .mintPair()
+        .mintPair(new anchor.BN(1))
         .accountsPartial({
           user: admin.publicKey,
           market: sharedMarket.marketPda,
@@ -311,7 +311,7 @@ describe("meridian", () => {
 
     try {
       await program.methods
-        .mintPair()
+        .mintPair(new anchor.BN(1))
         .accountsPartial({
           user: admin.publicKey,
           market: sharedMarket.marketPda,
@@ -347,7 +347,7 @@ describe("meridian", () => {
     );
 
     await program.methods
-      .mintPair()
+      .mintPair(new anchor.BN(1))
       .accountsPartial({
         user: admin.publicKey,
         market: pdas.marketPda,
@@ -401,7 +401,7 @@ describe("meridian", () => {
     // Mint 10 pairs
     for (let i = 0; i < 10; i++) {
       await program.methods
-        .mintPair()
+        .mintPair(new anchor.BN(1))
         .accountsPartial({
           user: admin.publicKey,
           market: pdas.marketPda,
@@ -498,7 +498,7 @@ describe("meridian", () => {
     // Mint 5 pairs
     for (let i = 0; i < 5; i++) {
       await program.methods
-        .mintPair()
+        .mintPair(new anchor.BN(1))
         .accountsPartial({
           user: admin.publicKey,
           market: pdas.marketPda,
@@ -566,7 +566,7 @@ describe("meridian", () => {
     // Mint 3 pairs
     for (let i = 0; i < 3; i++) {
       await program.methods
-        .mintPair()
+        .mintPair(new anchor.BN(1))
         .accountsPartial({
           user: admin.publicKey,
           market: pdas.marketPda,
@@ -779,24 +779,22 @@ describe("meridian", () => {
       const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, userKey);
       const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, userKey);
 
-      for (let i = 0; i < count; i++) {
-        const tx = program.methods
-          .mintPair()
-          .accountsPartial({
-            user: userKey,
-            market: pdas.marketPda,
-            userUsdc: userUsdcAta,
-            vault: pdas.vaultPda,
-            yesMint: pdas.yesMintPda,
-            noMint: pdas.noMintPda,
-            userYes,
-            userNo,
-          });
-        if (signers) {
-          await tx.signers(signers).rpc();
-        } else {
-          await tx.rpc();
-        }
+      const tx = program.methods
+        .mintPair(new anchor.BN(count))
+        .accountsPartial({
+          user: userKey,
+          market: pdas.marketPda,
+          userUsdc: userUsdcAta,
+          vault: pdas.vaultPda,
+          yesMint: pdas.yesMintPda,
+          noMint: pdas.noMintPda,
+          userYes,
+          userNo,
+        });
+      if (signers) {
+        await tx.signers(signers).rpc();
+      } else {
+        await tx.rpc();
       }
     }
 
@@ -1451,7 +1449,7 @@ describe("meridian", () => {
 
       try {
         await program.methods
-          .mintPair()
+          .mintPair(new anchor.BN(1))
           .accountsPartial({
             user: admin.publicKey,
             market: pMarket.marketPda,
@@ -1490,7 +1488,7 @@ describe("meridian", () => {
       );
 
       await program.methods
-        .mintPair()
+        .mintPair(new anchor.BN(1))
         .accountsPartial({
           user: admin.publicKey,
           market: pMarket.marketPda,
@@ -1549,7 +1547,7 @@ describe("meridian", () => {
 
       for (let i = 0; i < 7; i++) {
         await program.methods
-          .mintPair()
+          .mintPair(new anchor.BN(1))
           .accountsPartial({
             user: admin.publicKey,
             market: pdas.marketPda,
@@ -1577,7 +1575,7 @@ describe("meridian", () => {
       // Mint 5
       for (let i = 0; i < 5; i++) {
         await program.methods
-          .mintPair()
+          .mintPair(new anchor.BN(1))
           .accountsPartial({
             user: admin.publicKey,
             market: pdas.marketPda,
@@ -1620,7 +1618,7 @@ describe("meridian", () => {
       // Mint 6
       for (let i = 0; i < 6; i++) {
         await program.methods
-          .mintPair()
+          .mintPair(new anchor.BN(1))
           .accountsPartial({
             user: admin.publicKey,
             market: pdas.marketPda,
@@ -1668,7 +1666,7 @@ describe("meridian", () => {
       // Mint 10
       for (let i = 0; i < 10; i++) {
         await program.methods
-          .mintPair()
+          .mintPair(new anchor.BN(1))
           .accountsPartial({
             user: admin.publicKey,
             market: pdas.marketPda,
@@ -1751,7 +1749,7 @@ describe("meridian", () => {
 
       for (let i = 0; i < 4; i++) {
         await program.methods
-          .mintPair()
+          .mintPair(new anchor.BN(1))
           .accountsPartial({
             user: admin.publicKey,
             market: pdas.marketPda,
@@ -1783,7 +1781,7 @@ describe("meridian", () => {
       // Mint 6
       for (let i = 0; i < 6; i++) {
         await program.methods
-          .mintPair()
+          .mintPair(new anchor.BN(1))
           .accountsPartial({
             user: admin.publicKey,
             market: pdas.marketPda,
@@ -1893,7 +1891,7 @@ describe("meridian", () => {
       // Mint 3 pairs
       for (let i = 0; i < 3; i++) {
         await program.methods
-          .mintPair()
+          .mintPair(new anchor.BN(1))
           .accountsPartial({
             user: admin.publicKey,
             market: pdas.marketPda,
@@ -1949,7 +1947,7 @@ describe("meridian", () => {
       // Mint 5 pairs
       for (let i = 0; i < 5; i++) {
         await program.methods
-          .mintPair()
+          .mintPair(new anchor.BN(1))
           .accountsPartial({
             user: admin.publicKey,
             market: pdas.marketPda,

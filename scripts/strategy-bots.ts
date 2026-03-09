@@ -327,24 +327,20 @@ async function main() {
       const botNoAta = getAssociatedTokenAddressSync(mkt.noMint, bot.publicKey);
 
       // Mint pairs first
-      const mintTx = new anchor.web3.Transaction();
-      for (let i = 0; i < signal.qty; i++) {
-        const ix = await program.methods
-          .mintPair()
-          .accountsPartial({
-            user: bot.publicKey,
-            market: mkt.pubkey,
-            yesMint: mkt.yesMint,
-            noMint: mkt.noMint,
-            vault: mkt.vault,
-            userUsdc: botUsdcAta,
-            userYes: botYesAta,
-            userNo: botNoAta,
-          })
-          .instruction();
-        mintTx.add(ix);
-      }
-      await anchor.web3.sendAndConfirmTransaction(connection, mintTx, [bot]);
+      await program.methods
+        .mintPair(new anchor.BN(signal.qty))
+        .accountsPartial({
+          user: bot.publicKey,
+          market: mkt.pubkey,
+          yesMint: mkt.yesMint,
+          noMint: mkt.noMint,
+          vault: mkt.vault,
+          userUsdc: botUsdcAta,
+          userYes: botYesAta,
+          userNo: botNoAta,
+        })
+        .signers([bot])
+        .rpc();
       await sleep(TX_DELAY_MS);
 
       // Place ask at bestBid to fill immediately

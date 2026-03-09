@@ -1,3 +1,8 @@
+// Anchor 0.32 codegen requires glob re-exports for Accounts structs.
+// Each instruction module exports `handler` - the ambiguity is harmless
+// since lib.rs calls them by qualified path.
+#![allow(ambiguous_glob_reexports)]
+
 pub mod initialize_config;
 pub mod create_strike_market;
 pub mod mint_pair;

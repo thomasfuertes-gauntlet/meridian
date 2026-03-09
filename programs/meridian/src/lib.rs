@@ -29,8 +29,8 @@ pub mod meridian {
         instructions::create_strike_market::handler(ctx, ticker, strike_price, date, close_time, pyth_feed_id)
     }
 
-    pub fn mint_pair(ctx: Context<MintPair>) -> Result<()> {
-        instructions::mint_pair::handler(ctx)
+    pub fn mint_pair(ctx: Context<MintPair>, amount: u64) -> Result<()> {
+        instructions::mint_pair::handler(ctx, amount)
     }
 
     pub fn burn_pair(ctx: Context<BurnPair>, amount: u64) -> Result<()> {

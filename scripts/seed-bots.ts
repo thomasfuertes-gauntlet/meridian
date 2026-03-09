@@ -23,7 +23,6 @@ import { getDevWallet } from "./dev-wallets";
 import { fairValue, computeLevels, fetchStockPrices } from "./fair-value";
 
 const USDC_PER_PAIR = 1_000_000;
-const BATCH_SIZE = 10;
 const TX_DELAY_MS = 1200; // throttle for devnet/Helius rate limits (1 tx/s free tier)
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -181,28 +180,21 @@ async function main() {
     // Always mint at least 1 pair so bot has tokens for both sides
     const mintQty = Math.max(totalAskQty, 1);
     console.log(`  Minting ${mintQty} pairs...`);
-    for (let i = 0; i < mintQty; i += BATCH_SIZE) {
-      const tx = new anchor.web3.Transaction();
-      const batchEnd = Math.min(i + BATCH_SIZE, mintQty);
-      for (let j = i; j < batchEnd; j++) {
-        const ix = await program.methods
-          .mintPair()
-          .accountsPartial({
-            user: bot.publicKey,
-            market: marketPda,
-            yesMint: yesMintPda,
-            noMint: noMintPda,
-            vault,
-            userUsdc: botUsdcAta,
-            userYes: botYesAta,
-            userNo: botNoAta,
-          })
-          .instruction();
-        tx.add(ix);
-      }
-      await anchor.web3.sendAndConfirmTransaction(connection, tx, [bot]);
-      await sleep(TX_DELAY_MS);
-    }
+    await program.methods
+      .mintPair(new anchor.BN(mintQty))
+      .accountsPartial({
+        user: bot.publicKey,
+        market: marketPda,
+        yesMint: yesMintPda,
+        noMint: noMintPda,
+        vault,
+        userUsdc: botUsdcAta,
+        userYes: botYesAta,
+        userNo: botNoAta,
+      })
+      .signers([bot])
+      .rpc();
+    await sleep(TX_DELAY_MS);
     console.log(`  Minted ${mintQty} pairs`);
 
     // Place ask orders (sell Yes tokens at various prices)

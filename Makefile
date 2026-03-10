@@ -85,7 +85,7 @@ deploy-devnet: wallets
 	@echo "Admin pubkey: $(shell solana-keygen pubkey $(ADMIN_WALLET))"
 	anchor build
 	@cp target/idl/meridian.json app/src/idl/meridian.json
-	anchor deploy --provider.cluster devnet --provider.wallet $(ADMIN_WALLET)
+	anchor deploy --provider.cluster devnet --provider.wallet $(ADMIN_WALLET) --no-idl
 
 # Setup devnet markets + USDC mint (run once after deploy-devnet)
 setup-devnet: wallets

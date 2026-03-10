@@ -50,10 +50,18 @@ pub struct PlaceOrder<'info> {
     )]
     pub ob_yes_vault: Account<'info, TokenAccount>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        token::mint = market.usdc_mint,
+        token::authority = user,
+    )]
     pub user_usdc: Account<'info, TokenAccount>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        token::mint = market.yes_mint,
+        token::authority = user,
+    )]
     pub user_yes: Account<'info, TokenAccount>,
 
     pub token_program: Program<'info, Token>,
@@ -65,6 +73,7 @@ struct Fill {
     fill_qty: u64,
     fill_cost: u64, // fill_qty * execution_price
     remaining_acct_idx: usize,
+    counterparty_owner: Pubkey,
 }
 
 pub fn handler<'info>(
@@ -147,7 +156,13 @@ pub fn handler<'info>(
                     let fill_cost = fill_qty.checked_mul(ask_price).ok_or(MeridianError::InvalidAmount)?;
                     total_cost = total_cost.checked_add(fill_cost).ok_or(MeridianError::InvalidAmount)?;
 
-                    fills.push(Fill { book_index: i, fill_qty, fill_cost, remaining_acct_idx: ra_idx });
+                    fills.push(Fill {
+                        book_index: i,
+                        fill_qty,
+                        fill_cost,
+                        remaining_acct_idx: ra_idx,
+                        counterparty_owner: ob.asks[i].owner,
+                    });
                     ra_idx += 1;
                     rem_qty = rem_qty.checked_sub(fill_qty).ok_or(MeridianError::InvalidAmount)?;
                 }
@@ -163,7 +178,13 @@ pub fn handler<'info>(
                     let fill_qty = rem_qty.min(ob.bids[i].quantity);
                     let fill_cost = fill_qty.checked_mul(bid_price).ok_or(MeridianError::InvalidAmount)?;
 
-                    fills.push(Fill { book_index: i, fill_qty, fill_cost, remaining_acct_idx: ra_idx });
+                    fills.push(Fill {
+                        book_index: i,
+                        fill_qty,
+                        fill_cost,
+                        remaining_acct_idx: ra_idx,
+                        counterparty_owner: ob.bids[i].owner,
+                    });
                     ra_idx += 1;
                     rem_qty = rem_qty.checked_sub(fill_qty).ok_or(MeridianError::InvalidAmount)?;
                 }
@@ -184,9 +205,21 @@ pub fn handler<'info>(
             MeridianError::MissingCounterpartyAccount
         );
         let counterparty_ata = &ctx.remaining_accounts[fill.remaining_acct_idx];
+        let counterparty_token_account = Account::<TokenAccount>::try_from(counterparty_ata)
+            .map_err(|_| MeridianError::InvalidCounterpartyAccount)?;
 
         match side {
             OrderSide::Bid => {
+                require_keys_eq!(
+                    counterparty_token_account.owner,
+                    fill.counterparty_owner,
+                    MeridianError::InvalidCounterpartyAccount
+                );
+                require_keys_eq!(
+                    counterparty_token_account.mint,
+                    ctx.accounts.ob_usdc_vault.mint,
+                    MeridianError::InvalidCounterpartyAccount
+                );
                 // Taker gets Yes tokens
                 token::transfer(
                     CpiContext::new_with_signer(
@@ -215,6 +248,16 @@ pub fn handler<'info>(
                 )?;
             }
             OrderSide::Ask => {
+                require_keys_eq!(
+                    counterparty_token_account.owner,
+                    fill.counterparty_owner,
+                    MeridianError::InvalidCounterpartyAccount
+                );
+                require_keys_eq!(
+                    counterparty_token_account.mint,
+                    ctx.accounts.ob_yes_vault.mint,
+                    MeridianError::InvalidCounterpartyAccount
+                );
                 // Taker gets USDC
                 token::transfer(
                     CpiContext::new_with_signer(

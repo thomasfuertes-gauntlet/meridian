@@ -1,10 +1,14 @@
-.PHONY: dev dev-frontend dev-validator deploy setup wallets bots live strategy-bots test check clean circuit tree deploy-devnet setup-devnet wallet-pubkeys health settle morning nuke
+.PHONY: dev dev-frontend dev-validator deploy setup wallets bots live strategy-bots test check clean circuit tree deploy-devnet setup-devnet wallet-pubkeys health settle morning reset
 
 # Source Solana/Rust toolchain (Anza installer, not Homebrew - brew's solana lacks build-sbf)
 export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.cargo/bin:$(PATH)
 
 # Dev wallet path (deterministic, per-project)
 ADMIN_WALLET := .wallets/admin.json
+
+# Devnet config (single source of truth)
+DEVNET_URL ?= https://api.devnet.solana.com
+DEVNET_USDC_MINT ?= AKmi2ZrBwWi49xf5EdvVRB7679QM7wSVGxPMbFKZ7rqE
 
 # Local development: wallets + validator + deploy + seed + frontend
 dev: wallets dev-validator deploy setup dev-frontend
@@ -91,8 +95,7 @@ setup-devnet: wallets
 
 # Devnet health check - balances, markets, actionable warnings
 health: wallets
-	@ANCHOR_PROVIDER_URL=$${ANCHOR_PROVIDER_URL:-https://api.devnet.solana.com} \
-		ANCHOR_WALLET=$(ADMIN_WALLET) \
+	@ANCHOR_PROVIDER_URL=$(DEVNET_URL) ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/health-check.ts
 
 # Print dev wallet pubkeys (for faucet funding)
@@ -104,16 +107,14 @@ wallet-pubkeys: wallets
 # Settle devnet markets (one-shot, uses admin_settle + Pyth Hermes)
 settle: wallets
 	@echo "Running settlement job against devnet..."
-	cd automation && RPC_URL=$${RPC_URL:-https://api.devnet.solana.com} \
-		USDC_MINT=$${USDC_MINT:-AKmi2ZrBwWi49xf5EdvVRB7679QM7wSVGxPMbFKZ7rqE} \
+	cd automation && RPC_URL=$(DEVNET_URL) USDC_MINT=$(DEVNET_USDC_MINT) \
 		ADMIN_KEYPAIR_PATH=../.wallets/admin.json \
 		npx tsx src/index.ts --settle
 
 # Create today's markets via automation morning job (one-shot)
 morning: wallets
 	@echo "Running morning job against devnet..."
-	cd automation && RPC_URL=$${RPC_URL:-https://api.devnet.solana.com} \
-		USDC_MINT=$${USDC_MINT:-AKmi2ZrBwWi49xf5EdvVRB7679QM7wSVGxPMbFKZ7rqE} \
+	cd automation && RPC_URL=$(DEVNET_URL) USDC_MINT=$(DEVNET_USDC_MINT) \
 		ADMIN_KEYPAIR_PATH=../.wallets/admin.json \
 		npx tsx src/index.ts --now
 
@@ -143,14 +144,13 @@ tree:
 	ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/build-tree.ts
 
-# Devnet nuke: redeploy program, settle stale markets, create fresh ones, seed bots
-nuke: wallets deploy-devnet settle morning
+# Devnet reset: settle stale markets, create today's, seed bots
+reset: wallets settle morning
 	@echo "Seeding devnet order books..."
-	ANCHOR_PROVIDER_URL=$${ANCHOR_PROVIDER_URL:-https://api.devnet.solana.com} ANCHOR_WALLET=$(ADMIN_WALLET) \
+	ANCHOR_PROVIDER_URL=$(DEVNET_URL) ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/seed-bots.ts
 	@echo ""
-	@echo "=== Nuke complete ==="
-	@echo "  - Program redeployed"
+	@echo "=== Reset complete ==="
 	@echo "  - Stale markets settled"
 	@echo "  - Today's markets created"
 	@echo "  - Order books seeded"

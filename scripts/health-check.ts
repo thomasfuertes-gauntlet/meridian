@@ -63,7 +63,7 @@ async function main() {
   // Load USDC mint
   let usdcMintStr = process.env.USDC_MINT;
   if (!usdcMintStr) {
-    const configPath = path.join(__dirname, "../app/src/lib/local-config.json");
+    const configPath = path.join(import.meta.dirname, "../app/src/lib/local-config.json");
     if (fs.existsSync(configPath)) {
       const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
       usdcMintStr = config.usdcMint;

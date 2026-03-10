@@ -157,7 +157,7 @@ async function main() {
   const { root } = buildMerkleTree(leafHashes);
 
   // Write output
-  const outputDir = path.join(__dirname, "..", "app", "public", "zkp");
+  const outputDir = path.join(import.meta.dirname, "..", "app", "public", "zkp");
   fs.mkdirSync(outputDir, { recursive: true });
 
   const treeData = {

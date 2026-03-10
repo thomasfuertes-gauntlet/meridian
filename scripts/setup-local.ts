@@ -233,7 +233,7 @@ async function main() {
 
   // Write config for frontend + bot scripts
   const fs = await import("fs");
-  const configPath = `${__dirname}/../app/src/lib/local-config.json`;
+  const configPath = `${import.meta.dirname}/../app/src/lib/local-config.json`;
   fs.writeFileSync(
     configPath,
     JSON.stringify({

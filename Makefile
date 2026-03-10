@@ -143,13 +143,14 @@ tree:
 	ANCHOR_PROVIDER_URL=http://127.0.0.1:8899 ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/build-tree.ts
 
-# Devnet nuke: settle stale markets, create fresh ones, seed bots
-nuke: wallets settle morning
+# Devnet nuke: redeploy program, settle stale markets, create fresh ones, seed bots
+nuke: wallets deploy-devnet settle morning
 	@echo "Seeding devnet order books..."
 	ANCHOR_PROVIDER_URL=$${ANCHOR_PROVIDER_URL:-https://api.devnet.solana.com} ANCHOR_WALLET=$(ADMIN_WALLET) \
 		npx tsx scripts/seed-bots.ts
 	@echo ""
 	@echo "=== Nuke complete ==="
+	@echo "  - Program redeployed"
 	@echo "  - Stale markets settled"
 	@echo "  - Today's markets created"
 	@echo "  - Order books seeded"

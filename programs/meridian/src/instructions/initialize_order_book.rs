@@ -43,6 +43,9 @@ pub struct InitializeOrderBook<'info> {
     pub yes_mint: Account<'info, Mint>,
 
     /// USDC mint (for the bid escrow vault)
+    #[account(
+        address = market.usdc_mint @ MeridianError::InvalidCollateralMint,
+    )]
     pub usdc_mint: Account<'info, Mint>,
 
     #[account(

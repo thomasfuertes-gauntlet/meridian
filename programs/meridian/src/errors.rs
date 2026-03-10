@@ -40,4 +40,12 @@ pub enum MeridianError {
     NotOrderOwner,
     #[msg("Missing counterparty account for fill")]
     MissingCounterpartyAccount,
+    #[msg("Invalid counterparty token account")]
+    InvalidCounterpartyAccount,
+    #[msg("Invalid collateral mint for market")]
+    InvalidCollateralMint,
+    #[msg("Oracle price is invalid")]
+    InvalidOraclePrice,
+    #[msg("Oracle update is outside the settlement window")]
+    InvalidSettlementWindow,
 }

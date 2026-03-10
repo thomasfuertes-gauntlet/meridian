@@ -1693,6 +1693,26 @@ export type Meridian = {
       "code": 6018,
       "name": "missingCounterpartyAccount",
       "msg": "Missing counterparty account for fill"
+    },
+    {
+      "code": 6019,
+      "name": "invalidCounterpartyAccount",
+      "msg": "Invalid counterparty token account"
+    },
+    {
+      "code": 6020,
+      "name": "invalidCollateralMint",
+      "msg": "Invalid collateral mint for market"
+    },
+    {
+      "code": 6021,
+      "name": "invalidOraclePrice",
+      "msg": "Oracle price is invalid"
+    },
+    {
+      "code": 6022,
+      "name": "invalidSettlementWindow",
+      "msg": "Oracle update is outside the settlement window"
     }
   ],
   "types": [
@@ -2014,6 +2034,10 @@ export type Meridian = {
           },
           {
             "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdcMint",
             "type": "pubkey"
           },
           {

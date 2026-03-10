@@ -90,6 +90,7 @@ pub fn handler(
     market.yes_mint = ctx.accounts.yes_mint.key();
     market.no_mint = ctx.accounts.no_mint.key();
     market.vault = ctx.accounts.vault.key();
+    market.usdc_mint = ctx.accounts.usdc_mint.key();
     market.admin = ctx.accounts.admin.key();
     market.bump = ctx.bumps.market;
     market.settled_at = None;

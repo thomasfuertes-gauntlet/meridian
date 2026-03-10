@@ -1687,6 +1687,26 @@
       "code": 6018,
       "name": "MissingCounterpartyAccount",
       "msg": "Missing counterparty account for fill"
+    },
+    {
+      "code": 6019,
+      "name": "InvalidCounterpartyAccount",
+      "msg": "Invalid counterparty token account"
+    },
+    {
+      "code": 6020,
+      "name": "InvalidCollateralMint",
+      "msg": "Invalid collateral mint for market"
+    },
+    {
+      "code": 6021,
+      "name": "InvalidOraclePrice",
+      "msg": "Oracle price is invalid"
+    },
+    {
+      "code": 6022,
+      "name": "InvalidSettlementWindow",
+      "msg": "Oracle update is outside the settlement window"
     }
   ],
   "types": [
@@ -2008,6 +2028,10 @@
           },
           {
             "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
             "type": "pubkey"
           },
           {

@@ -31,8 +31,8 @@ jobs:
         env:
           VITE_USDC_MINT: "11111111111111111111111111111111"
 
-  anchor-build:
-    name: Anchor build
+  anchor:
+    name: Anchor build + test (52 tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,37 +41,34 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      # setup-anchor installs Solana CLI which bundles an older Cargo.
-      # dtolnay MUST run AFTER so its Cargo (1.94) takes PATH precedence
-      # over the bundled one (1.75). edition2024 crates need Cargo 1.85+.
-      - uses: heyAyushh/setup-anchor@v4.1
-        with:
-          anchor-version: 0.32.0
-      - uses: dtolnay/rust-toolchain@1.94.0
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: programs/meridian
-      - run: anchor build
 
-  anchor-test:
-    name: Anchor test (52 tests)
-    runs-on: ubuntu-latest
-    needs: anchor-build
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
+      # Rust toolchain FIRST so its Cargo (1.94) is on PATH before
+      # setup-anchor's bundled Solana CLI Cargo (1.75). edition2024
+      # crates need Cargo 1.85+.
+      - uses: dtolnay/rust-toolchain@1.94.0
       - uses: heyAyushh/setup-anchor@v4.1
         with:
           anchor-version: 0.32.0
-      - uses: dtolnay/rust-toolchain@1.94.0
+
+      # Cache Solana CLI + Anchor binary + Cargo registry
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.local/share/solana
+            ~/.cargo/bin/anchor
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: solana-anchor-${{ runner.os }}-anchor0.32-solana3.1
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: programs/meridian
+
+      # Ensure dtolnay Cargo wins PATH over Solana's bundled one
+      - name: Fix Cargo PATH priority
+        run: echo "$HOME/.rustup/toolchains/1.94.0-x86_64-unknown-linux-gnu/bin" >> "$GITHUB_PATH"
+
+      - run: anchor build
       - name: Generate dev wallets
         run: npx tsx scripts/dev-wallets.ts
       - name: Run tests
-        run: anchor test
+        run: anchor test --skip-build

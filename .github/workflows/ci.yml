@@ -42,15 +42,17 @@ jobs:
           cache: npm
       - run: npm ci
 
-      # Rust toolchain FIRST so its Cargo (1.94) is on PATH before
-      # setup-anchor's bundled Solana CLI Cargo (1.75). edition2024
-      # crates need Cargo 1.85+.
+      # Rust 1.94 for host-side compilation (anchor test uses host rustc).
+      # Must run before setup-anchor so rustup is initialized.
       - uses: dtolnay/rust-toolchain@1.94.0
+
+      # Pin Solana 3.1.10 - 'stable' default resolves to 1.x with
+      # Cargo 1.75, which can't parse edition2024 crates.
       - uses: heyAyushh/setup-anchor@v4.1
         with:
           anchor-version: 0.32.0
+          solana-cli-version: 3.1.10
 
-      # Cache Solana CLI + Anchor binary + Cargo registry
       - uses: actions/cache@v4
         with:
           path: |
@@ -58,16 +60,15 @@ jobs:
             ~/.cargo/bin/anchor
             ~/.cargo/registry
             ~/.cargo/git
-          key: solana-anchor-${{ runner.os }}-anchor0.32-solana3.1
+          key: solana-anchor-${{ runner.os }}-anchor0.32-solana3.1.10
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: programs/meridian
 
-      # Anchor runs `cargo +solana build-sbf` which requires rustup's
-      # cargo proxy (understands +toolchain syntax). Solana CLI puts
-      # its own raw cargo on PATH which breaks this. Ensure rustup's
-      # bin dir comes first, and set 1.94 as default for non-Solana builds.
-      - name: Fix Cargo to use rustup proxy
+      # Anchor calls `cargo +solana build-sbf` which needs rustup's
+      # cargo proxy to resolve +toolchain syntax. Solana CLI may put
+      # a raw cargo on PATH that doesn't understand it.
+      - name: Ensure rustup cargo proxy on PATH
         run: |
           rustup default 1.94.0
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"

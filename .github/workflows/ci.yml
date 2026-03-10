@@ -63,9 +63,14 @@ jobs:
         with:
           workspaces: programs/meridian
 
-      # Ensure dtolnay Cargo wins PATH over Solana's bundled one
-      - name: Fix Cargo PATH priority
-        run: echo "$HOME/.rustup/toolchains/1.94.0-x86_64-unknown-linux-gnu/bin" >> "$GITHUB_PATH"
+      # Anchor runs `cargo +solana build-sbf` which requires rustup's
+      # cargo proxy (understands +toolchain syntax). Solana CLI puts
+      # its own raw cargo on PATH which breaks this. Ensure rustup's
+      # bin dir comes first, and set 1.94 as default for non-Solana builds.
+      - name: Fix Cargo to use rustup proxy
+        run: |
+          rustup default 1.94.0
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - run: anchor build
       - name: Generate dev wallets

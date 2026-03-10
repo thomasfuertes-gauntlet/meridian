@@ -32,7 +32,7 @@ jobs:
           VITE_USDC_MINT: "11111111111111111111111111111111"
 
   anchor:
-    name: Anchor build + test (52 tests)
+    name: Anchor build + test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

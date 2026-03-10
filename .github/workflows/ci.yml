@@ -51,7 +51,7 @@ jobs:
       - uses: heyAyushh/setup-anchor@v4.1
         with:
           anchor-version: 0.32.0
-          solana-cli-version: 3.1.10
+          solana-cli-version: 3.1.9
 
       - uses: actions/cache@v4
         with:
@@ -60,7 +60,7 @@ jobs:
             ~/.cargo/bin/anchor
             ~/.cargo/registry
             ~/.cargo/git
-          key: solana-anchor-${{ runner.os }}-anchor0.32-solana3.1.10
+          key: solana-anchor-${{ runner.os }}-anchor0.32-solana3.1.9
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: programs/meridian

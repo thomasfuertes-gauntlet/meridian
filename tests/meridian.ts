@@ -957,6 +957,33 @@ describe("meridian", () => {
       }
     });
 
+    it("rejects order book init with the wrong collateral mint", async () => {
+      const date = nextDate();
+      const pdas = await createMarket("OB2X", new anchor.BN(100_000_000), date);
+      const wrongMint = await createMint(
+        connection,
+        mintAuthority,
+        mintAuthority.publicKey,
+        null,
+        6
+      );
+
+      try {
+        await program.methods
+          .initializeOrderBook()
+          .accountsPartial({
+            admin: admin.publicKey,
+            market: pdas.marketPda,
+            yesMint: pdas.yesMintPda,
+            usdcMint: wrongMint,
+          })
+          .rpc();
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("InvalidCollateralMint");
+      }
+    });
+
     // ── place_order - resting (no match) ───────────────────────
 
     it("places a resting bid (no match)", async () => {
@@ -1147,6 +1174,64 @@ describe("meridian", () => {
       } catch (err: any) {
         expect(err.toString()).to.include("MissingCounterpartyAccount");
       }
+    });
+
+    it("crossing bid rejects attacker-controlled counterparty ATA", async () => {
+      const m = await createMarketWithOB("OB_M2", new anchor.BN(100_000_000));
+
+      await mintPairsFor(m, admin.publicKey, adminUsdcAta, 1);
+      const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
+
+      await program.methods
+        .placeOrder({ ask: {} }, new anchor.BN(500_000), new anchor.BN(1))
+        .accountsPartial({
+          user: admin.publicKey,
+          market: m.marketPda,
+          orderBook: m.orderBookPda,
+          obUsdcVault: m.obUsdcVault,
+          obYesVault: m.obYesVault,
+          userUsdc: adminUsdcAta,
+          userYes: adminYes,
+        })
+        .rpc();
+
+      const userBYes = await createAssociatedTokenAccount(
+        connection,
+        userB,
+        m.yesMintPda,
+        userB.publicKey
+      );
+      const adminUsdcBefore = Number((await getAccount(connection, adminUsdcAta)).amount);
+      const userBUsdcBefore = Number((await getAccount(connection, userBUsdc)).amount);
+
+      try {
+        await program.methods
+          .placeOrder({ bid: {} }, new anchor.BN(500_000), new anchor.BN(1))
+          .accountsPartial({
+            user: userB.publicKey,
+            market: m.marketPda,
+            orderBook: m.orderBookPda,
+            obUsdcVault: m.obUsdcVault,
+            obYesVault: m.obYesVault,
+            userUsdc: userBUsdc,
+            userYes: userBYes,
+          })
+          .remainingAccounts([
+            { pubkey: userBUsdc, isWritable: true, isSigner: false },
+          ])
+          .signers([userB])
+          .rpc();
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("InvalidCounterpartyAccount");
+      }
+
+      const adminUsdcAfter = Number((await getAccount(connection, adminUsdcAta)).amount);
+      const userBUsdcAfter = Number((await getAccount(connection, userBUsdc)).amount);
+      const userBYesAfter = Number((await getAccount(connection, userBYes)).amount);
+      expect(adminUsdcAfter).to.equal(adminUsdcBefore);
+      expect(userBUsdcAfter).to.equal(userBUsdcBefore);
+      expect(userBYesAfter).to.equal(0);
     });
 
     // ── place_order - partial fill ─────────────────────────────

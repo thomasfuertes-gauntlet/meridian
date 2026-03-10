@@ -53,14 +53,8 @@ jobs:
           anchor-version: 0.32.0
           solana-cli-version: 3.1.9
 
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.local/share/solana
-            ~/.cargo/bin/anchor
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: solana-anchor-${{ runner.os }}-anchor0.32-solana3.1.9
+      # setup-anchor + setup-solana handle their own caching.
+      # rust-cache covers the program build artifacts.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: programs/meridian

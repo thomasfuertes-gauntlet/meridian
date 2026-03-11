@@ -70,4 +70,6 @@ pub enum MeridianError {
     InvalidOraclePrice,
     #[msg("Oracle update is outside the settlement window")]
     InvalidSettlementWindow,
+    #[msg("Settlement price is invalid")]
+    InvalidSettlementPrice,
 }

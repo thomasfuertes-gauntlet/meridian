@@ -93,7 +93,9 @@ pub fn handler(ctx: Context<BurnPair>, amount: u64) -> Result<()> {
     )?;
 
     let market = &mut ctx.accounts.market;
-    market.total_pairs_minted = market.total_pairs_minted.checked_sub(amount).unwrap();
+    // Burning a complete Yes+No pair removes one fully collateralized claim from
+    // the vault for each unit burned.
+    market.consume_open_interest(amount)?;
 
     ctx.accounts.vault.reload()?;
     assert_market_vault_invariant(market, ctx.accounts.vault.amount, USDC_PER_PAIR)?;

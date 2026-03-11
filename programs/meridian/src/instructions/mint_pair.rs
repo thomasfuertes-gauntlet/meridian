@@ -133,7 +133,7 @@ pub fn handler(ctx: Context<MintPair>, amount: u64) -> Result<()> {
     )?;
 
     let market = &mut ctx.accounts.market;
-    market.total_pairs_minted = market.total_pairs_minted.checked_add(amount).unwrap();
+    market.increase_open_interest(amount)?;
 
     // Reload vault and assert invariant
     ctx.accounts.vault.reload()?;

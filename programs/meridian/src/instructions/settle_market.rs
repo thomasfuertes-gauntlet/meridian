@@ -35,6 +35,7 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleMarket<'info>>) -
     let market = &ctx.accounts.market;
     let market_key = ctx.accounts.market.key();
     let clock = Clock::get()?;
+    let oracle_policy = ctx.accounts.config.oracle_policy_for_ticker(&market.ticker)?;
     market.assert_can_settle(clock.unix_timestamp)?;
     validate_order_book_drained(market, &market_key, ctx.remaining_accounts)?;
 
@@ -43,20 +44,20 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleMarket<'info>>) -
     let price = ctx
         .accounts
         .price_update
-        .get_price_unchecked(&market.pyth_feed_id)
+        .get_price_unchecked(&oracle_policy.feed_id)
         .map_err(|_| MeridianError::PriceStale)?;
     validate_price_for_settlement(
         &price,
         ctx.accounts.price_update.verification_level,
         market.close_time,
         clock.unix_timestamp,
-        ctx.accounts.config.max_price_staleness_secs,
+        oracle_policy.max_price_staleness_secs,
     )?;
 
     // Confidence check: conf must be <= configured basis points of price.
     let price_abs = price.price.unsigned_abs();
     let conf_limit = price_abs
-        .checked_mul(u64::from(ctx.accounts.config.default_conf_filter_bps))
+        .checked_mul(u64::from(oracle_policy.confidence_filter_bps))
         .ok_or(MeridianError::InvalidOraclePrice)?
         / 10_000;
     require!(
@@ -78,7 +79,7 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleMarket<'info>>) -
     };
 
     let market = &mut ctx.accounts.market;
-    market.apply_settlement(outcome, clock.unix_timestamp)?;
+    market.apply_oracle_settlement(outcome, oracle_price_usdc, clock.unix_timestamp)?;
 
     Ok(())
 }

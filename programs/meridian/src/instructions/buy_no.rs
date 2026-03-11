@@ -190,7 +190,7 @@ pub fn handler<'info>(
     }
 
     let market = &mut ctx.accounts.market;
-    market.total_pairs_minted = market.total_pairs_minted.checked_add(amount).unwrap();
+    market.increase_open_interest(amount)?;
 
     ctx.accounts.vault.reload()?;
     assert_market_vault_invariant(market, ctx.accounts.vault.amount, USDC_PER_PAIR)?;

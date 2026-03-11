@@ -4,8 +4,6 @@ use anchor_spl::token::{Mint, Token, TokenAccount};
 use crate::errors::MeridianError;
 use crate::state::{GlobalConfig, MarketOutcome, MarketStatus, StrikeMarket};
 
-const SUPPORTED_TICKERS: [&str; 7] = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"];
-
 #[derive(Accounts)]
 #[instruction(ticker: String, strike_price: u64, date: i64)]
 pub struct CreateStrikeMarket<'info> {
@@ -76,16 +74,12 @@ pub fn handler(
     strike_price: u64,
     date: i64,
     close_time: i64,
-    pyth_feed_id: [u8; 32],
 ) -> Result<()> {
     require!(
         !ticker.is_empty() && ticker.len() <= StrikeMarket::MAX_TICKER_LEN,
         MeridianError::InvalidTicker
     );
-    require!(
-        SUPPORTED_TICKERS.contains(&ticker.as_str()),
-        MeridianError::UnsupportedTicker
-    );
+    ctx.accounts.config.oracle_policy_for_ticker(&ticker)?;
     require!(strike_price > 0, MeridianError::InvalidAmount);
     require!(close_time > date, MeridianError::InvalidCloseTime);
 
@@ -107,8 +101,9 @@ pub fn handler(
     market.bump = ctx.bumps.market;
     market.frozen_at = None;
     market.settled_at = None;
+    market.settlement_price = None;
+    market.settlement_source = None;
     market.close_time = close_time;
-    market.pyth_feed_id = pyth_feed_id;
 
     Ok(())
 }

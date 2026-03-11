@@ -102,7 +102,12 @@ pub fn handler(ctx: Context<Redeem>, amount: u64) -> Result<()> {
         )?;
 
         let market = &mut ctx.accounts.market;
-        market.total_pairs_minted = market.total_pairs_minted.checked_sub(amount).unwrap();
+        // Winning redemption consumes one remaining collateralized claim per
+        // token redeemed, so open interest drops with the vault payout.
+        market.consume_open_interest(amount)?;
+    } else {
+        // Losing redemption is only token cleanup. The vault still backs the
+        // surviving winning claims, so open interest must not change here.
     }
 
     // Burning either winning or losing tokens must leave vault accounting

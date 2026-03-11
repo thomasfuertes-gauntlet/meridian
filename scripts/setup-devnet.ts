@@ -1,10 +1,10 @@
 /**
  * Devnet setup script.
- * Creates config, USDC mint, markets with real Pyth feed IDs, and order books.
+ * Creates config, USDC mint, markets, and order books.
  * Idempotent - safe to run multiple times.
  *
- * Unlike setup-local.ts, uses real Pyth feed IDs and a future close_time
- * so settle_market works with actual Pyth oracle data.
+ * Unlike setup-local.ts, uses a future close_time so settle_market works with
+ * actual Pyth oracle data. Feed IDs now live in on-chain config.
  *
  * Usage:
  *   ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=.wallets/admin.json \
@@ -29,17 +29,6 @@ import { fetchStockPrices } from "./fair-value";
 const MAG7_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"];
 // Strike generation uses +/-$10 from nearest rounded reference, no ATM (see generateStrikes)
 
-// Real Pyth Hermes feed IDs for equity prices (hex bytes, no 0x prefix)
-const PYTH_FEED_IDS: Record<string, number[]> = {
-  AAPL: hexToBytes("49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688"),
-  MSFT: hexToBytes("d0ca23c1cc005e004ccf1db5bf76aeb6a49218f43dac3d4b275e92de12ded4d1"),
-  GOOGL: hexToBytes("5a48c03e9b9cb337801073ed9d166817473697efff0d138874e0f6a33d6d5aa6"),
-  AMZN: hexToBytes("b5d0e0fa58a1f8b81498ae670ce93c872d14434b72c364885d4fa1b257cbb07a"),
-  NVDA: hexToBytes("b1073854ed24cbc755dc527418f52b7d271f6cc967bbf8d8129112b18860a593"),
-  META: hexToBytes("78a3e3b8e676a8f73c439f5d749737034b139bbbe899ba5775216fba596607fe"),
-  TSLA: hexToBytes("16dad506d7db8da01c87581c87ca897a012a153557d4d578c3b9c9e1bc0632f1"),
-};
-
 const DEVNET_DELAY_MS = 1500; // throttle to stay under devnet rate limits
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -57,14 +46,6 @@ async function withRetry<T>(fn: () => Promise<T>, label: string, retries = 3): P
     }
   }
   throw new Error("unreachable");
-}
-
-function hexToBytes(hex: string): number[] {
-  const bytes: number[] = [];
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes.push(parseInt(hex.substring(i, i + 2), 16));
-  }
-  return bytes;
 }
 
 /**
@@ -237,7 +218,6 @@ async function main() {
       continue;
     }
     const strikes = generateStrikes(refPrice);
-    const pythFeedId = PYTH_FEED_IDS[ticker];
     console.log(`  ${ticker} ref=$${refPrice.toFixed(2)} -> strikes: ${strikes.map((s) => `$${s}`).join(", ")}`);
 
     for (const strikeDollars of strikes) {
@@ -261,7 +241,7 @@ async function main() {
 
       await withRetry(
         () => program.methods
-          .createStrikeMarket(ticker, strikePrice, today, closeTime, pythFeedId)
+          .createStrikeMarket(ticker, strikePrice, today, closeTime)
           .accountsPartial({ admin: admin.publicKey, usdcMint })
           .rpc(),
         `createStrikeMarket ${ticker} > $${strikeDollars}`

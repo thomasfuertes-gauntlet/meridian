@@ -27,6 +27,12 @@ impl Default for MarketStatus {
     }
 }
 
+#[derive(Debug, AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum SettlementSource {
+    Oracle,
+    Admin,
+}
+
 #[account]
 pub struct StrikeMarket {
     pub ticker: String,
@@ -46,8 +52,9 @@ pub struct StrikeMarket {
     pub bump: u8,
     pub frozen_at: Option<i64>,
     pub settled_at: Option<i64>,
+    pub settlement_price: Option<u64>,
+    pub settlement_source: Option<SettlementSource>,
     pub close_time: i64,
-    pub pyth_feed_id: [u8; 32],
 }
 
 impl StrikeMarket {
@@ -72,6 +79,22 @@ impl StrikeMarket {
         self.total_pairs_minted
             .checked_mul(usdc_per_pair)
             .ok_or_else(|| error!(crate::errors::MeridianError::InvalidAmount))
+    }
+
+    pub fn increase_open_interest(&mut self, amount: u64) -> Result<()> {
+        self.total_pairs_minted = self
+            .total_pairs_minted
+            .checked_add(amount)
+            .ok_or_else(|| error!(MeridianError::InvalidAmount))?;
+        Ok(())
+    }
+
+    pub fn consume_open_interest(&mut self, amount: u64) -> Result<()> {
+        self.total_pairs_minted = self
+            .total_pairs_minted
+            .checked_sub(amount)
+            .ok_or_else(|| error!(MeridianError::InvalidAmount))?;
+        Ok(())
     }
 
     pub fn assert_trading_active(&self) -> Result<()> {
@@ -100,14 +123,47 @@ impl StrikeMarket {
         Ok(())
     }
 
-    pub fn apply_settlement(&mut self, outcome: MarketOutcome, settled_at: i64) -> Result<()> {
+    pub fn apply_oracle_settlement(
+        &mut self,
+        outcome: MarketOutcome,
+        settlement_price: u64,
+        settled_at: i64,
+    ) -> Result<()> {
+        self.apply_settlement(
+            outcome,
+            settlement_price,
+            SettlementSource::Oracle,
+            settled_at,
+        )
+    }
+
+    pub fn apply_admin_settlement(
+        &mut self,
+        outcome: MarketOutcome,
+        settlement_price: u64,
+        settled_at: i64,
+    ) -> Result<()> {
+        self.apply_settlement(outcome, settlement_price, SettlementSource::Admin, settled_at)
+    }
+
+    fn apply_settlement(
+        &mut self,
+        outcome: MarketOutcome,
+        settlement_price: u64,
+        settlement_source: SettlementSource,
+        settled_at: i64,
+    ) -> Result<()> {
+        require!(!self.is_settled(), MeridianError::MarketAlreadySettled);
         require!(
             outcome != MarketOutcome::Pending,
             MeridianError::InvalidOutcome
         );
+        require!(settlement_price > 0, MeridianError::InvalidSettlementPrice);
         self.status = MarketStatus::Settled;
         self.outcome = outcome;
         self.settled_at = Some(settled_at);
+        self.settlement_price = Some(settlement_price);
+        self.settlement_source = Some(settlement_source);
         Ok(())
     }
 }
@@ -143,8 +199,17 @@ mod tests {
             } else {
                 None
             },
+            settlement_price: if status == MarketStatus::Settled {
+                Some(680_000_000)
+            } else {
+                None
+            },
+            settlement_source: if status == MarketStatus::Settled {
+                Some(SettlementSource::Oracle)
+            } else {
+                None
+            },
             close_time,
-            pyth_feed_id: [0; 32],
         }
     }
 
@@ -186,19 +251,54 @@ mod tests {
     fn apply_settlement_writes_final_state() {
         let mut market = sample_market(MarketStatus::Frozen, 1_000);
         market
-            .apply_settlement(MarketOutcome::NoWins, 1_234)
+            .apply_admin_settlement(MarketOutcome::NoWins, 679_000_000, 1_234)
             .unwrap();
         assert_eq!(market.status, MarketStatus::Settled);
         assert_eq!(market.outcome, MarketOutcome::NoWins);
         assert_eq!(market.settled_at, Some(1_234));
+        assert_eq!(market.settlement_price, Some(679_000_000));
+        assert_eq!(market.settlement_source, Some(SettlementSource::Admin));
     }
 
     #[test]
     fn apply_settlement_rejects_pending_outcome() {
         let mut market = sample_market(MarketStatus::Frozen, 1_000);
         let err = market
-            .apply_settlement(MarketOutcome::Pending, 1_234)
+            .apply_oracle_settlement(MarketOutcome::Pending, 680_000_000, 1_234)
             .unwrap_err();
         assert!(err.to_string().contains("InvalidOutcome"));
+    }
+
+    #[test]
+    fn apply_settlement_rejects_zero_price() {
+        let mut market = sample_market(MarketStatus::Frozen, 1_000);
+        let err = market
+            .apply_admin_settlement(MarketOutcome::NoWins, 0, 1_234)
+            .unwrap_err();
+        assert!(err.to_string().contains("InvalidSettlementPrice"));
+    }
+
+    #[test]
+    fn settled_metadata_is_immutable() {
+        let mut market = sample_market(MarketStatus::Frozen, 1_000);
+        market
+            .apply_oracle_settlement(MarketOutcome::YesWins, 680_000_000, 1_234)
+            .unwrap();
+
+        let err = market
+            .apply_admin_settlement(MarketOutcome::NoWins, 679_000_000, 1_235)
+            .unwrap_err();
+        assert!(err.to_string().contains("MarketAlreadySettled"));
+        assert_eq!(market.outcome, MarketOutcome::YesWins);
+        assert_eq!(market.settlement_source, Some(SettlementSource::Oracle));
+        assert_eq!(market.settlement_price, Some(680_000_000));
+    }
+
+    #[test]
+    fn open_interest_consumption_rejects_underflow() {
+        let mut market = sample_market(MarketStatus::Created, 1_000);
+        let err = market.consume_open_interest(3).unwrap_err();
+        assert!(err.to_string().contains("InvalidAmount"));
+        assert_eq!(market.total_pairs_minted, 2);
     }
 }

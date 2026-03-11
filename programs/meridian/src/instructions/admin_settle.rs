@@ -43,6 +43,7 @@ pub fn handler<'info>(
         ctx.accounts.config.admin_settle_delay_secs,
         clock.unix_timestamp,
     )?;
+    validate_admin_settlement_price(price)?;
     validate_order_book_drained(market, &market_key, ctx.remaining_accounts)?;
 
     let outcome = if price >= market.strike_price {
@@ -52,7 +53,7 @@ pub fn handler<'info>(
     };
 
     let market = &mut ctx.accounts.market;
-    market.apply_settlement(outcome, clock.unix_timestamp)?;
+    market.apply_admin_settlement(outcome, price, clock.unix_timestamp)?;
 
     Ok(())
 }
@@ -62,6 +63,11 @@ fn validate_admin_settle_delay(close_time: i64, delay_secs: i64, now: i64) -> Re
         now >= close_time + delay_secs,
         MeridianError::AdminSettleTooEarly
     );
+    Ok(())
+}
+
+fn validate_admin_settlement_price(price: u64) -> Result<()> {
+    require!(price > 0, MeridianError::InvalidSettlementPrice);
     Ok(())
 }
 #[cfg(test)]
@@ -77,5 +83,11 @@ mod tests {
     #[test]
     fn allows_admin_settle_after_delay() {
         validate_admin_settle_delay(1_000, 3_600, 4_600).unwrap();
+    }
+
+    #[test]
+    fn rejects_zero_admin_settlement_price() {
+        let err = validate_admin_settlement_price(0).unwrap_err();
+        assert!(err.to_string().contains("InvalidSettlementPrice"));
     }
 }

@@ -83,18 +83,6 @@ function dollarToUsdcBaseUnits(dollars: number): BN {
 }
 
 /**
- * Reverse a ticker from a StrikeMarket account's pyth_feed_id.
- * Matches against DEFAULT_FEED_IDS to find the ticker name.
- */
-function feedIdToTicker(feedIdBytes: number[]): string | null {
-  const hex = feedIdBytes.map((b) => b.toString(16).padStart(2, "0")).join("");
-  for (const [ticker, feedHex] of Object.entries(DEFAULT_FEED_IDS)) {
-    if (feedHex === hex) return ticker;
-  }
-  return null;
-}
-
-/**
  * Attempt to settle a single market. Tries settle_market first, then admin_settle.
  * Retries on confidence-related failures for up to MAX_RETRY_DURATION_MS.
  */
@@ -106,7 +94,7 @@ async function settleMarketWithRetry(
   feedIds: Record<string, string>,
   hermesUrl: string
 ): Promise<SettlementResult> {
-  const ticker = feedIdToTicker(marketAccount.pythFeedId) || marketAccount.ticker || "UNKNOWN";
+  const ticker = marketAccount.ticker || "UNKNOWN";
   const strikeDollars = (marketAccount.strikePrice as BN).toNumber() / 1_000_000;
   const marketKey = marketPubkey.toBase58();
 

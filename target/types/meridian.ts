@@ -205,6 +205,737 @@ export type Meridian = {
       ]
     },
     {
+      "name": "buyNo",
+      "discriminator": [
+        89,
+        240,
+        244,
+        16,
+        196,
+        201,
+        190,
+        163
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.ticker",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.strike_price",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.date",
+                "account": "strikeMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "userUsdc",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "yesMint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  121,
+                  101,
+                  115,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "noMint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  111,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "userYes",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "yesMint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "userNo",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "noMint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "orderBook",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  98,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obUsdcVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obYesVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  121,
+                  101,
+                  115,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "minPrice",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "buyYes",
+      "discriminator": [
+        124,
+        76,
+        113,
+        130,
+        177,
+        112,
+        187,
+        104
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.ticker",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.strike_price",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.date",
+                "account": "strikeMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "userUsdc",
+          "writable": true
+        },
+        {
+          "name": "yesMint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  121,
+                  101,
+                  115,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "userYes",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "yesMint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "orderBook",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  98,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obUsdcVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obYesVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  121,
+                  101,
+                  115,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "maxPrice",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "cancelOrder",
       "discriminator": [
         95,
@@ -532,17 +1263,81 @@ export type Meridian = {
         {
           "name": "closeTime",
           "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "freezeMarket",
+      "discriminator": [
+        184,
+        154,
+        237,
+        98,
+        127,
+        82,
+        217,
+        180
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
         },
         {
-          "name": "pythFeedId",
-          "type": {
-            "array": [
-              "u8",
-              32
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.ticker",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.strike_price",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.date",
+                "account": "strikeMarket"
+              }
             ]
           }
         }
-      ]
+      ],
+      "args": []
     },
     {
       "name": "initializeConfig",
@@ -629,6 +1424,7 @@ export type Meridian = {
         },
         {
           "name": "market",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -1444,6 +2240,438 @@ export type Meridian = {
       ]
     },
     {
+      "name": "sellNo",
+      "discriminator": [
+        189,
+        194,
+        132,
+        42,
+        80,
+        249,
+        154,
+        103
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.ticker",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.strike_price",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.date",
+                "account": "strikeMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "userUsdc",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "yesMint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  121,
+                  101,
+                  115,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "noMint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  111,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "userYes",
+          "writable": true
+        },
+        {
+          "name": "userNo",
+          "writable": true
+        },
+        {
+          "name": "orderBook",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  98,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obUsdcVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obYesVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  121,
+                  101,
+                  115,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "maxPrice",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "sellYes",
+      "discriminator": [
+        128,
+        214,
+        65,
+        190,
+        69,
+        69,
+        53,
+        8
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.ticker",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.strike_price",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.date",
+                "account": "strikeMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "userUsdc",
+          "writable": true
+        },
+        {
+          "name": "userYes",
+          "writable": true
+        },
+        {
+          "name": "orderBook",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  98,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obUsdcVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obYesVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  121,
+                  101,
+                  115,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "minPrice",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "settleMarket",
       "discriminator": [
         193,
@@ -1460,6 +2688,24 @@ export type Meridian = {
           "name": "settler",
           "writable": true,
           "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "market",
@@ -1542,6 +2788,168 @@ export type Meridian = {
         }
       ],
       "args": []
+    },
+    {
+      "name": "unwindOrder",
+      "discriminator": [
+        232,
+        5,
+        200,
+        121,
+        42,
+        160,
+        170,
+        36
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.ticker",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.strike_price",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.date",
+                "account": "strikeMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "orderBook",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  98,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obUsdcVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obYesVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  121,
+                  101,
+                  115,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "refundUsdcDestination",
+          "docs": [
+            "Refund destination for bid-side escrow."
+          ],
+          "writable": true
+        },
+        {
+          "name": "refundYesDestination",
+          "docs": [
+            "Refund destination for ask-side escrow."
+          ],
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "orderId",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -1626,91 +3034,146 @@ export type Meridian = {
     },
     {
       "code": 6005,
+      "name": "unsupportedTicker",
+      "msg": "Unsupported ticker for this deployment"
+    },
+    {
+      "code": 6006,
       "name": "invalidAmount",
       "msg": "Invalid amount: must be greater than zero"
     },
     {
-      "code": 6006,
+      "code": 6007,
+      "name": "invalidCloseTime",
+      "msg": "Invalid close time for market"
+    },
+    {
+      "code": 6008,
       "name": "vaultInvariantViolation",
       "msg": "Vault invariant violation: balance mismatch"
     },
     {
-      "code": 6007,
+      "code": 6009,
       "name": "invalidTokenMint",
       "msg": "Invalid token mint: not a market mint"
     },
     {
-      "code": 6008,
+      "code": 6010,
       "name": "invalidOutcome",
       "msg": "Invalid outcome: cannot settle as Pending"
     },
     {
-      "code": 6009,
+      "code": 6011,
+      "name": "invalidMarketState",
+      "msg": "Invalid market state for this instruction"
+    },
+    {
+      "code": 6012,
+      "name": "marketFrozen",
+      "msg": "Market trading is frozen"
+    },
+    {
+      "code": 6013,
+      "name": "marketNotFrozen",
+      "msg": "Market is not frozen"
+    },
+    {
+      "code": 6014,
       "name": "settlementTooEarly",
       "msg": "Settlement too early: market not closed yet"
     },
     {
-      "code": 6010,
+      "code": 6015,
       "name": "adminSettleTooEarly",
       "msg": "Admin settle too early: must wait 1 hour after close"
     },
     {
-      "code": 6011,
+      "code": 6016,
       "name": "priceStale",
       "msg": "Oracle price is stale"
     },
     {
-      "code": 6012,
+      "code": 6017,
       "name": "priceConfidenceTooWide",
       "msg": "Oracle confidence band too wide"
     },
     {
-      "code": 6013,
+      "code": 6018,
       "name": "orderBookFull",
       "msg": "Order book is full"
     },
     {
-      "code": 6014,
+      "code": 6019,
+      "name": "crossingOrdersUseDedicatedPath",
+      "msg": "Crossing orders must use a dedicated trade-path instruction"
+    },
+    {
+      "code": 6020,
       "name": "invalidPrice",
       "msg": "Invalid price: must be between 1 and 999999 (exclusive of 0 and 1_000_000)"
     },
     {
-      "code": 6015,
+      "code": 6021,
       "name": "noMatchingOrders",
       "msg": "No matching orders found"
     },
     {
-      "code": 6016,
+      "code": 6022,
+      "name": "atomicTradeIncomplete",
+      "msg": "Atomic trade could not be fully filled"
+    },
+    {
+      "code": 6023,
       "name": "orderNotFound",
       "msg": "Order not found"
     },
     {
-      "code": 6017,
+      "code": 6024,
       "name": "notOrderOwner",
       "msg": "Not the order owner"
     },
     {
-      "code": 6018,
+      "code": 6025,
+      "name": "orderBookNotEmpty",
+      "msg": "Order book still has active orders"
+    },
+    {
+      "code": 6026,
+      "name": "orderBookEscrowNotEmpty",
+      "msg": "Order book escrow is not empty"
+    },
+    {
+      "code": 6027,
+      "name": "missingOrderBookAccounts",
+      "msg": "Missing order book validation accounts"
+    },
+    {
+      "code": 6028,
+      "name": "invalidOrderBookAccount",
+      "msg": "Invalid order book validation accounts"
+    },
+    {
+      "code": 6029,
       "name": "missingCounterpartyAccount",
       "msg": "Missing counterparty account for fill"
     },
     {
-      "code": 6019,
+      "code": 6030,
       "name": "invalidCounterpartyAccount",
       "msg": "Invalid counterparty token account"
     },
     {
-      "code": 6020,
+      "code": 6031,
       "name": "invalidCollateralMint",
       "msg": "Invalid collateral mint for market"
     },
     {
-      "code": 6021,
+      "code": 6032,
       "name": "invalidOraclePrice",
       "msg": "Oracle price is invalid"
     },
     {
-      "code": 6022,
+      "code": 6033,
       "name": "invalidSettlementWindow",
       "msg": "Oracle update is outside the settlement window"
     }
@@ -1728,6 +3191,20 @@ export type Meridian = {
           {
             "name": "paused",
             "type": "bool"
+          },
+          {
+            "name": "adminSettleDelaySecs",
+            "type": "i64"
+          },
+          {
+            "name": "oraclePolicies",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "oraclePolicy"
+                }
+              }
+            }
           },
           {
             "name": "bump",
@@ -1749,6 +3226,52 @@ export type Meridian = {
           },
           {
             "name": "noWins"
+          }
+        ]
+      }
+    },
+    {
+      "name": "marketStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "created"
+          },
+          {
+            "name": "frozen"
+          },
+          {
+            "name": "settled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "oraclePolicy",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticker",
+            "type": "string"
+          },
+          {
+            "name": "feedId",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "confidenceFilterBps",
+            "type": "u16"
+          },
+          {
+            "name": "maxPriceStalenessSecs",
+            "type": "i64"
           }
         ]
       }
@@ -2013,6 +3536,14 @@ export type Meridian = {
             "type": "i64"
           },
           {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "marketStatus"
+              }
+            }
+          },
+          {
             "name": "outcome",
             "type": {
               "defined": {
@@ -2041,12 +3572,30 @@ export type Meridian = {
             "type": "pubkey"
           },
           {
+            "name": "orderBook",
+            "type": "pubkey"
+          },
+          {
+            "name": "obUsdcVault",
+            "type": "pubkey"
+          },
+          {
+            "name": "obYesVault",
+            "type": "pubkey"
+          },
+          {
             "name": "admin",
             "type": "pubkey"
           },
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "frozenAt",
+            "type": {
+              "option": "i64"
+            }
           },
           {
             "name": "settledAt",
@@ -2057,15 +3606,6 @@ export type Meridian = {
           {
             "name": "closeTime",
             "type": "i64"
-          },
-          {
-            "name": "pythFeedId",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
           }
         ]
       }

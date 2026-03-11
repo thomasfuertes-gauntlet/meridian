@@ -39,8 +39,6 @@ describe("meridian", () => {
   let mintAuthority: Keypair;
   let adminUsdcAta: PublicKey;
 
-  // Dummy Pyth feed ID (32 zero bytes) for testing
-  const dummyPythFeedId = Array(32).fill(0);
   // close_time = 0 (epoch) so admin_settle's 1hr check passes (0 + 3600 < any real clock)
   const pastCloseTime = new anchor.BN(0);
 
@@ -88,13 +86,12 @@ describe("meridian", () => {
     ticker: string,
     strikePrice: anchor.BN,
     date: anchor.BN,
-    closeTime: anchor.BN = pastCloseTime,
-    pythFeedId: number[] = dummyPythFeedId
+    closeTime: anchor.BN = pastCloseTime
   ) {
     const normalizedTicker = normalizeTicker(ticker);
     const pdas = deriveMarketPdas(normalizedTicker, strikePrice, date);
     await program.methods
-      .createStrikeMarket(normalizedTicker, strikePrice, date, closeTime, pythFeedId)
+      .createStrikeMarket(normalizedTicker, strikePrice, date, closeTime)
       .accountsPartial({
         admin: admin.publicKey,
         usdcMint: usdcMint,
@@ -250,6 +247,37 @@ describe("meridian", () => {
         config: configPda,
         market: market.marketPda,
       })
+      .rpc();
+  }
+
+  function settlementProofAccounts(market: {
+    orderBookPda: PublicKey;
+    obUsdcVault: PublicKey;
+    obYesVault: PublicKey;
+  }) {
+    return [
+      { pubkey: market.orderBookPda, isWritable: false, isSigner: false },
+      { pubkey: market.obUsdcVault, isWritable: false, isSigner: false },
+      { pubkey: market.obYesVault, isWritable: false, isSigner: false },
+    ];
+  }
+
+  async function settleWithOrderBookProof(
+    market: ReturnType<typeof deriveMarketPdas> & {
+      orderBookPda: PublicKey;
+      obUsdcVault: PublicKey;
+      obYesVault: PublicKey;
+    },
+    price: anchor.BN
+  ) {
+    await methods
+      .adminSettle(price)
+      .accountsPartial({
+        admin: admin.publicKey,
+        config: configPda,
+        market: market.marketPda,
+      })
+      .remainingAccounts(settlementProofAccounts(market))
       .rpc();
   }
 
@@ -517,6 +545,14 @@ describe("meridian", () => {
     );
     expect(configAccount.paused).to.equal(false);
     expect(configAccount.bump).to.equal(configBump);
+    expect(configAccount.oraclePolicies).to.have.length(7);
+    expect(
+      configAccount.oraclePolicies.find((policy: any) => policy.ticker === "META")
+    ).to.deep.include({
+      ticker: "META",
+      confidenceFilterBps: 100,
+      maxPriceStalenessSecs: new anchor.BN(300),
+    });
   });
 
   // Shared market for mint/burn tests
@@ -540,9 +576,6 @@ describe("meridian", () => {
     expect(marketAccount.outcome).to.deep.equal({ pending: {} });
     expect(marketAccount.totalPairsMinted.toNumber()).to.equal(0);
     expect(marketAccount.closeTime.toNumber()).to.equal(0);
-    expect(Buffer.from(marketAccount.pythFeedId)).to.deep.equal(
-      Buffer.from(dummyPythFeedId)
-    );
   });
 
   it("mints a pair", async () => {
@@ -2438,19 +2471,15 @@ describe("meridian", () => {
       await freezeMarket(market);
 
       try {
-        await methods
-          .adminSettle(new anchor.BN(300_000_000))
-          .accountsPartial({
-            admin: admin.publicKey,
-            config: configPda,
-            market: pdas.marketPda,
-          })
-          .remainingAccounts([
-            { pubkey: obPdas.orderBookPda, isWritable: false, isSigner: false },
-            { pubkey: obPdas.obUsdcVault, isWritable: false, isSigner: false },
-            { pubkey: obPdas.obYesVault, isWritable: false, isSigner: false },
-          ])
-          .rpc();
+      await methods
+        .adminSettle(new anchor.BN(300_000_000))
+        .accountsPartial({
+          admin: admin.publicKey,
+          config: configPda,
+          market: pdas.marketPda,
+        })
+        .remainingAccounts(settlementProofAccounts(market))
+        .rpc();
         expect.fail("Should have thrown");
       } catch (err: any) {
         expect(err.toString()).to.include("OrderBookNotEmpty");
@@ -2522,22 +2551,38 @@ describe("meridian", () => {
       expect(obAfter.bidCount).to.equal(0);
       expect(obAfter.askCount).to.equal(0);
 
-      await methods
-        .adminSettle(new anchor.BN(300_000_000))
-        .accountsPartial({
-          admin: admin.publicKey,
-          config: configPda,
-          market: pdas.marketPda,
-        })
-        .remainingAccounts([
-          { pubkey: obPdas.orderBookPda, isWritable: false, isSigner: false },
-          { pubkey: obPdas.obUsdcVault, isWritable: false, isSigner: false },
-          { pubkey: obPdas.obYesVault, isWritable: false, isSigner: false },
-        ])
-        .rpc();
+      await settleWithOrderBookProof(market, new anchor.BN(300_000_000));
 
       const settled = await program.account.strikeMarket.fetch(pdas.marketPda);
       expect(settled.outcome).to.deep.equal({ yesWins: {} });
+    });
+
+    it("roundtrips create -> freeze -> settle-with-proof -> redeem against config-backed oracle policy", async () => {
+      const config = await program.account.globalConfig.fetch(configPda);
+      const metaPolicy = config.oraclePolicies.find((policy: any) => policy.ticker === "META");
+      expect(metaPolicy).to.not.equal(undefined);
+
+      const pdas = await createMarket("META", new anchor.BN(292_000_000), nextUnwindDate());
+      const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
+      const market = { ...pdas, ...obPdas };
+      const { userYes } = await mintPairForAdmin(pdas, 2);
+
+      const adminUsdcBefore = await tokenAmount(adminUsdcAta);
+
+      await freezeMarket(market);
+      await settleWithOrderBookProof(market, new anchor.BN(300_000_000));
+      await redeemForUser(pdas, admin.publicKey, adminUsdcAta, pdas.yesMintPda, userYes, 2);
+
+      const adminUsdcAfter = await tokenAmount(adminUsdcAta);
+      const vaultAfter = await tokenAmount(pdas.vaultPda);
+      const settled = await program.account.strikeMarket.fetch(pdas.marketPda);
+      const yesBalanceAfter = await tokenAmount(userYes);
+
+      expectIncrease(adminUsdcBefore, adminUsdcAfter, 2_000_000);
+      expect(vaultAfter).to.equal(0);
+      expect(yesBalanceAfter).to.equal(0);
+      expect(settled.outcome).to.deep.equal({ yesWins: {} });
+      expect(settled.totalPairsMinted.toNumber()).to.equal(0);
     });
   });
 

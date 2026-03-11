@@ -199,6 +199,737 @@
       ]
     },
     {
+      "name": "buy_no",
+      "discriminator": [
+        89,
+        240,
+        244,
+        16,
+        196,
+        201,
+        190,
+        163
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.ticker",
+                "account": "StrikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.strike_price",
+                "account": "StrikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.date",
+                "account": "StrikeMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_usdc",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "yes_mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  121,
+                  101,
+                  115,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "no_mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  111,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_yes",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "yes_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "user_no",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "no_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "order_book",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  98,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ob_usdc_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ob_yes_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  121,
+                  101,
+                  115,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "min_price",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "buy_yes",
+      "discriminator": [
+        124,
+        76,
+        113,
+        130,
+        177,
+        112,
+        187,
+        104
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.ticker",
+                "account": "StrikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.strike_price",
+                "account": "StrikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.date",
+                "account": "StrikeMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_usdc",
+          "writable": true
+        },
+        {
+          "name": "yes_mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  121,
+                  101,
+                  115,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_yes",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "yes_mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "order_book",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  98,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ob_usdc_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ob_yes_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  121,
+                  101,
+                  115,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "max_price",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "cancel_order",
       "discriminator": [
         95,
@@ -526,17 +1257,81 @@
         {
           "name": "close_time",
           "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "freeze_market",
+      "discriminator": [
+        184,
+        154,
+        237,
+        98,
+        127,
+        82,
+        217,
+        180
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
         },
         {
-          "name": "pyth_feed_id",
-          "type": {
-            "array": [
-              "u8",
-              32
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.ticker",
+                "account": "StrikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.strike_price",
+                "account": "StrikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.date",
+                "account": "StrikeMarket"
+              }
             ]
           }
         }
-      ]
+      ],
+      "args": []
     },
     {
       "name": "initialize_config",
@@ -623,6 +1418,7 @@
         },
         {
           "name": "market",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -1438,6 +2234,438 @@
       ]
     },
     {
+      "name": "sell_no",
+      "discriminator": [
+        189,
+        194,
+        132,
+        42,
+        80,
+        249,
+        154,
+        103
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.ticker",
+                "account": "StrikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.strike_price",
+                "account": "StrikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.date",
+                "account": "StrikeMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_usdc",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "yes_mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  121,
+                  101,
+                  115,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "no_mint",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  111,
+                  95,
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_yes",
+          "writable": true
+        },
+        {
+          "name": "user_no",
+          "writable": true
+        },
+        {
+          "name": "order_book",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  98,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ob_usdc_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ob_yes_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  121,
+                  101,
+                  115,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "max_price",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "sell_yes",
+      "discriminator": [
+        128,
+        214,
+        65,
+        190,
+        69,
+        69,
+        53,
+        8
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.ticker",
+                "account": "StrikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.strike_price",
+                "account": "StrikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.date",
+                "account": "StrikeMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_usdc",
+          "writable": true
+        },
+        {
+          "name": "user_yes",
+          "writable": true
+        },
+        {
+          "name": "order_book",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  98,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ob_usdc_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ob_yes_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  121,
+                  101,
+                  115,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "min_price",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "settle_market",
       "discriminator": [
         193,
@@ -1454,6 +2682,24 @@
           "name": "settler",
           "writable": true,
           "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "market",
@@ -1536,6 +2782,168 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "unwind_order",
+      "discriminator": [
+        232,
+        5,
+        200,
+        121,
+        42,
+        160,
+        170,
+        36
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.ticker",
+                "account": "StrikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.strike_price",
+                "account": "StrikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.date",
+                "account": "StrikeMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "order_book",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  98,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ob_usdc_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ob_yes_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  121,
+                  101,
+                  115,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "refund_usdc_destination",
+          "docs": [
+            "Refund destination for bid-side escrow."
+          ],
+          "writable": true
+        },
+        {
+          "name": "refund_yes_destination",
+          "docs": [
+            "Refund destination for ask-side escrow."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "order_id",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -1620,91 +3028,146 @@
     },
     {
       "code": 6005,
+      "name": "UnsupportedTicker",
+      "msg": "Unsupported ticker for this deployment"
+    },
+    {
+      "code": 6006,
       "name": "InvalidAmount",
       "msg": "Invalid amount: must be greater than zero"
     },
     {
-      "code": 6006,
+      "code": 6007,
+      "name": "InvalidCloseTime",
+      "msg": "Invalid close time for market"
+    },
+    {
+      "code": 6008,
       "name": "VaultInvariantViolation",
       "msg": "Vault invariant violation: balance mismatch"
     },
     {
-      "code": 6007,
+      "code": 6009,
       "name": "InvalidTokenMint",
       "msg": "Invalid token mint: not a market mint"
     },
     {
-      "code": 6008,
+      "code": 6010,
       "name": "InvalidOutcome",
       "msg": "Invalid outcome: cannot settle as Pending"
     },
     {
-      "code": 6009,
+      "code": 6011,
+      "name": "InvalidMarketState",
+      "msg": "Invalid market state for this instruction"
+    },
+    {
+      "code": 6012,
+      "name": "MarketFrozen",
+      "msg": "Market trading is frozen"
+    },
+    {
+      "code": 6013,
+      "name": "MarketNotFrozen",
+      "msg": "Market is not frozen"
+    },
+    {
+      "code": 6014,
       "name": "SettlementTooEarly",
       "msg": "Settlement too early: market not closed yet"
     },
     {
-      "code": 6010,
+      "code": 6015,
       "name": "AdminSettleTooEarly",
       "msg": "Admin settle too early: must wait 1 hour after close"
     },
     {
-      "code": 6011,
+      "code": 6016,
       "name": "PriceStale",
       "msg": "Oracle price is stale"
     },
     {
-      "code": 6012,
+      "code": 6017,
       "name": "PriceConfidenceTooWide",
       "msg": "Oracle confidence band too wide"
     },
     {
-      "code": 6013,
+      "code": 6018,
       "name": "OrderBookFull",
       "msg": "Order book is full"
     },
     {
-      "code": 6014,
+      "code": 6019,
+      "name": "CrossingOrdersUseDedicatedPath",
+      "msg": "Crossing orders must use a dedicated trade-path instruction"
+    },
+    {
+      "code": 6020,
       "name": "InvalidPrice",
       "msg": "Invalid price: must be between 1 and 999999 (exclusive of 0 and 1_000_000)"
     },
     {
-      "code": 6015,
+      "code": 6021,
       "name": "NoMatchingOrders",
       "msg": "No matching orders found"
     },
     {
-      "code": 6016,
+      "code": 6022,
+      "name": "AtomicTradeIncomplete",
+      "msg": "Atomic trade could not be fully filled"
+    },
+    {
+      "code": 6023,
       "name": "OrderNotFound",
       "msg": "Order not found"
     },
     {
-      "code": 6017,
+      "code": 6024,
       "name": "NotOrderOwner",
       "msg": "Not the order owner"
     },
     {
-      "code": 6018,
+      "code": 6025,
+      "name": "OrderBookNotEmpty",
+      "msg": "Order book still has active orders"
+    },
+    {
+      "code": 6026,
+      "name": "OrderBookEscrowNotEmpty",
+      "msg": "Order book escrow is not empty"
+    },
+    {
+      "code": 6027,
+      "name": "MissingOrderBookAccounts",
+      "msg": "Missing order book validation accounts"
+    },
+    {
+      "code": 6028,
+      "name": "InvalidOrderBookAccount",
+      "msg": "Invalid order book validation accounts"
+    },
+    {
+      "code": 6029,
       "name": "MissingCounterpartyAccount",
       "msg": "Missing counterparty account for fill"
     },
     {
-      "code": 6019,
+      "code": 6030,
       "name": "InvalidCounterpartyAccount",
       "msg": "Invalid counterparty token account"
     },
     {
-      "code": 6020,
+      "code": 6031,
       "name": "InvalidCollateralMint",
       "msg": "Invalid collateral mint for market"
     },
     {
-      "code": 6021,
+      "code": 6032,
       "name": "InvalidOraclePrice",
       "msg": "Oracle price is invalid"
     },
     {
-      "code": 6022,
+      "code": 6033,
       "name": "InvalidSettlementWindow",
       "msg": "Oracle update is outside the settlement window"
     }
@@ -1722,6 +3185,20 @@
           {
             "name": "paused",
             "type": "bool"
+          },
+          {
+            "name": "admin_settle_delay_secs",
+            "type": "i64"
+          },
+          {
+            "name": "oracle_policies",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "OraclePolicy"
+                }
+              }
+            }
           },
           {
             "name": "bump",
@@ -1743,6 +3220,52 @@
           },
           {
             "name": "NoWins"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Created"
+          },
+          {
+            "name": "Frozen"
+          },
+          {
+            "name": "Settled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OraclePolicy",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticker",
+            "type": "string"
+          },
+          {
+            "name": "feed_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "confidence_filter_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_price_staleness_secs",
+            "type": "i64"
           }
         ]
       }
@@ -2007,6 +3530,14 @@
             "type": "i64"
           },
           {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "MarketStatus"
+              }
+            }
+          },
+          {
             "name": "outcome",
             "type": {
               "defined": {
@@ -2035,12 +3566,30 @@
             "type": "pubkey"
           },
           {
+            "name": "order_book",
+            "type": "pubkey"
+          },
+          {
+            "name": "ob_usdc_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "ob_yes_vault",
+            "type": "pubkey"
+          },
+          {
             "name": "admin",
             "type": "pubkey"
           },
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "frozen_at",
+            "type": {
+              "option": "i64"
+            }
           },
           {
             "name": "settled_at",
@@ -2051,15 +3600,6 @@
           {
             "name": "close_time",
             "type": "i64"
-          },
-          {
-            "name": "pyth_feed_id",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
           }
         ]
       }

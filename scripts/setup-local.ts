@@ -36,8 +36,6 @@ function generateStrikes(refPrice: number): number[] {
 
 const USDC_DECIMALS = 6;
 const USDC_PER_PAIR = 1_000_000;
-// Dummy Pyth feed ID (32 zero bytes) - local validator has no Pyth
-const dummyPythFeedId = Array(32).fill(0);
 // close_time = 0 so admin_settle works (0 + 3600 < any real clock)
 const pastCloseTime = new anchor.BN(0);
 const today = new anchor.BN(Math.floor(Date.now() / 86400000));
@@ -208,7 +206,7 @@ async function main() {
       }
 
       await program.methods
-        .createStrikeMarket(ticker, strikePrice, today, pastCloseTime, dummyPythFeedId)
+        .createStrikeMarket(ticker, strikePrice, today, pastCloseTime)
         .accountsPartial({ admin: admin.publicKey, usdcMint })
         .rpc();
 

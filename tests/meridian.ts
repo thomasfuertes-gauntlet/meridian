@@ -2194,47 +2194,122 @@ describe("meridian", () => {
       const { userYes: userBYes, userNo: userBNo } = tokenAccountsFor(userB.publicKey, pdas);
 
       await placeBid({ ...pdas, ...obPdas }, admin.publicKey, adminUsdcAta, adminYes, 650_000, 1);
+      const obBefore = await program.account.orderBook.fetch(obPdas.orderBookPda);
+      const bidOrderId = obBefore.bids[0].orderId;
 
       await freezeMarket(pdas);
 
       try {
-        await methods
-          .buyNo(new anchor.BN(1), new anchor.BN(600_000))
-          .accountsPartial({
-            user: userB.publicKey,
-            config: configPda,
-            market: pdas.marketPda,
-            userUsdc: userBUsdc,
-            vault: pdas.vaultPda,
-            yesMint: pdas.yesMintPda,
-            noMint: pdas.noMintPda,
-            userYes: userBYes,
-            userNo: userBNo,
-            orderBook: obPdas.orderBookPda,
-            obUsdcVault: obPdas.obUsdcVault,
-            obYesVault: obPdas.obYesVault,
-          })
-          .remainingAccounts([
-            { pubkey: adminYes, isWritable: true, isSigner: false },
-          ])
-          .signers([userB])
-          .rpc();
+        await buyNo(
+          { ...pdas, ...obPdas },
+          userB.publicKey,
+          userBUsdc,
+          userBYes,
+          userBNo,
+          600_000,
+          1,
+          {
+            remainingAccounts: [{ pubkey: adminYes, isWritable: true, isSigner: false }],
+            signers: [userB],
+          }
+        );
         expect.fail("Should have thrown");
       } catch (err: any) {
         expect(err.toString()).to.include("MarketFrozen");
       }
 
-      await methods
-        .adminSettle(new anchor.BN(300_000_000))
-        .accountsPartial({
-          admin: admin.publicKey,
-          config: configPda,
-          market: pdas.marketPda,
-        })
-        .rpc();
+      await unwindOrderForSettlement(
+        { ...pdas, ...obPdas },
+        bidOrderId,
+        adminUsdcAta,
+        adminYes
+      );
+      await settleWithOrderBookProof({ ...pdas, ...obPdas }, new anchor.BN(300_000_000));
 
       const market = await program.account.strikeMarket.fetch(pdas.marketPda);
       expect(market.outcome).to.deep.equal({ yesWins: {} });
+    });
+
+    it("rejects buy_yes after market freeze", async () => {
+      const pdas = await createMarket("FRZY", new anchor.BN(273_000_000), nextFreezeDate());
+      const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
+      const adminYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
+      const userBYes = getAssociatedTokenAddressSync(pdas.yesMintPda, userB.publicKey);
+
+      await mintPairForAdmin(pdas, 1);
+      await placeAsk({ ...pdas, ...obPdas }, admin.publicKey, adminUsdcAta, adminYes, 500_000, 1);
+      await freezeMarket(pdas);
+
+      try {
+        await buyYes(
+          { ...pdas, ...obPdas },
+          userB.publicKey,
+          userBUsdc,
+          userBYes,
+          500_000,
+          1,
+          {
+            remainingAccounts: [{ pubkey: adminUsdcAta, isWritable: true, isSigner: false }],
+            signers: [userB],
+          }
+        );
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("MarketFrozen");
+      }
+    });
+
+    it("rejects sell_no after market settles", async () => {
+      const pdas = await createMarket("STNO", new anchor.BN(274_000_000), nextFreezeDate());
+      const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
+      const { userYes: userBYes, userNo: userBNo } = await mintPairForUser(
+        userB.publicKey,
+        userBUsdc,
+        pdas,
+        1,
+        [userB]
+      );
+
+      await adminSettleMarket(pdas, new anchor.BN(300_000_000));
+
+      try {
+        await sellNo(
+          { ...pdas, ...obPdas },
+          userB.publicKey,
+          userBUsdc,
+          userBYes,
+          userBNo,
+          400_000,
+          1,
+          { signers: [userB] }
+        );
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("MarketAlreadySettled");
+      }
+    });
+
+    it("rejects buy_yes after market settles", async () => {
+      const pdas = await createMarket("STBY", new anchor.BN(275_000_000), nextFreezeDate());
+      const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
+      const userBYes = getAssociatedTokenAddressSync(pdas.yesMintPda, userB.publicKey);
+
+      await adminSettleMarket(pdas, new anchor.BN(300_000_000));
+
+      try {
+        await buyYes(
+          { ...pdas, ...obPdas },
+          userB.publicKey,
+          userBUsdc,
+          userBYes,
+          500_000,
+          1,
+          { signers: [userB] }
+        );
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("MarketAlreadySettled");
+      }
     });
   });
 

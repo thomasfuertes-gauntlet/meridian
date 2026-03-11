@@ -1,0 +1,198 @@
+use anchor_lang::prelude::*;
+use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+
+use crate::errors::MeridianError;
+use crate::state::{MarketStatus, Order, OrderBook, StrikeMarket};
+
+#[derive(Accounts)]
+pub struct UnwindOrder<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        seeds = [
+            StrikeMarket::SEED,
+            market.ticker.as_bytes(),
+            &market.strike_price.to_le_bytes(),
+            &market.date.to_le_bytes(),
+        ],
+        bump = market.bump,
+    )]
+    pub market: Account<'info, StrikeMarket>,
+
+    #[account(
+        mut,
+        seeds = [OrderBook::SEED, market.key().as_ref()],
+        bump,
+    )]
+    pub order_book: AccountLoader<'info, OrderBook>,
+
+    #[account(
+        mut,
+        seeds = [b"ob_usdc_vault", market.key().as_ref()],
+        bump,
+    )]
+    pub ob_usdc_vault: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        seeds = [b"ob_yes_vault", market.key().as_ref()],
+        bump,
+    )]
+    pub ob_yes_vault: Account<'info, TokenAccount>,
+
+    /// Refund destination for bid-side escrow.
+    #[account(mut)]
+    pub refund_usdc_destination: Account<'info, TokenAccount>,
+
+    /// Refund destination for ask-side escrow.
+    #[account(mut)]
+    pub refund_yes_destination: Account<'info, TokenAccount>,
+
+    pub token_program: Program<'info, Token>,
+}
+
+enum FoundSide {
+    Bid,
+    Ask,
+}
+
+pub fn handler(ctx: Context<UnwindOrder>, order_id: u64) -> Result<()> {
+    require!(
+        ctx.accounts.market.status == MarketStatus::Frozen,
+        MeridianError::MarketNotFrozen
+    );
+    require!(
+        !ctx.accounts.market.is_settled(),
+        MeridianError::MarketAlreadySettled
+    );
+
+    let market_key = ctx.accounts.market.key();
+
+    let (side, index, refund_amount, owner, ob_bump) = {
+        let ob = ctx.accounts.order_book.load()?;
+
+        require_keys_eq!(ob.market, market_key);
+
+        let bid_count = ob.bid_count as usize;
+        let ask_count = ob.ask_count as usize;
+        let mut found: Option<(FoundSide, usize)> = None;
+
+        for i in 0..bid_count {
+            if ob.bids[i].order_id == order_id && ob.bids[i].is_active == 1 {
+                found = Some((FoundSide::Bid, i));
+                break;
+            }
+        }
+
+        if found.is_none() {
+            for i in 0..ask_count {
+                if ob.asks[i].order_id == order_id && ob.asks[i].is_active == 1 {
+                    found = Some((FoundSide::Ask, i));
+                    break;
+                }
+            }
+        }
+
+        let (side, idx) = found.ok_or(MeridianError::OrderNotFound)?;
+        let order = match &side {
+            FoundSide::Bid => &ob.bids[idx],
+            FoundSide::Ask => &ob.asks[idx],
+        };
+
+        match &side {
+            FoundSide::Bid => {
+                require_keys_eq!(ctx.accounts.refund_usdc_destination.owner, order.owner);
+                require_keys_eq!(
+                    ctx.accounts.refund_usdc_destination.mint,
+                    ctx.accounts.ob_usdc_vault.mint,
+                    MeridianError::InvalidCounterpartyAccount
+                );
+            }
+            FoundSide::Ask => {
+                require_keys_eq!(ctx.accounts.refund_yes_destination.owner, order.owner);
+                require_keys_eq!(
+                    ctx.accounts.refund_yes_destination.mint,
+                    ctx.accounts.ob_yes_vault.mint,
+                    MeridianError::InvalidCounterpartyAccount
+                );
+            }
+        }
+
+        let refund_amount = match &side {
+            FoundSide::Bid => order
+                .quantity
+                .checked_mul(order.price)
+                .ok_or(MeridianError::InvalidAmount)?,
+            FoundSide::Ask => order.quantity,
+        };
+
+        (side, idx, refund_amount, order.owner, ob.bump)
+    };
+
+    let ob_seeds: &[&[u8]] = &[OrderBook::SEED, market_key.as_ref(), &[ob_bump]];
+    let ob_signer = &[ob_seeds];
+
+    match &side {
+        FoundSide::Bid => {
+            token::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.ob_usdc_vault.to_account_info(),
+                        to: ctx.accounts.refund_usdc_destination.to_account_info(),
+                        authority: ctx.accounts.order_book.to_account_info(),
+                    },
+                    ob_signer,
+                ),
+                refund_amount,
+            )?;
+        }
+        FoundSide::Ask => {
+            token::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.ob_yes_vault.to_account_info(),
+                        to: ctx.accounts.refund_yes_destination.to_account_info(),
+                        authority: ctx.accounts.order_book.to_account_info(),
+                    },
+                    ob_signer,
+                ),
+                refund_amount,
+            )?;
+        }
+    }
+
+    {
+        let mut ob = ctx.accounts.order_book.load_mut()?;
+
+        match side {
+            FoundSide::Bid => {
+                let count = ob.bid_count as usize;
+                for i in index..count - 1 {
+                    ob.bids[i] = ob.bids[i + 1];
+                }
+                ob.bids[count - 1] = Order::default();
+                ob.bid_count -= 1;
+            }
+            FoundSide::Ask => {
+                let count = ob.ask_count as usize;
+                for i in index..count - 1 {
+                    ob.asks[i] = ob.asks[i + 1];
+                }
+                ob.asks[count - 1] = Order::default();
+                ob.ask_count -= 1;
+            }
+        }
+    }
+
+    msg!(
+        "Order {} unwound during frozen-market settlement prep. Refunded {} to {}",
+        order_id,
+        refund_amount,
+        owner
+    );
+
+    Ok(())
+}

@@ -45,4 +45,8 @@ impl OrderBook {
     // 8 (discriminator) + size_of::<OrderBook>()
     pub const SPACE: usize = 8 + std::mem::size_of::<OrderBook>();
     pub const SEED: &'static [u8] = b"orderbook";
+
+    pub fn has_active_orders(&self) -> bool {
+        self.bid_count > 0 || self.ask_count > 0
+    }
 }

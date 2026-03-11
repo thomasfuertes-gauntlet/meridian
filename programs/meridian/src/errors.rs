@@ -48,6 +48,10 @@ pub enum MeridianError {
     OrderNotFound,
     #[msg("Not the order owner")]
     NotOrderOwner,
+    #[msg("Order book still has active orders")]
+    OrderBookNotEmpty,
+    #[msg("Order book escrow is not empty")]
+    OrderBookEscrowNotEmpty,
     #[msg("Missing counterparty account for fill")]
     MissingCounterpartyAccount,
     #[msg("Invalid counterparty token account")]

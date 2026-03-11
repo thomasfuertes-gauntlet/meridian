@@ -84,4 +84,8 @@ pub mod meridian {
     pub fn cancel_order(ctx: Context<CancelOrder>, order_id: u64) -> Result<()> {
         instructions::cancel_order::handler(ctx, order_id)
     }
+
+    pub fn unwind_order(ctx: Context<UnwindOrder>, order_id: u64) -> Result<()> {
+        instructions::unwind_order::handler(ctx, order_id)
+    }
 }

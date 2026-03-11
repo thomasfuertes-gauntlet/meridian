@@ -16,6 +16,7 @@ pub mod place_order;
 pub mod redeem;
 pub mod settle_market;
 pub mod unpause;
+pub mod unwind_order;
 
 pub use admin_settle::*;
 pub use burn_pair::*;
@@ -30,3 +31,4 @@ pub use place_order::*;
 pub use redeem::*;
 pub use settle_market::*;
 pub use unpause::*;
+pub use unwind_order::*;

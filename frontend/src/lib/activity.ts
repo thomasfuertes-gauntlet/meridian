@@ -9,7 +9,15 @@ import {
 import bs58 from "bs58";
 import idl from "../idl/meridian.json";
 import { connection, getReadOnlyProgram } from "./anchor";
-import { MAG7, PROGRAM_ID, USDC_PER_PAIR, type Ticker } from "./constants";
+import {
+  ACTIVITY_LIMIT,
+  ACTIVITY_POLL_MS,
+  ACTIVITY_SIGNATURES_PER_MARKET,
+  MAG7,
+  PROGRAM_ID,
+  USDC_PER_PAIR,
+  type Ticker,
+} from "./constants";
 
 export type ActivityKind =
   | "mintPair"
@@ -224,7 +232,18 @@ async function fetchRelevantSignatures(
   return [...new Set(signatureGroups.flat().map((item) => item.signature))];
 }
 
-export async function fetchActivityFeed(limit = 80): Promise<ActivityRecord[]> {
+const activityCache = new Map<number, { records: ActivityRecord[]; at: number }>();
+const activityInflight = new Map<number, Promise<ActivityRecord[]>>();
+
+export async function fetchActivityFeed(limit = ACTIVITY_LIMIT): Promise<ActivityRecord[]> {
+  const cached = activityCache.get(limit);
+  if (cached && Date.now() - cached.at < Math.max(10_000, ACTIVITY_POLL_MS / 2)) {
+    return cached.records;
+  }
+  const inflight = activityInflight.get(limit);
+  if (inflight) return inflight;
+
+  const request = (async () => {
   const program = getReadOnlyProgram();
   const coder = new BorshInstructionCoder(idl as Idl);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -246,7 +265,7 @@ export async function fetchActivityFeed(limit = 80): Promise<ActivityRecord[]> {
     marketAddresses.push(item.publicKey as PublicKey);
   }
 
-  const signatures = await fetchRelevantSignatures(marketAddresses, 8);
+  const signatures = await fetchRelevantSignatures(marketAddresses, ACTIVITY_SIGNATURES_PER_MARKET);
   if (signatures.length === 0) return [];
 
   const transactions = await connection.getParsedTransactions(signatures.slice(0, limit), {
@@ -275,10 +294,20 @@ export async function fetchActivityFeed(limit = 80): Promise<ActivityRecord[]> {
     return b.slot - a.slot;
   });
 
-  return activity.slice(0, limit);
+    const next = activity.slice(0, limit);
+    activityCache.set(limit, { records: next, at: Date.now() });
+    return next;
+  })();
+
+  activityInflight.set(limit, request);
+  try {
+    return await request;
+  } finally {
+    activityInflight.delete(limit);
+  }
 }
 
-export function useActivityFeed(limit = 80) {
+export function useActivityFeed(limit = ACTIVITY_LIMIT) {
   const [data, setData] = useState<ActivityRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -301,7 +330,7 @@ export function useActivityFeed(limit = 80) {
     }
 
     void load();
-    const interval = window.setInterval(() => void load(), 20_000);
+    const interval = window.setInterval(() => void load(), ACTIVITY_POLL_MS);
     return () => {
       alive = false;
       window.clearInterval(interval);

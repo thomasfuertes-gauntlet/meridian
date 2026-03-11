@@ -5,7 +5,13 @@ import { PublicKey } from "@solana/web3.js";
 import { OrderBook } from "../components/OrderBook";
 import { TradePanel } from "../components/TradePanel";
 import { SettlementCountdown } from "../components/SettlementCountdown";
-import { MAG7, PROGRAM_ID, USDC_PER_PAIR } from "../lib/constants";
+import {
+  MAG7,
+  PROGRAM_ID,
+  TRADE_BOOK_POLL_MS,
+  TRADE_PRICE_POLL_MS,
+  USDC_PER_PAIR,
+} from "../lib/constants";
 import { useUsdcMint } from "../lib/usdc-mint";
 import { getReadOnlyProgram } from "../lib/anchor";
 import {
@@ -129,7 +135,7 @@ export function Trade() {
       }
     }
     load();
-    const id = setInterval(load, 15_000);
+    const id = setInterval(load, TRADE_PRICE_POLL_MS);
     return () => clearInterval(id);
   }, [stock, pushPrice]);
 
@@ -181,7 +187,7 @@ export function Trade() {
       setBookSummaries(summaries);
     }
     loadAllBooks();
-    const id = setInterval(loadAllBooks, 10_000);
+    const id = setInterval(loadAllBooks, TRADE_BOOK_POLL_MS);
     return () => clearInterval(id);
   }, [markets, connection]);
 

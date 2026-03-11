@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { connection, getReadOnlyProgram } from "./anchor";
-import { MAG7, PROGRAM_ID, USDC_PER_PAIR, type Ticker } from "./constants";
+import { MAG7, MARKET_POLL_MS, PROGRAM_ID, USDC_PER_PAIR, type Ticker } from "./constants";
 import { parseOrderBook, type ParsedOrderBook } from "./orderbook";
 import { fetchPrices } from "./pyth";
 
@@ -52,6 +52,10 @@ export interface MarketUniverse {
   tickerSnapshots: TickerSnapshot[];
   marketsByTicker: Record<Ticker, MarketRecord[]>;
 }
+
+let marketUniverseCache: MarketUniverse | null = null;
+let marketUniverseCacheAt = 0;
+let marketUniverseInflight: Promise<MarketUniverse> | null = null;
 
 interface NormalizedMarketBase {
   address: string;
@@ -121,6 +125,13 @@ function latestDateByTicker(records: Array<{ ticker: Ticker; date: number }>): M
 }
 
 export async function fetchMarketUniverse(): Promise<MarketUniverse> {
+  const now = Date.now();
+  if (marketUniverseCache && now - marketUniverseCacheAt < Math.max(5_000, MARKET_POLL_MS / 2)) {
+    return marketUniverseCache;
+  }
+  if (marketUniverseInflight) return marketUniverseInflight;
+
+  marketUniverseInflight = (async () => {
   const program = getReadOnlyProgram();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rawMarkets = await (program.account as any).strikeMarket.all();
@@ -234,14 +245,24 @@ export async function fetchMarketUniverse(): Promise<MarketUniverse> {
     } satisfies TickerSnapshot;
   });
 
-  return {
+  const next = {
     asOf: Date.now(),
     tickerSnapshots,
     marketsByTicker,
   };
+    marketUniverseCache = next;
+    marketUniverseCacheAt = Date.now();
+    return next;
+  })();
+
+  try {
+    return await marketUniverseInflight;
+  } finally {
+    marketUniverseInflight = null;
+  }
 }
 
-export function useMarketUniverse(pollMs = 15_000) {
+export function useMarketUniverse(pollMs = MARKET_POLL_MS) {
   const [data, setData] = useState<MarketUniverse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

@@ -9,7 +9,7 @@ import {
   useActivityFeed,
 } from "../lib/activity";
 import { compact, formatContracts, formatTimestamp, formatUsdcBaseUnits, money } from "../lib/format";
-import type { Ticker } from "../lib/constants";
+import { ACTIVITY_LIMIT, type Ticker } from "../lib/constants";
 import { deskLabelForPubkey, getDeskWallets } from "../lib/dev-wallets";
 
 function shortKey(value: string | null): string {
@@ -25,7 +25,7 @@ function sideTone(side: "yes" | "no" | null): string {
 
 export function Activity() {
   const wallet = useAnchorWallet();
-  const { data, loading, error } = useActivityFeed(120);
+  const { data, loading, error } = useActivityFeed(ACTIVITY_LIMIT);
   const [tickerFilter, setTickerFilter] = useState<Ticker | "all">("all");
   const desks = useMemo(() => getDeskWallets(wallet?.publicKey), [wallet]);
   const [deskFilter, setDeskFilter] = useState<string>("all");

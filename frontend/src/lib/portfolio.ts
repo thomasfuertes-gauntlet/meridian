@@ -8,7 +8,7 @@ import {
 } from "@solana/spl-token";
 import { type Connection } from "@solana/web3.js";
 import bs58 from "bs58";
-import { PROGRAM_ID, USDC_PER_PAIR } from "./constants";
+import { PORTFOLIO_SIGNATURE_LIMIT, PROGRAM_ID, USDC_PER_PAIR } from "./constants";
 import idl from "../idl/meridian.json";
 
 const instructionCoder = new BorshInstructionCoder(idl as Idl);
@@ -234,7 +234,11 @@ export async function fetchPositionPerformance(
   positions: Position[],
   usdcMint: PublicKey
 ): Promise<Map<string, PositionPerformance>> {
-  const signatures = await connection.getSignaturesForAddress(wallet, { limit: 120 }, "confirmed");
+  const signatures = await connection.getSignaturesForAddress(
+    wallet,
+    { limit: PORTFOLIO_SIGNATURE_LIMIT },
+    "confirmed"
+  );
   if (signatures.length === 0) {
     return new Map(
       positions.map((position) => [

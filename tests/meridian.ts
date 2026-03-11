@@ -1563,6 +1563,39 @@ describe("meridian", () => {
       expect(ob2.bidCount).to.equal(0);
     });
 
+    it("cancel_order conserves bid escrow exactly across vault and refund destination", async () => {
+      const m = await createMarketWithOB("OB8C", new anchor.BN(100_000_000));
+      await mintPairsFor(m, admin.publicKey, adminUsdcAta, 1);
+      const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
+
+      await placeBid(m, admin.publicKey, adminUsdcAta, adminYes, 450_000, 3);
+
+      const ob = await program.account.orderBook.fetch(m.orderBookPda);
+      const orderId = ob.bids[0].orderId;
+      const usdcBefore = await tokenAmount(adminUsdcAta);
+      const obUsdcBefore = await tokenAmount(m.obUsdcVault);
+
+      await program.methods
+        .cancelOrder(orderId)
+        .accountsPartial({
+          user: admin.publicKey,
+          market: m.marketPda,
+          orderBook: m.orderBookPda,
+          obUsdcVault: m.obUsdcVault,
+          obYesVault: m.obYesVault,
+          refundDestination: adminUsdcAta,
+        })
+        .rpc();
+
+      const usdcAfter = await tokenAmount(adminUsdcAta);
+      const obUsdcAfter = await tokenAmount(m.obUsdcVault);
+      const refunded = 3 * 450_000;
+
+      expectIncrease(usdcBefore, usdcAfter, refunded);
+      expectDecrease(obUsdcBefore, obUsdcAfter, refunded);
+      expect(obUsdcAfter).to.equal(0);
+    });
+
     it("cancels a resting ask and refunds Yes tokens", async () => {
       const m = await createMarketWithOB("OB9", new anchor.BN(100_000_000));
       await mintPairsFor(m, admin.publicKey, adminUsdcAta, 3);
@@ -2657,6 +2690,43 @@ describe("meridian", () => {
 
       const settled = await program.account.strikeMarket.fetch(pdas.marketPda);
       expect(settled.outcome).to.deep.equal({ yesWins: {} });
+    });
+
+    it("unwind_order conserves ask escrow exactly across vault and refund destination", async () => {
+      const pdas = await createMarket("UWCV", new anchor.BN(290_750_000), nextUnwindDate());
+      const market = pdas;
+      const { userYes: userBYes } = await mintPairForUser(
+        userB.publicKey,
+        userBUsdc,
+        pdas,
+        2,
+        [userB]
+      );
+
+      await placeAsk(
+        market,
+        userB.publicKey,
+        userBUsdc,
+        userBYes,
+        620_000,
+        2,
+        { signers: [userB] }
+      );
+
+      const obBefore = await program.account.orderBook.fetch(market.orderBookPda);
+      const askOrderId = obBefore.asks[0].orderId;
+      const userYesBefore = await tokenAmount(userBYes);
+      const obYesBefore = await tokenAmount(market.obYesVault);
+
+      await freezeMarket(market);
+      await unwindOrderForSettlement(market, askOrderId, userBUsdc, userBYes);
+
+      const userYesAfter = await tokenAmount(userBYes);
+      const obYesAfter = await tokenAmount(market.obYesVault);
+
+      expectIncrease(userYesBefore, userYesAfter, 2);
+      expectDecrease(obYesBefore, obYesAfter, 2);
+      expect(obYesAfter).to.equal(0);
     });
 
     it("unwinds bid and ask escrow during freeze, then allows settlement", async () => {

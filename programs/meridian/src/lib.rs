@@ -28,6 +28,16 @@ pub mod meridian {
         instructions::create_strike_market::handler(ctx, ticker, strike_price, date, close_time)
     }
 
+    pub fn add_strike(
+        ctx: Context<AddStrike>,
+        ticker: String,
+        strike_price: u64,
+        date: i64,
+        close_time: i64,
+    ) -> Result<()> {
+        instructions::add_strike::handler(ctx, ticker, strike_price, date, close_time)
+    }
+
     pub fn mint_pair(ctx: Context<MintPair>, amount: u64) -> Result<()> {
         instructions::mint_pair::handler(ctx, amount)
     }

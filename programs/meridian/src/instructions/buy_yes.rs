@@ -7,11 +7,12 @@ use anchor_spl::{
 use crate::errors::MeridianError;
 use crate::instructions::shared::{
     apply_fills_to_orders, buy_yes_from_asks, escrow_usdc, plan_ask_fills, refund_ob_usdc_to_user,
-    total_fill_cost, validate_order_book_for_market,
+    total_fill_cost, compute_refund, validate_order_book_for_market,
 };
-use crate::state::{
-    GlobalConfig, Order, OrderBook, StrikeMarket, MAX_ORDERS_PER_SIDE, USDC_PER_PAIR,
-};
+use crate::state::{GlobalConfig, OrderBook, StrikeMarket, USDC_PER_PAIR};
+
+#[cfg(test)]
+use crate::state::{Order, MAX_ORDERS_PER_SIDE};
 
 #[derive(Accounts)]
 pub struct BuyYes<'info> {
@@ -136,9 +137,7 @@ pub fn handler<'info>(
         ctx.remaining_accounts,
     )?;
 
-    let refund = escrow_amount
-        .checked_sub(total_fill_cost)
-        .ok_or(MeridianError::InvalidAmount)?;
+    let refund = compute_refund(escrow_amount, total_fill_cost)?;
     refund_ob_usdc_to_user(
         ctx.accounts.token_program.to_account_info(),
         order_book_ai,

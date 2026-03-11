@@ -6,7 +6,7 @@ use crate::state::{GlobalConfig, MarketOutcome, MarketStatus, OrderBook, StrikeM
 
 #[derive(Accounts)]
 #[instruction(ticker: String, strike_price: u64, date: i64)]
-pub struct CreateStrikeMarket<'info> {
+pub struct AddStrike<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
 
@@ -98,7 +98,7 @@ pub struct CreateStrikeMarket<'info> {
 }
 
 pub fn handler(
-    ctx: Context<CreateStrikeMarket>,
+    ctx: Context<AddStrike>,
     ticker: String,
     strike_price: u64,
     date: i64,

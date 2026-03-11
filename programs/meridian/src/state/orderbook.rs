@@ -50,3 +50,45 @@ impl OrderBook {
         self.bid_count > 0 || self.ask_count > 0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_book() -> OrderBook {
+        OrderBook {
+            market: Pubkey::new_unique(),
+            ob_usdc_vault: Pubkey::new_unique(),
+            ob_yes_vault: Pubkey::new_unique(),
+            next_order_id: 1,
+            bid_count: 0,
+            ask_count: 0,
+            bump: 255,
+            _padding: [0; 3],
+            bids: [Order::default(); MAX_ORDERS_PER_SIDE],
+            asks: [Order::default(); MAX_ORDERS_PER_SIDE],
+        }
+    }
+
+    #[test]
+    fn has_active_orders_is_false_when_counts_are_zero() {
+        let order_book = empty_book();
+        assert!(!order_book.has_active_orders());
+    }
+
+    #[test]
+    fn has_active_orders_is_true_when_bid_count_is_nonzero_even_if_array_entry_is_inactive() {
+        let mut order_book = empty_book();
+        order_book.bid_count = 1;
+        order_book.bids[0].is_active = 0;
+        assert!(order_book.has_active_orders());
+    }
+
+    #[test]
+    fn has_active_orders_is_true_when_ask_count_is_nonzero_even_if_array_entry_is_inactive() {
+        let mut order_book = empty_book();
+        order_book.ask_count = 1;
+        order_book.asks[0].is_active = 0;
+        assert!(order_book.has_active_orders());
+    }
+}

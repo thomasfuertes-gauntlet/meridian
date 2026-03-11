@@ -95,35 +95,7 @@ pub fn handler<'info>(
             ctx.accounts.ob_usdc_vault.key(),
             ctx.accounts.ob_yes_vault.key(),
         )?;
-
-        match side {
-            OrderSide::Bid => {
-                let best_ask = ob
-                    .asks
-                    .iter()
-                    .take(ob.ask_count as usize)
-                    .find(|order| order.is_active != 0);
-                if let Some(best_ask) = best_ask {
-                    require!(
-                        price < best_ask.price,
-                        MeridianError::CrossingOrdersUseDedicatedPath
-                    );
-                }
-            }
-            OrderSide::Ask => {
-                let best_bid = ob
-                    .bids
-                    .iter()
-                    .take(ob.bid_count as usize)
-                    .find(|order| order.is_active != 0);
-                if let Some(best_bid) = best_bid {
-                    require!(
-                        price > best_bid.price,
-                        MeridianError::CrossingOrdersUseDedicatedPath
-                    );
-                }
-            }
-        }
+        validate_maker_only(side, price, &ob)?;
     }
 
     let escrow_amount = match side {
@@ -263,4 +235,147 @@ fn find_ask_insert_pos(
         }
     }
     count
+}
+
+fn validate_maker_only(side: OrderSide, price: u64, order_book: &OrderBook) -> Result<()> {
+    match side {
+        OrderSide::Bid => {
+            let best_ask = order_book
+                .asks
+                .iter()
+                .take(order_book.ask_count as usize)
+                .find(|order| order.is_active != 0);
+            if let Some(best_ask) = best_ask {
+                require!(
+                    price < best_ask.price,
+                    MeridianError::CrossingOrdersUseDedicatedPath
+                );
+            }
+        }
+        OrderSide::Ask => {
+            let best_bid = order_book
+                .bids
+                .iter()
+                .take(order_book.bid_count as usize)
+                .find(|order| order.is_active != 0);
+            if let Some(best_bid) = best_bid {
+                require!(
+                    price > best_bid.price,
+                    MeridianError::CrossingOrdersUseDedicatedPath
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn order(price: u64, order_id: u64, active: bool) -> Order {
+        Order {
+            owner: Pubkey::new_unique(),
+            price,
+            quantity: 1,
+            timestamp: 0,
+            order_id,
+            is_active: u8::from(active),
+            _padding: [0; 7],
+        }
+    }
+
+    fn empty_book() -> OrderBook {
+        OrderBook {
+            market: Pubkey::new_unique(),
+            ob_usdc_vault: Pubkey::new_unique(),
+            ob_yes_vault: Pubkey::new_unique(),
+            next_order_id: 1,
+            bid_count: 0,
+            ask_count: 0,
+            bump: 255,
+            _padding: [0; 3],
+            bids: [Order::default(); MAX_ORDERS_PER_SIDE],
+            asks: [Order::default(); MAX_ORDERS_PER_SIDE],
+        }
+    }
+
+    #[test]
+    fn maker_only_allows_resting_bid_below_best_ask() {
+        let mut order_book = empty_book();
+        order_book.asks[0] = order(600_000, 1, true);
+        order_book.ask_count = 1;
+
+        validate_maker_only(OrderSide::Bid, 599_999, &order_book).unwrap();
+    }
+
+    #[test]
+    fn maker_only_rejects_bid_crossing_best_ask() {
+        let mut order_book = empty_book();
+        order_book.asks[0] = order(600_000, 1, true);
+        order_book.ask_count = 1;
+
+        let err = validate_maker_only(OrderSide::Bid, 600_000, &order_book).unwrap_err();
+        assert!(err.to_string().contains("CrossingOrdersUseDedicatedPath"));
+    }
+
+    #[test]
+    fn maker_only_allows_resting_ask_above_best_bid() {
+        let mut order_book = empty_book();
+        order_book.bids[0] = order(400_000, 1, true);
+        order_book.bid_count = 1;
+
+        validate_maker_only(OrderSide::Ask, 400_001, &order_book).unwrap();
+    }
+
+    #[test]
+    fn maker_only_rejects_ask_crossing_best_bid() {
+        let mut order_book = empty_book();
+        order_book.bids[0] = order(400_000, 1, true);
+        order_book.bid_count = 1;
+
+        let err = validate_maker_only(OrderSide::Ask, 400_000, &order_book).unwrap_err();
+        assert!(err.to_string().contains("CrossingOrdersUseDedicatedPath"));
+    }
+
+    #[test]
+    fn bid_insert_position_preserves_fifo_at_equal_price() {
+        let mut bids = [Order::default(); MAX_ORDERS_PER_SIDE];
+        bids[0] = order(650_000, 1, true);
+        bids[1] = order(650_000, 2, true);
+
+        let insert_pos = find_bid_insert_pos(&bids, 2, 650_000, 3);
+        assert_eq!(insert_pos, 2);
+    }
+
+    #[test]
+    fn bid_insert_position_moves_ahead_for_better_price() {
+        let mut bids = [Order::default(); MAX_ORDERS_PER_SIDE];
+        bids[0] = order(650_000, 1, true);
+        bids[1] = order(640_000, 2, true);
+
+        let insert_pos = find_bid_insert_pos(&bids, 2, 660_000, 3);
+        assert_eq!(insert_pos, 0);
+    }
+
+    #[test]
+    fn ask_insert_position_preserves_fifo_at_equal_price() {
+        let mut asks = [Order::default(); MAX_ORDERS_PER_SIDE];
+        asks[0] = order(350_000, 1, true);
+        asks[1] = order(350_000, 2, true);
+
+        let insert_pos = find_ask_insert_pos(&asks, 2, 350_000, 3);
+        assert_eq!(insert_pos, 2);
+    }
+
+    #[test]
+    fn ask_insert_position_moves_ahead_for_better_price() {
+        let mut asks = [Order::default(); MAX_ORDERS_PER_SIDE];
+        asks[0] = order(350_000, 1, true);
+        asks[1] = order(360_000, 2, true);
+
+        let insert_pos = find_ask_insert_pos(&asks, 2, 340_000, 3);
+        assert_eq!(insert_pos, 0);
+    }
 }

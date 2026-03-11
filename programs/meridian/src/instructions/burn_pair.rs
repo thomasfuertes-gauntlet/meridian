@@ -20,43 +20,43 @@ pub struct BurnPair<'info> {
         ],
         bump = market.bump,
     )]
-    pub market: Account<'info, StrikeMarket>,
+    pub market: Box<Account<'info, StrikeMarket>>,
 
     #[account(mut)]
-    pub user_usdc: Account<'info, TokenAccount>,
+    pub user_usdc: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
         seeds = [b"vault", market.key().as_ref()],
         bump,
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
         address = market.yes_mint,
     )]
-    pub yes_mint: Account<'info, Mint>,
+    pub yes_mint: Box<Account<'info, Mint>>,
 
     #[account(
         mut,
         address = market.no_mint,
     )]
-    pub no_mint: Account<'info, Mint>,
+    pub no_mint: Box<Account<'info, Mint>>,
 
     #[account(
         mut,
         token::mint = yes_mint,
         token::authority = user,
     )]
-    pub user_yes: Account<'info, TokenAccount>,
+    pub user_yes: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
         token::mint = no_mint,
         token::authority = user,
     )]
-    pub user_no: Account<'info, TokenAccount>,
+    pub user_no: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,

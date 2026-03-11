@@ -4,12 +4,13 @@ use anchor_spl::token::{Mint, Token, TokenAccount};
 use crate::errors::MeridianError;
 use crate::instructions::shared::{
     apply_fills_to_orders, assert_market_vault_invariant, burn_complete_set_for_usdc,
-    buy_yes_from_asks, escrow_usdc, plan_ask_fills, refund_ob_usdc_to_user, total_fill_cost,
-    validate_order_book_for_market,
+    buy_yes_from_asks, compute_refund, escrow_usdc, plan_ask_fills, refund_ob_usdc_to_user,
+    total_fill_cost, validate_order_book_for_market,
 };
-use crate::state::{
-    GlobalConfig, Order, OrderBook, StrikeMarket, MAX_ORDERS_PER_SIDE, USDC_PER_PAIR,
-};
+use crate::state::{GlobalConfig, OrderBook, StrikeMarket, USDC_PER_PAIR};
+
+#[cfg(test)]
+use crate::state::{Order, MAX_ORDERS_PER_SIDE};
 
 #[derive(Accounts)]
 pub struct SellNo<'info> {
@@ -20,7 +21,7 @@ pub struct SellNo<'info> {
         seeds = [GlobalConfig::SEED],
         bump = config.bump,
     )]
-    pub config: Account<'info, GlobalConfig>,
+    pub config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
         mut,
@@ -32,45 +33,45 @@ pub struct SellNo<'info> {
         ],
         bump = market.bump,
     )]
-    pub market: Account<'info, StrikeMarket>,
+    pub market: Box<Account<'info, StrikeMarket>>,
 
     #[account(mut)]
-    pub user_usdc: Account<'info, TokenAccount>,
+    pub user_usdc: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
         seeds = [b"vault", market.key().as_ref()],
         bump,
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
         seeds = [b"yes_mint", market.key().as_ref()],
         bump,
     )]
-    pub yes_mint: Account<'info, Mint>,
+    pub yes_mint: Box<Account<'info, Mint>>,
 
     #[account(
         mut,
         seeds = [b"no_mint", market.key().as_ref()],
         bump,
     )]
-    pub no_mint: Account<'info, Mint>,
+    pub no_mint: Box<Account<'info, Mint>>,
 
     #[account(
         mut,
         token::mint = yes_mint,
         token::authority = user,
     )]
-    pub user_yes: Account<'info, TokenAccount>,
+    pub user_yes: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
         token::mint = no_mint,
         token::authority = user,
     )]
-    pub user_no: Account<'info, TokenAccount>,
+    pub user_no: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
@@ -84,14 +85,14 @@ pub struct SellNo<'info> {
         seeds = [b"ob_usdc_vault", market.key().as_ref()],
         bump,
     )]
-    pub ob_usdc_vault: Account<'info, TokenAccount>,
+    pub ob_usdc_vault: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
         seeds = [b"ob_yes_vault", market.key().as_ref()],
         bump,
     )]
-    pub ob_yes_vault: Account<'info, TokenAccount>,
+    pub ob_yes_vault: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
 }
@@ -156,9 +157,7 @@ pub fn handler<'info>(
     )?;
 
     // Refund any price improvement before burning the pair.
-    let refund = escrow_amount
-        .checked_sub(total_fill_cost)
-        .ok_or(MeridianError::InvalidAmount)?;
+    let refund = compute_refund(escrow_amount, total_fill_cost)?;
     refund_ob_usdc_to_user(
         ctx.accounts.token_program.to_account_info(),
         order_book_ai.clone(),

@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 use crate::errors::MeridianError;
 use crate::instructions::shared::validate_order_book_drained;
-use crate::state::{GlobalConfig, MarketOutcome, StrikeMarket};
+use crate::state::{GlobalConfig, StrikeMarket};
 
 #[derive(Accounts)]
 pub struct AdminSettle<'info> {
@@ -33,10 +33,14 @@ pub fn handler<'info>(
     ctx: Context<'_, '_, 'info, 'info, AdminSettle<'info>>,
     price: u64,
 ) -> Result<()> {
-    let market = &ctx.accounts.market;
-    let market_key = ctx.accounts.market.key();
     let clock = Clock::get()?;
-    market.assert_can_settle(clock.unix_timestamp)?;
+    let market_key = ctx.accounts.market.key();
+    {
+        let market = &mut ctx.accounts.market;
+        market.prepare_for_settlement(clock.unix_timestamp)?;
+    }
+
+    let market = &ctx.accounts.market;
     // Admin settle is the fallback path and requires a configured delay.
     validate_admin_settle_delay(
         market.close_time,
@@ -46,11 +50,7 @@ pub fn handler<'info>(
     validate_admin_settlement_price(price)?;
     validate_order_book_drained(market, &market_key, ctx.remaining_accounts)?;
 
-    let outcome = if price >= market.strike_price {
-        MarketOutcome::YesWins
-    } else {
-        MarketOutcome::NoWins
-    };
+    let outcome = market.outcome_for_price(price);
 
     let market = &mut ctx.accounts.market;
     market.apply_admin_settlement(outcome, price, clock.unix_timestamp)?;

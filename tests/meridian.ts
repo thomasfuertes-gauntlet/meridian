@@ -17,6 +17,8 @@ import {
 describe("meridian", () => {
   const supportedTickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"];
   const rpcUrl = process.env.ANCHOR_PROVIDER_URL || "http://127.0.0.1:8899";
+  const uniqueTestSeedBase =
+    Math.floor(Date.now() / 1000) - 86_400 + Math.floor(Math.random() * 10_000);
   const walletPath = resolve(process.env.ANCHOR_WALLET || ".wallets/admin.json");
   const walletSecret = JSON.parse(readFileSync(walletPath, "utf-8"));
   const wallet = new anchor.Wallet(
@@ -39,8 +41,9 @@ describe("meridian", () => {
   let mintAuthority: Keypair;
   let adminUsdcAta: PublicKey;
 
-  // close_time = 0 (epoch) so admin_settle's 1hr check passes (0 + 3600 < any real clock)
-  const pastCloseTime = new anchor.BN(0);
+  function closeTimeAfter(date: anchor.BN, seconds = 3600) {
+    return date.add(new anchor.BN(seconds));
+  }
 
   // Helper: derive market PDA and related accounts
   function deriveMarketPdas(
@@ -69,7 +72,27 @@ describe("meridian", () => {
       [Buffer.from("vault"), marketPda.toBuffer()],
       program.programId
     );
-    return { marketPda, yesMintPda, noMintPda, vaultPda };
+    const [orderBookPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("orderbook"), marketPda.toBuffer()],
+      program.programId
+    );
+    const [obUsdcVault] = PublicKey.findProgramAddressSync(
+      [Buffer.from("ob_usdc_vault"), marketPda.toBuffer()],
+      program.programId
+    );
+    const [obYesVault] = PublicKey.findProgramAddressSync(
+      [Buffer.from("ob_yes_vault"), marketPda.toBuffer()],
+      program.programId
+    );
+    return {
+      marketPda,
+      yesMintPda,
+      noMintPda,
+      vaultPda,
+      orderBookPda,
+      obUsdcVault,
+      obYesVault,
+    };
   }
 
   // Helper: create a strike market with oracle fields
@@ -86,12 +109,17 @@ describe("meridian", () => {
     ticker: string,
     strikePrice: anchor.BN,
     date: anchor.BN,
-    closeTime: anchor.BN = pastCloseTime
+    closeTime?: anchor.BN
   ) {
     const normalizedTicker = normalizeTicker(ticker);
     const pdas = deriveMarketPdas(normalizedTicker, strikePrice, date);
     await program.methods
-      .createStrikeMarket(normalizedTicker, strikePrice, date, closeTime)
+      .createStrikeMarket(
+        normalizedTicker,
+        strikePrice,
+        date,
+        closeTime ?? closeTimeAfter(date)
+      )
       .accountsPartial({
         admin: admin.publicKey,
         usdcMint: usdcMint,
@@ -247,6 +275,7 @@ describe("meridian", () => {
         config: configPda,
         market: market.marketPda,
       })
+      .remainingAccounts(settlementProofAccounts(market))
       .rpc();
   }
 
@@ -496,6 +525,22 @@ describe("meridian", () => {
     return blockTime;
   }
 
+  async function ensureConfigInitialized() {
+    const existing = await program.account.globalConfig.fetchNullable(configPda);
+    if (existing) {
+      return existing;
+    }
+
+    await program.methods
+      .initializeConfig()
+      .accountsPartial({
+        admin: admin.publicKey,
+      })
+      .rpc();
+
+    return program.account.globalConfig.fetch(configPda);
+  }
+
   before(async () => {
     // Derive config PDA
     [configPda, configBump] = PublicKey.findProgramAddressSync(
@@ -529,17 +574,12 @@ describe("meridian", () => {
       admin.publicKey
     );
     await mintUsdc(adminUsdcAta, 100_000_000); // 100 USDC
+
+    await ensureConfigInitialized();
   });
 
   it("initializes global config", async () => {
-    await program.methods
-      .initializeConfig()
-      .accountsPartial({
-        admin: admin.publicKey,
-      })
-      .rpc();
-
-    const configAccount = await program.account.globalConfig.fetch(configPda);
+    const configAccount = await ensureConfigInitialized();
     expect(configAccount.admin.toBase58()).to.equal(
       admin.publicKey.toBase58()
     );
@@ -575,7 +615,76 @@ describe("meridian", () => {
     expect(marketAccount.strikePrice.toNumber()).to.equal(680_000_000);
     expect(marketAccount.outcome).to.deep.equal({ pending: {} });
     expect(marketAccount.totalPairsMinted.toNumber()).to.equal(0);
-    expect(marketAccount.closeTime.toNumber()).to.equal(0);
+    expect(marketAccount.closeTime.toNumber()).to.equal(
+      closeTimeAfter(sharedDate).toNumber()
+    );
+    expect(marketAccount.orderBook.toBase58()).to.equal(
+      sharedMarket.orderBookPda.toBase58()
+    );
+    expect(marketAccount.obUsdcVault.toBase58()).to.equal(
+      sharedMarket.obUsdcVault.toBase58()
+    );
+    expect(marketAccount.obYesVault.toBase58()).to.equal(
+      sharedMarket.obYesVault.toBase58()
+    );
+  });
+
+  it("rejects create_strike_market for unsupported tickers at the on-chain config boundary", async () => {
+    const date = new anchor.BN(1700000001);
+    const unsupportedTicker = "QQQ";
+    const strikePrice = new anchor.BN(500_000_000);
+
+    try {
+      await program.methods
+        .createStrikeMarket(unsupportedTicker, strikePrice, date, closeTimeAfter(date))
+        .accountsPartial({
+          admin: admin.publicKey,
+          usdcMint,
+        })
+        .rpc();
+      expect.fail("Should have thrown");
+    } catch (err: any) {
+      expect(err.toString()).to.include("UnsupportedTicker");
+    }
+  });
+
+  it("rejects create_strike_market from a non-admin signer", async () => {
+    const { user } = await createFundedUser();
+    const date = new anchor.BN(1700000002);
+
+    try {
+      await program.methods
+        .createStrikeMarket("AAPL", new anchor.BN(510_000_000), date, closeTimeAfter(date))
+        .accountsPartial({
+          admin: user.publicKey,
+          usdcMint,
+        })
+        .signers([user])
+        .rpc();
+      expect.fail("Should have thrown");
+    } catch (err: any) {
+      expect(err.toString()).to.match(/Unauthorized|ConstraintHasOne|2012/);
+    }
+  });
+
+  it("add_strike creates another admin-only market with full trading accounts", async () => {
+    const ticker = "AAPL";
+    const strikePrice = new anchor.BN(520_000_000);
+    const date = new anchor.BN(1700000003);
+    const pdas = deriveMarketPdas(ticker, strikePrice, date);
+
+    await program.methods
+      .addStrike(ticker, strikePrice, date, closeTimeAfter(date))
+      .accountsPartial({
+        admin: admin.publicKey,
+        usdcMint,
+      })
+      .rpc();
+
+    const marketAccount = await program.account.strikeMarket.fetch(pdas.marketPda);
+    expect(marketAccount.orderBook.toBase58()).to.equal(pdas.orderBookPda.toBase58());
+    expect(marketAccount.obUsdcVault.toBase58()).to.equal(pdas.obUsdcVault.toBase58());
+    expect(marketAccount.obYesVault.toBase58()).to.equal(pdas.obYesVault.toBase58());
   });
 
   it("mints a pair", async () => {
@@ -1205,7 +1314,7 @@ describe("meridian", () => {
     }
 
     // Unique market counter to avoid collisions
-    let obMarketIdx = 2000000000;
+    let obMarketIdx = uniqueTestSeedBase;
     function nextDate() {
       return new anchor.BN(obMarketIdx++);
     }
@@ -1214,8 +1323,7 @@ describe("meridian", () => {
     async function createMarketWithOB(ticker: string, strikePrice: anchor.BN) {
       const date = nextDate();
       const pdas = await createMarket(ticker, strikePrice, date);
-      const obPdas = await initOrderBook(pdas.marketPda, pdas.yesMintPda);
-      return { ...pdas, ...obPdas, date };
+      return { ...pdas, date };
     }
 
     // Mint pairs for a user (admin or userB)
@@ -1266,36 +1374,37 @@ describe("meridian", () => {
 
     // ── initialize_order_book ──────────────────────────────────
 
-    it("initializes order book + escrow vaults", async () => {
+    it("create_strike_market initializes order book + escrow vaults", async () => {
       const date = nextDate();
       const pdas = await createMarket("OB1", new anchor.BN(100_000_000), date);
-      const obPdas = await initOrderBook(pdas.marketPda, pdas.yesMintPda);
 
-      const ob = await program.account.orderBook.fetch(obPdas.orderBookPda);
+      const market = await program.account.strikeMarket.fetch(pdas.marketPda);
+      expect(market.orderBook.toBase58()).to.equal(pdas.orderBookPda.toBase58());
+      expect(market.obUsdcVault.toBase58()).to.equal(pdas.obUsdcVault.toBase58());
+      expect(market.obYesVault.toBase58()).to.equal(pdas.obYesVault.toBase58());
+
+      const ob = await program.account.orderBook.fetch(pdas.orderBookPda);
       expect(ob.market.toBase58()).to.equal(pdas.marketPda.toBase58());
       expect(ob.bidCount).to.equal(0);
       expect(ob.askCount).to.equal(0);
       expect(ob.nextOrderId.toNumber()).to.equal(1);
 
       // Vaults exist and are empty
-      const usdcVault = await getAccount(connection, obPdas.obUsdcVault);
+      const usdcVault = await getAccount(connection, pdas.obUsdcVault);
       expect(Number(usdcVault.amount)).to.equal(0);
-      const yesVault = await getAccount(connection, obPdas.obYesVault);
+      const yesVault = await getAccount(connection, pdas.obYesVault);
       expect(Number(yesVault.amount)).to.equal(0);
     });
 
-    it("rejects order book init on settled market", async () => {
+    it("rejects duplicate order book init once market creation has wired trading accounts", async () => {
       const date = nextDate();
       const pdas = await createMarket("OB2", new anchor.BN(100_000_000), date);
-
-      // Settle first
-      await adminSettleMarket(pdas, new anchor.BN(110_000_000));
 
       try {
         await initOrderBook(pdas.marketPda, pdas.yesMintPda);
         expect.fail("Should have thrown");
       } catch (err: any) {
-        expect(err.toString()).to.include("MarketAlreadySettled");
+        expect(err.toString()).to.include("InvalidMarketState");
       }
     });
 
@@ -1334,23 +1443,12 @@ describe("meridian", () => {
       await mintPairsFor(m, admin.publicKey, adminUsdcAta, 1);
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
-      const usdcBefore = Number((await getAccount(connection, adminUsdcAta)).amount);
+      const usdcBefore = await tokenAmount(adminUsdcAta);
 
-      await program.methods
-        .placeOrder({ bid: {} }, new anchor.BN(500_000), new anchor.BN(3))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          userUsdc: adminUsdcAta,
-          userYes: adminYes,
-        })
-        .rpc();
+      await placeBid(m, admin.publicKey, adminUsdcAta, adminYes, 500_000, 3);
 
       // Verify USDC escrowed: 3 * 500_000 = 1_500_000
-      const usdcAfter = Number((await getAccount(connection, adminUsdcAta)).amount);
+      const usdcAfter = await tokenAmount(adminUsdcAta);
       expect(usdcBefore - usdcAfter).to.equal(1_500_000);
 
       const ob = await program.account.orderBook.fetch(m.orderBookPda);
@@ -1368,23 +1466,12 @@ describe("meridian", () => {
       await mintPairsFor(m, admin.publicKey, adminUsdcAta, 2);
 
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
-      const yesBefore = Number((await getAccount(connection, adminYes)).amount);
+      const yesBefore = await tokenAmount(adminYes);
 
-      await program.methods
-        .placeOrder({ ask: {} }, new anchor.BN(700_000), new anchor.BN(2))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          userUsdc: adminUsdcAta,
-          userYes: adminYes,
-        })
-        .rpc();
+      await placeAsk(m, admin.publicKey, adminUsdcAta, adminYes, 700_000, 2);
 
       // 2 Yes tokens escrowed
-      const yesAfter = Number((await getAccount(connection, adminYes)).amount);
+      const yesAfter = await tokenAmount(adminYes);
       expect(yesBefore - yesAfter).to.equal(2);
 
       const ob = await program.account.orderBook.fetch(m.orderBookPda);
@@ -1402,18 +1489,7 @@ describe("meridian", () => {
       await mintPairsFor(m, admin.publicKey, adminUsdcAta, 2);
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
-      await program.methods
-        .placeOrder({ ask: {} }, new anchor.BN(500_000), new anchor.BN(2))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          userUsdc: adminUsdcAta,
-          userYes: adminYes,
-        })
-        .rpc();
+      await placeAsk(m, admin.publicKey, adminUsdcAta, adminYes, 500_000, 2);
 
       await mintUsdc(userBUsdc, 5_000_000);
       const userBYes = await createAssociatedTokenAccount(
@@ -1424,19 +1500,9 @@ describe("meridian", () => {
       );
 
       try {
-        await program.methods
-          .placeOrder({ bid: {} }, new anchor.BN(600_000), new anchor.BN(3))
-          .accountsPartial({
-            user: userB.publicKey,
-            market: m.marketPda,
-            orderBook: m.orderBookPda,
-            obUsdcVault: m.obUsdcVault,
-            obYesVault: m.obYesVault,
-            userUsdc: userBUsdc,
-            userYes: userBYes,
-          })
-          .signers([userB])
-          .rpc();
+        await placeBid(m, userB.publicKey, userBUsdc, userBYes, 600_000, 3, {
+          signers: [userB],
+        });
         expect.fail("Should have thrown");
       } catch (err: any) {
         expect(err.toString()).to.include("CrossingOrdersUseDedicatedPath");
@@ -1449,18 +1515,7 @@ describe("meridian", () => {
       await mintPairsFor(m, admin.publicKey, adminUsdcAta, 1);
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
-      await program.methods
-        .placeOrder({ ask: {} }, new anchor.BN(500_000), new anchor.BN(1))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          userUsdc: adminUsdcAta,
-          userYes: adminYes,
-        })
-        .rpc();
+      await placeAsk(m, admin.publicKey, adminUsdcAta, adminYes, 500_000, 1);
 
       await mintUsdc(userBUsdc, 1_000_000);
       const userBYes = await createAssociatedTokenAccount(
@@ -1471,19 +1526,9 @@ describe("meridian", () => {
       );
 
       try {
-        await program.methods
-          .placeOrder({ bid: {} }, new anchor.BN(500_000), new anchor.BN(1))
-          .accountsPartial({
-            user: userB.publicKey,
-            market: m.marketPda,
-            orderBook: m.orderBookPda,
-            obUsdcVault: m.obUsdcVault,
-            obYesVault: m.obYesVault,
-            userUsdc: userBUsdc,
-            userYes: userBYes,
-          })
-          .signers([userB])
-          .rpc();
+        await placeBid(m, userB.publicKey, userBUsdc, userBYes, 500_000, 1, {
+          signers: [userB],
+        });
         expect.fail("Should have thrown");
       } catch (err: any) {
         expect(err.toString()).to.include("CrossingOrdersUseDedicatedPath");
@@ -1496,18 +1541,7 @@ describe("meridian", () => {
       await mintPairsFor(m, admin.publicKey, adminUsdcAta, 1);
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
-      await program.methods
-        .placeOrder({ ask: {} }, new anchor.BN(500_000), new anchor.BN(1))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          userUsdc: adminUsdcAta,
-          userYes: adminYes,
-        })
-        .rpc();
+      await placeAsk(m, admin.publicKey, adminUsdcAta, adminYes, 500_000, 1);
 
       const userBYes = await createAssociatedTokenAccount(
         connection,
@@ -1519,30 +1553,18 @@ describe("meridian", () => {
       const userBUsdcBefore = await tokenAmount(userBUsdc);
 
       try {
-        await program.methods
-          .placeOrder({ bid: {} }, new anchor.BN(500_000), new anchor.BN(1))
-          .accountsPartial({
-            user: userB.publicKey,
-            market: m.marketPda,
-            orderBook: m.orderBookPda,
-            obUsdcVault: m.obUsdcVault,
-            obYesVault: m.obYesVault,
-            userUsdc: userBUsdc,
-            userYes: userBYes,
-          })
-          .remainingAccounts([
-            { pubkey: userBUsdc, isWritable: true, isSigner: false },
-          ])
-          .signers([userB])
-          .rpc();
+        await placeBid(m, userB.publicKey, userBUsdc, userBYes, 500_000, 1, {
+          signers: [userB],
+          remainingAccounts: [{ pubkey: userBUsdc, isWritable: true, isSigner: false }],
+        });
         expect.fail("Should have thrown");
       } catch (err: any) {
         expect(err.toString()).to.include("CrossingOrdersUseDedicatedPath");
       }
 
-      const adminUsdcAfter = Number((await getAccount(connection, adminUsdcAta)).amount);
-      const userBUsdcAfter = Number((await getAccount(connection, userBUsdc)).amount);
-      const userBYesAfter = Number((await getAccount(connection, userBYes)).amount);
+      const adminUsdcAfter = await tokenAmount(adminUsdcAta);
+      const userBUsdcAfter = await tokenAmount(userBUsdc);
+      const userBYesAfter = await tokenAmount(userBYes);
       expect(adminUsdcAfter).to.equal(adminUsdcBefore);
       expect(userBUsdcAfter).to.equal(userBUsdcBefore);
       expect(userBYesAfter).to.equal(0);
@@ -1556,18 +1578,7 @@ describe("meridian", () => {
       await mintPairsFor(m, admin.publicKey, adminUsdcAta, 5);
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
-      await program.methods
-        .placeOrder({ ask: {} }, new anchor.BN(400_000), new anchor.BN(5))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          userUsdc: adminUsdcAta,
-          userYes: adminYes,
-        })
-        .rpc();
+      await placeAsk(m, admin.publicKey, adminUsdcAta, adminYes, 400_000, 5);
 
       await mintUsdc(userBUsdc, 2_000_000);
       const userBYes = await createAssociatedTokenAccount(
@@ -1578,19 +1589,9 @@ describe("meridian", () => {
       );
 
       try {
-        await program.methods
-          .placeOrder({ bid: {} }, new anchor.BN(400_000), new anchor.BN(2))
-          .accountsPartial({
-            user: userB.publicKey,
-            market: m.marketPda,
-            orderBook: m.orderBookPda,
-            obUsdcVault: m.obUsdcVault,
-            obYesVault: m.obYesVault,
-            userUsdc: userBUsdc,
-            userYes: userBYes,
-          })
-          .signers([userB])
-          .rpc();
+        await placeBid(m, userB.publicKey, userBUsdc, userBYes, 400_000, 2, {
+          signers: [userB],
+        });
         expect.fail("Should have thrown");
       } catch (err: any) {
         expect(err.toString()).to.include("CrossingOrdersUseDedicatedPath");
@@ -1605,31 +1606,9 @@ describe("meridian", () => {
       await mintPairsFor(m, admin.publicKey, adminUsdcAta, 3);
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
-      await program.methods
-        .placeOrder({ ask: {} }, new anchor.BN(300_000), new anchor.BN(1))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          userUsdc: adminUsdcAta,
-          userYes: adminYes,
-        })
-        .rpc();
+      await placeAsk(m, admin.publicKey, adminUsdcAta, adminYes, 300_000, 1);
 
-      await program.methods
-        .placeOrder({ ask: {} }, new anchor.BN(600_000), new anchor.BN(2))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          userUsdc: adminUsdcAta,
-          userYes: adminYes,
-        })
-        .rpc();
+      await placeAsk(m, admin.publicKey, adminUsdcAta, adminYes, 600_000, 2);
 
       await mintUsdc(userBUsdc, 5_000_000);
       const userBYes = await createAssociatedTokenAccount(
@@ -1640,19 +1619,9 @@ describe("meridian", () => {
       );
 
       try {
-        await program.methods
-          .placeOrder({ bid: {} }, new anchor.BN(999_999), new anchor.BN(3))
-          .accountsPartial({
-            user: userB.publicKey,
-            market: m.marketPda,
-            orderBook: m.orderBookPda,
-            obUsdcVault: m.obUsdcVault,
-            obYesVault: m.obYesVault,
-            userUsdc: userBUsdc,
-            userYes: userBYes,
-          })
-          .signers([userB])
-          .rpc();
+        await placeBid(m, userB.publicKey, userBUsdc, userBYes, 999_999, 3, {
+          signers: [userB],
+        });
         expect.fail("Should have thrown");
       } catch (err: any) {
         expect(err.toString()).to.include("CrossingOrdersUseDedicatedPath");
@@ -1667,20 +1636,9 @@ describe("meridian", () => {
       await mintPairsFor(m, admin.publicKey, adminUsdcAta, 1);
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
-      const usdcBefore = Number((await getAccount(connection, adminUsdcAta)).amount);
+      const usdcBefore = await tokenAmount(adminUsdcAta);
 
-      await program.methods
-        .placeOrder({ bid: {} }, new anchor.BN(500_000), new anchor.BN(4))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          userUsdc: adminUsdcAta,
-          userYes: adminYes,
-        })
-        .rpc();
+      await placeBid(m, admin.publicKey, adminUsdcAta, adminYes, 500_000, 4);
 
       const ob = await program.account.orderBook.fetch(m.orderBookPda);
       const orderId = ob.bids[0].orderId;
@@ -1697,7 +1655,7 @@ describe("meridian", () => {
         })
         .rpc();
 
-      const usdcAfter = Number((await getAccount(connection, adminUsdcAta)).amount);
+      const usdcAfter = await tokenAmount(adminUsdcAta);
       expect(usdcAfter).to.equal(usdcBefore); // fully refunded
 
       const ob2 = await program.account.orderBook.fetch(m.orderBookPda);
@@ -1709,20 +1667,9 @@ describe("meridian", () => {
       await mintPairsFor(m, admin.publicKey, adminUsdcAta, 3);
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
-      const yesBefore = Number((await getAccount(connection, adminYes)).amount);
+      const yesBefore = await tokenAmount(adminYes);
 
-      await program.methods
-        .placeOrder({ ask: {} }, new anchor.BN(700_000), new anchor.BN(3))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          userUsdc: adminUsdcAta,
-          userYes: adminYes,
-        })
-        .rpc();
+      await placeAsk(m, admin.publicKey, adminUsdcAta, adminYes, 700_000, 3);
 
       const ob = await program.account.orderBook.fetch(m.orderBookPda);
       const orderId = ob.asks[0].orderId;
@@ -1739,7 +1686,7 @@ describe("meridian", () => {
         })
         .rpc();
 
-      const yesAfter = Number((await getAccount(connection, adminYes)).amount);
+      const yesAfter = await tokenAmount(adminYes);
       expect(yesAfter).to.equal(yesBefore);
 
       const ob2 = await program.account.orderBook.fetch(m.orderBookPda);
@@ -1755,23 +1702,12 @@ describe("meridian", () => {
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
       // Admin places a resting bid
-      await program.methods
-        .placeOrder({ bid: {} }, new anchor.BN(500_000), new anchor.BN(2))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          userUsdc: adminUsdcAta,
-          userYes: adminYes,
-        })
-        .rpc();
+      await placeBid(m, admin.publicKey, adminUsdcAta, adminYes, 500_000, 2);
 
       const ob = await program.account.orderBook.fetch(m.orderBookPda);
       const orderId = ob.bids[0].orderId;
 
-      const adminUsdcBefore = Number((await getAccount(connection, adminUsdcAta)).amount);
+      const adminUsdcBefore = await tokenAmount(adminUsdcAta);
 
       // Settle the market
       await adminSettleMarket(m, new anchor.BN(110_000_000));
@@ -1790,7 +1726,7 @@ describe("meridian", () => {
         .signers([userB])
         .rpc();
 
-      const adminUsdcAfter = Number((await getAccount(connection, adminUsdcAta)).amount);
+      const adminUsdcAfter = await tokenAmount(adminUsdcAta);
       // 2 * 500_000 = 1_000_000 refunded to admin
       expect(adminUsdcAfter - adminUsdcBefore).to.equal(1_000_000);
     });
@@ -1804,18 +1740,7 @@ describe("meridian", () => {
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
       // Admin places a resting bid
-      await program.methods
-        .placeOrder({ bid: {} }, new anchor.BN(500_000), new anchor.BN(2))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          userUsdc: adminUsdcAta,
-          userYes: adminYes,
-        })
-        .rpc();
+      await placeBid(m, admin.publicKey, adminUsdcAta, adminYes, 500_000, 2);
 
       const ob = await program.account.orderBook.fetch(m.orderBookPda);
       const orderId = ob.bids[0].orderId;
@@ -1871,18 +1796,7 @@ describe("meridian", () => {
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
       try {
-        await program.methods
-          .placeOrder({ bid: {} }, new anchor.BN(0), new anchor.BN(1))
-          .accountsPartial({
-            user: admin.publicKey,
-            market: m.marketPda,
-            orderBook: m.orderBookPda,
-            obUsdcVault: m.obUsdcVault,
-            obYesVault: m.obYesVault,
-            userUsdc: adminUsdcAta,
-            userYes: adminYes,
-          })
-          .rpc();
+        await placeBid(m, admin.publicKey, adminUsdcAta, adminYes, 0, 1);
         expect.fail("Should have thrown");
       } catch (err: any) {
         expect(err.toString()).to.include("InvalidPrice");
@@ -1895,18 +1809,7 @@ describe("meridian", () => {
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
       try {
-        await program.methods
-          .placeOrder({ bid: {} }, new anchor.BN(1_000_000), new anchor.BN(1))
-          .accountsPartial({
-            user: admin.publicKey,
-            market: m.marketPda,
-            orderBook: m.orderBookPda,
-            obUsdcVault: m.obUsdcVault,
-            obYesVault: m.obYesVault,
-            userUsdc: adminUsdcAta,
-            userYes: adminYes,
-          })
-          .rpc();
+        await placeBid(m, admin.publicKey, adminUsdcAta, adminYes, 1_000_000, 1);
         expect.fail("Should have thrown");
       } catch (err: any) {
         expect(err.toString()).to.include("InvalidPrice");
@@ -1919,18 +1822,7 @@ describe("meridian", () => {
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
       try {
-        await program.methods
-          .placeOrder({ bid: {} }, new anchor.BN(500_000), new anchor.BN(0))
-          .accountsPartial({
-            user: admin.publicKey,
-            market: m.marketPda,
-            orderBook: m.orderBookPda,
-            obUsdcVault: m.obUsdcVault,
-            obYesVault: m.obYesVault,
-            userUsdc: adminUsdcAta,
-            userYes: adminYes,
-          })
-          .rpc();
+        await placeBid(m, admin.publicKey, adminUsdcAta, adminYes, 500_000, 0);
         expect.fail("Should have thrown");
       } catch (err: any) {
         expect(err.toString()).to.include("InvalidAmount");
@@ -1945,18 +1837,7 @@ describe("meridian", () => {
       await adminSettleMarket(m, new anchor.BN(110_000_000));
 
       try {
-        await program.methods
-          .placeOrder({ bid: {} }, new anchor.BN(500_000), new anchor.BN(1))
-          .accountsPartial({
-            user: admin.publicKey,
-            market: m.marketPda,
-            orderBook: m.orderBookPda,
-            obUsdcVault: m.obUsdcVault,
-            obYesVault: m.obYesVault,
-            userUsdc: adminUsdcAta,
-            userYes: adminYes,
-          })
-          .rpc();
+        await placeBid(m, admin.publicKey, adminUsdcAta, adminYes, 500_000, 1);
         expect.fail("Should have thrown");
       } catch (err: any) {
         expect(err.toString()).to.include("MarketAlreadySettled");
@@ -1975,18 +1856,7 @@ describe("meridian", () => {
         .rpc();
 
       try {
-        await program.methods
-          .placeOrder({ bid: {} }, new anchor.BN(500_000), new anchor.BN(1))
-          .accountsPartial({
-            user: admin.publicKey,
-            market: m.marketPda,
-            orderBook: m.orderBookPda,
-            obUsdcVault: m.obUsdcVault,
-            obYesVault: m.obYesVault,
-            userUsdc: adminUsdcAta,
-            userYes: adminYes,
-          })
-          .rpc();
+        await placeBid(m, admin.publicKey, adminUsdcAta, adminYes, 500_000, 1);
         expect.fail("Should have thrown");
       } catch (err: any) {
         expect(err.toString()).to.include("Paused");
@@ -2120,18 +1990,14 @@ describe("meridian", () => {
       const adminUsdcBefore = await tokenAmount(adminUsdcAta);
       const userBUsdcBefore = await tokenAmount(userBUsdc);
 
-      await program.methods
-        .placeOrder({ bid: {} }, new anchor.BN(650_000), new anchor.BN(1))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: pdas.marketPda,
-          orderBook: obPdas.orderBookPda,
-          obUsdcVault: obPdas.obUsdcVault,
-          obYesVault: obPdas.obYesVault,
-          userUsdc: adminUsdcAta,
-          userYes: adminYes,
-        })
-        .rpc();
+      await placeBid(
+        { ...pdas, ...obPdas },
+        admin.publicKey,
+        adminUsdcAta,
+        adminYes,
+        650_000,
+        1
+      );
 
       await methods
         .buyNo(new anchor.BN(1), new anchor.BN(600_000))
@@ -2201,18 +2067,14 @@ describe("meridian", () => {
         .signers([userB])
         .rpc();
 
-      await program.methods
-        .placeOrder({ ask: {} }, new anchor.BN(400_000), new anchor.BN(2))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: pdas.marketPda,
-          orderBook: obPdas.orderBookPda,
-          obUsdcVault: obPdas.obUsdcVault,
-          obYesVault: obPdas.obYesVault,
-          userUsdc: adminUsdcAta,
-          userYes: adminYes,
-        })
-        .rpc();
+      await placeAsk(
+        { ...pdas, ...obPdas },
+        admin.publicKey,
+        adminUsdcAta,
+        adminYes,
+        400_000,
+        2
+      );
 
       const adminUsdcBefore = await tokenAmount(adminUsdcAta);
       const userBUsdcBefore = await tokenAmount(userBUsdc);
@@ -2308,18 +2170,14 @@ describe("meridian", () => {
       await freezeMarket(pdas);
 
       try {
-        await program.methods
-          .placeOrder({ ask: {} }, new anchor.BN(500_000), new anchor.BN(1))
-          .accountsPartial({
-            user: admin.publicKey,
-            market: pdas.marketPda,
-            orderBook: obPdas.orderBookPda,
-            obUsdcVault: obPdas.obUsdcVault,
-            obYesVault: obPdas.obYesVault,
-            userUsdc: adminUsdcAta,
-            userYes: adminYes,
-          })
-          .rpc();
+        await placeAsk(
+          { ...pdas, ...obPdas },
+          admin.publicKey,
+          adminUsdcAta,
+          adminYes,
+          500_000,
+          1
+        );
         expect.fail("Should have thrown");
       } catch (err: any) {
         expect(err.toString()).to.include("MarketFrozen");
@@ -2443,7 +2301,7 @@ describe("meridian", () => {
     const connection = provider.connection;
     let userB: Keypair;
     let userBUsdc: PublicKey;
-    let unwindIdx = 1970000000;
+    let unwindIdx = uniqueTestSeedBase + 10_000;
 
     function nextUnwindDate() {
       return new anchor.BN(unwindIdx++);
@@ -2457,8 +2315,7 @@ describe("meridian", () => {
 
     it("rejects admin settlement while frozen market still has resting orders", async () => {
       const pdas = await createMarket("UWBL", new anchor.BN(290_000_000), nextUnwindDate());
-      const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
-      const market = { ...pdas, ...obPdas };
+      const market = pdas;
       const adminYes = await createAssociatedTokenAccount(
         connection,
         mintAuthority,
@@ -2466,7 +2323,7 @@ describe("meridian", () => {
         admin.publicKey
       );
 
-      await placeBid({ ...pdas, ...obPdas }, admin.publicKey, adminUsdcAta, adminYes, 500_000, 1);
+      await placeBid(market, admin.publicKey, adminUsdcAta, adminYes, 500_000, 1);
 
       await freezeMarket(market);
 
@@ -2486,10 +2343,61 @@ describe("meridian", () => {
       }
     });
 
+    it("allows permissionless unwind during freeze while refunding the order owner", async () => {
+      const pdas = await createMarket("UWPM", new anchor.BN(290_500_000), nextUnwindDate());
+      const market = pdas;
+      const { userYes: userBYes } = await mintPairForUser(
+        userB.publicKey,
+        userBUsdc,
+        pdas,
+        2,
+        [userB]
+      );
+
+      await placeAsk(
+        market,
+        userB.publicKey,
+        userBUsdc,
+        userBYes,
+        610_000,
+        2,
+        { signers: [userB] }
+      );
+
+      const yesBeforeFreeze = await tokenAmount(userBYes);
+      const obBefore = await program.account.orderBook.fetch(market.orderBookPda);
+      const askOrderId = obBefore.asks[0].orderId;
+
+      expect(yesBeforeFreeze).to.equal(0);
+
+      await freezeMarket(market);
+
+      // Admin is not the order owner here. Settlement prep should still be able to
+      // permissionlessly unwind the frozen order as long as refunds go to the owner.
+      await unwindOrderForSettlement(
+        market,
+        askOrderId,
+        userBUsdc,
+        userBYes
+      );
+
+      const yesAfterUnwind = await tokenAmount(userBYes);
+      const obYesEscrow = await tokenAmount(market.obYesVault);
+      const obAfter = await program.account.orderBook.fetch(market.orderBookPda);
+
+      expect(yesAfterUnwind).to.equal(2);
+      expect(obYesEscrow).to.equal(0);
+      expect(obAfter.askCount).to.equal(0);
+
+      await settleWithOrderBookProof(market, new anchor.BN(300_000_000));
+
+      const settled = await program.account.strikeMarket.fetch(pdas.marketPda);
+      expect(settled.outcome).to.deep.equal({ yesWins: {} });
+    });
+
     it("unwinds bid and ask escrow during freeze, then allows settlement", async () => {
       const pdas = await createMarket("UWOK", new anchor.BN(291_000_000), nextUnwindDate());
-      const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
-      const market = { ...pdas, ...obPdas };
+      const market = pdas;
       const adminYes = await createAssociatedTokenAccount(
         connection,
         mintAuthority,
@@ -2507,9 +2415,9 @@ describe("meridian", () => {
       const adminUsdcBefore = await tokenAmount(adminUsdcAta);
       const userBYesBefore = await tokenAmount(userBYes);
 
-      await placeBid({ ...pdas, ...obPdas }, admin.publicKey, adminUsdcAta, adminYes, 500_000, 2);
+      await placeBid(market, admin.publicKey, adminUsdcAta, adminYes, 500_000, 2);
       await placeAsk(
-        { ...pdas, ...obPdas },
+        market,
         userB.publicKey,
         userBUsdc,
         userBYes,
@@ -2518,7 +2426,7 @@ describe("meridian", () => {
         { signers: [userB] }
       );
 
-      const obBefore = await program.account.orderBook.fetch(obPdas.orderBookPda);
+      const obBefore = await program.account.orderBook.fetch(market.orderBookPda);
       const bidOrderId = obBefore.bids[0].orderId;
       const askOrderId = obBefore.asks[0].orderId;
 
@@ -2540,9 +2448,9 @@ describe("meridian", () => {
 
       const adminUsdcAfterUnwind = await tokenAmount(adminUsdcAta);
       const userBYesAfterUnwind = await tokenAmount(userBYes);
-      const obUsdcEscrow = await tokenAmount(obPdas.obUsdcVault);
-      const obYesEscrow = await tokenAmount(obPdas.obYesVault);
-      const obAfter = await program.account.orderBook.fetch(obPdas.orderBookPda);
+      const obUsdcEscrow = await tokenAmount(market.obUsdcVault);
+      const obYesEscrow = await tokenAmount(market.obYesVault);
+      const obAfter = await program.account.orderBook.fetch(market.orderBookPda);
 
       expectIncrease(adminUsdcBefore, adminUsdcAfterUnwind, 0);
       expect(userBYesAfterUnwind).to.equal(userBYesBefore);
@@ -2563,8 +2471,7 @@ describe("meridian", () => {
       expect(metaPolicy).to.not.equal(undefined);
 
       const pdas = await createMarket("META", new anchor.BN(292_000_000), nextUnwindDate());
-      const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
-      const market = { ...pdas, ...obPdas };
+      const market = pdas;
       const { userYes } = await mintPairForAdmin(pdas, 2);
 
       const adminUsdcBefore = await tokenAmount(adminUsdcAta);

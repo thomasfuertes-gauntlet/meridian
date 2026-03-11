@@ -119,6 +119,12 @@ pub fn total_fill_cost(fills: &[AtomicFill]) -> Result<u64> {
     })
 }
 
+pub fn compute_refund(escrow_amount: u64, total_fill_cost: u64) -> Result<u64> {
+    escrow_amount
+        .checked_sub(total_fill_cost)
+        .ok_or_else(|| error!(MeridianError::InvalidAmount))
+}
+
 pub fn escrow_usdc<'info>(
     token_program: AccountInfo<'info>,
     authority: AccountInfo<'info>,
@@ -414,13 +420,27 @@ pub fn validate_counterparty_token_account(
     expected_owner: Pubkey,
     expected_mint: Pubkey,
 ) -> Result<()> {
-    require_keys_eq!(
+    validate_counterparty_owner_and_mint(
         token_account.owner,
+        token_account.mint,
+        expected_owner,
+        expected_mint,
+    )
+}
+
+fn validate_counterparty_owner_and_mint(
+    actual_owner: Pubkey,
+    actual_mint: Pubkey,
+    expected_owner: Pubkey,
+    expected_mint: Pubkey,
+) -> Result<()> {
+    require_keys_eq!(
+        actual_owner,
         expected_owner,
         MeridianError::InvalidCounterpartyAccount
     );
     require_keys_eq!(
-        token_account.mint,
+        actual_mint,
         expected_mint,
         MeridianError::InvalidCounterpartyAccount
     );
@@ -565,4 +585,347 @@ pub fn assert_market_vault_invariant(
         MeridianError::VaultInvariantViolation
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::{MarketOutcome, MarketStatus};
+
+    fn order(owner: Pubkey, price: u64, quantity: u64, order_id: u64, active: bool) -> Order {
+        Order {
+            owner,
+            price,
+            quantity,
+            timestamp: 0,
+            order_id,
+            is_active: u8::from(active),
+            _padding: [0; 7],
+        }
+    }
+
+    fn sample_market(total_pairs_minted: u64) -> StrikeMarket {
+        StrikeMarket {
+            ticker: "META".to_string(),
+            strike_price: 680_000_000,
+            date: 1_700_000_000,
+            status: MarketStatus::Created,
+            outcome: MarketOutcome::Pending,
+            total_pairs_minted,
+            yes_mint: Pubkey::default(),
+            no_mint: Pubkey::default(),
+            vault: Pubkey::default(),
+            usdc_mint: Pubkey::default(),
+            order_book: Pubkey::default(),
+            ob_usdc_vault: Pubkey::default(),
+            ob_yes_vault: Pubkey::default(),
+            admin: Pubkey::default(),
+            bump: 255,
+            frozen_at: None,
+            settled_at: None,
+            settlement_price: None,
+            settlement_source: None,
+            close_time: 0,
+        }
+    }
+
+    fn sample_order_book(market: Pubkey, ob_usdc_vault: Pubkey, ob_yes_vault: Pubkey) -> OrderBook {
+        OrderBook {
+            market,
+            ob_usdc_vault,
+            ob_yes_vault,
+            next_order_id: 1,
+            bid_count: 0,
+            ask_count: 0,
+            bump: 255,
+            _padding: [0; 3],
+            bids: [Order::default(); MAX_ORDERS_PER_SIDE],
+            asks: [Order::default(); MAX_ORDERS_PER_SIDE],
+        }
+    }
+
+    #[test]
+    fn plan_bid_fills_skips_inactive_orders_and_keeps_remaining_account_index_dense() {
+        let owner_a = Pubkey::new_unique();
+        let owner_b = Pubkey::new_unique();
+        let mut bids = [Order::default(); MAX_ORDERS_PER_SIDE];
+        bids[0] = order(owner_a, 650_000, 2, 1, false);
+        bids[1] = order(owner_b, 640_000, 2, 2, true);
+
+        let fills = plan_bid_fills(&bids, 2, 2, 600_000).unwrap();
+        assert_eq!(fills.len(), 1);
+        assert_eq!(fills[0].book_index, 1);
+        assert_eq!(fills[0].remaining_acct_idx, 0);
+        assert_eq!(fills[0].counterparty_owner, owner_b);
+    }
+
+    #[test]
+    fn plan_ask_fills_skips_inactive_orders_and_keeps_remaining_account_index_dense() {
+        let owner_a = Pubkey::new_unique();
+        let owner_b = Pubkey::new_unique();
+        let mut asks = [Order::default(); MAX_ORDERS_PER_SIDE];
+        asks[0] = order(owner_a, 300_000, 1, 1, false);
+        asks[1] = order(owner_b, 350_000, 2, 2, true);
+
+        let fills = plan_ask_fills(&asks, 2, 2, 400_000).unwrap();
+        assert_eq!(fills.len(), 1);
+        assert_eq!(fills[0].book_index, 1);
+        assert_eq!(fills[0].remaining_acct_idx, 0);
+        assert_eq!(fills[0].counterparty_owner, owner_b);
+    }
+
+    #[test]
+    fn compact_orders_removes_inactive_entries_and_preserves_order() {
+        let owner_a = Pubkey::new_unique();
+        let owner_b = Pubkey::new_unique();
+        let owner_c = Pubkey::new_unique();
+        let mut orders = [Order::default(); MAX_ORDERS_PER_SIDE];
+        orders[0] = order(owner_a, 650_000, 2, 1, true);
+        orders[1] = order(owner_b, 640_000, 1, 2, false);
+        orders[2] = order(owner_c, 630_000, 3, 3, true);
+
+        let new_count = compact_orders(&mut orders, 3);
+        assert_eq!(new_count, 2);
+        assert_eq!(orders[0].owner, owner_a);
+        assert_eq!(orders[1].owner, owner_c);
+        assert_eq!(orders[2].is_active, 0);
+    }
+
+    #[test]
+    fn total_fill_cost_rejects_overflow() {
+        let fills = vec![
+            AtomicFill {
+                book_index: 0,
+                fill_qty: 1,
+                fill_cost: u64::MAX,
+                remaining_acct_idx: 0,
+                counterparty_owner: Pubkey::new_unique(),
+            },
+            AtomicFill {
+                book_index: 1,
+                fill_qty: 1,
+                fill_cost: 1,
+                remaining_acct_idx: 1,
+                counterparty_owner: Pubkey::new_unique(),
+            },
+        ];
+
+        let err = total_fill_cost(&fills).unwrap_err();
+        assert!(err.to_string().contains("InvalidAmount"));
+    }
+
+    #[test]
+    fn compute_refund_returns_zero_when_no_price_improvement() {
+        assert_eq!(compute_refund(1_000_000, 1_000_000).unwrap(), 0);
+    }
+
+    #[test]
+    fn compute_refund_returns_exact_price_improvement() {
+        assert_eq!(compute_refund(1_000_000, 820_000).unwrap(), 180_000);
+    }
+
+    #[test]
+    fn compute_refund_rejects_fill_cost_above_escrow() {
+        let err = compute_refund(999_999, 1_000_000).unwrap_err();
+        assert!(err.to_string().contains("InvalidAmount"));
+    }
+
+    #[test]
+    fn apply_fills_compacts_partially_and_fully_filled_orders() {
+        let owner_a = Pubkey::new_unique();
+        let owner_b = Pubkey::new_unique();
+        let owner_c = Pubkey::new_unique();
+        let mut orders = [Order::default(); MAX_ORDERS_PER_SIDE];
+        orders[0] = order(owner_a, 650_000, 2, 1, true);
+        orders[1] = order(owner_b, 640_000, 1, 2, true);
+        orders[2] = order(owner_c, 630_000, 4, 3, true);
+
+        let fills = vec![
+            AtomicFill {
+                book_index: 0,
+                fill_qty: 2,
+                fill_cost: 1_300_000,
+                remaining_acct_idx: 0,
+                counterparty_owner: owner_a,
+            },
+            AtomicFill {
+                book_index: 1,
+                fill_qty: 1,
+                fill_cost: 640_000,
+                remaining_acct_idx: 1,
+                counterparty_owner: owner_b,
+            },
+            AtomicFill {
+                book_index: 2,
+                fill_qty: 1,
+                fill_cost: 630_000,
+                remaining_acct_idx: 2,
+                counterparty_owner: owner_c,
+            },
+        ];
+
+        let new_count = apply_fills_to_orders(&mut orders, 3, &fills).unwrap();
+        assert_eq!(new_count, 1);
+        assert_eq!(orders[0].owner, owner_c);
+        assert_eq!(orders[0].quantity, 3);
+        assert_eq!(orders[0].is_active, 1);
+        assert_eq!(orders[1].is_active, 0);
+        assert_eq!(orders[1].quantity, 0);
+    }
+
+    #[test]
+    fn apply_fills_rejects_overfill() {
+        let owner = Pubkey::new_unique();
+        let mut orders = [Order::default(); MAX_ORDERS_PER_SIDE];
+        orders[0] = order(owner, 650_000, 1, 1, true);
+
+        let fills = vec![AtomicFill {
+            book_index: 0,
+            fill_qty: 2,
+            fill_cost: 1_300_000,
+            remaining_acct_idx: 0,
+            counterparty_owner: owner,
+        }];
+
+        let err = apply_fills_to_orders(&mut orders, 1, &fills).unwrap_err();
+        assert!(err.to_string().contains("InvalidAmount"));
+    }
+
+    #[test]
+    fn market_vault_invariant_accepts_exact_balance() {
+        let market = sample_market(3);
+        assert_market_vault_invariant(&market, 3_000_000, 1_000_000).unwrap();
+    }
+
+    #[test]
+    fn market_vault_invariant_rejects_balance_mismatch() {
+        let market = sample_market(3);
+        let err = assert_market_vault_invariant(&market, 2_999_999, 1_000_000).unwrap_err();
+        assert!(err.to_string().contains("VaultInvariantViolation"));
+    }
+
+    #[test]
+    fn validate_order_book_snapshot_allows_absent_order_book_even_with_nonzero_amounts() {
+        validate_order_book_snapshot(false, true, 123, 456).unwrap();
+    }
+
+    #[test]
+    fn validate_order_book_snapshot_allows_present_empty_book_with_zero_escrow() {
+        validate_order_book_snapshot(true, false, 0, 0).unwrap();
+    }
+
+    #[test]
+    fn validate_order_book_snapshot_rejects_present_book_with_active_orders() {
+        let err = validate_order_book_snapshot(true, true, 0, 0).unwrap_err();
+        assert!(err.to_string().contains("OrderBookNotEmpty"));
+    }
+
+    #[test]
+    fn validate_order_book_snapshot_rejects_present_book_with_residual_yes_escrow() {
+        let err = validate_order_book_snapshot(true, false, 0, 1).unwrap_err();
+        assert!(err.to_string().contains("OrderBookEscrowNotEmpty"));
+    }
+
+    #[test]
+    fn validate_order_book_for_market_accepts_matching_keys() {
+        let market_key = Pubkey::new_unique();
+        let ob_usdc_vault = Pubkey::new_unique();
+        let ob_yes_vault = Pubkey::new_unique();
+        let order_book = sample_order_book(market_key, ob_usdc_vault, ob_yes_vault);
+
+        validate_order_book_for_market(&order_book, &market_key, ob_usdc_vault, ob_yes_vault)
+            .unwrap();
+    }
+
+    #[test]
+    fn validate_order_book_for_market_rejects_market_mismatch() {
+        let order_book = sample_order_book(
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+        );
+
+        let err = validate_order_book_for_market(
+            &order_book,
+            &Pubkey::new_unique(),
+            order_book.ob_usdc_vault,
+            order_book.ob_yes_vault,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("Unauthorized"));
+    }
+
+    #[test]
+    fn validate_order_book_for_market_rejects_vault_mismatch() {
+        let market_key = Pubkey::new_unique();
+        let order_book = sample_order_book(
+            market_key,
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+        );
+
+        let err = validate_order_book_for_market(
+            &order_book,
+            &market_key,
+            Pubkey::new_unique(),
+            order_book.ob_yes_vault,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("VaultInvariantViolation"));
+    }
+
+    #[test]
+    fn validate_counterparty_token_account_accepts_matching_owner_and_mint() {
+        let owner = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        validate_counterparty_owner_and_mint(owner, mint, owner, mint).unwrap();
+    }
+
+    #[test]
+    fn validate_counterparty_token_account_rejects_owner_mismatch() {
+        let mint = Pubkey::new_unique();
+        let err = validate_counterparty_owner_and_mint(
+            Pubkey::new_unique(),
+            mint,
+            Pubkey::new_unique(),
+            mint,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("InvalidCounterpartyAccount"));
+    }
+
+    #[test]
+    fn validate_counterparty_token_account_rejects_mint_mismatch() {
+        let owner = Pubkey::new_unique();
+        let err = validate_counterparty_owner_and_mint(
+            owner,
+            Pubkey::new_unique(),
+            owner,
+            Pubkey::new_unique(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("InvalidCounterpartyAccount"));
+    }
+
+    #[test]
+    fn plan_bid_fills_rejects_when_mixed_active_depth_is_still_insufficient() {
+        let mut bids = [Order::default(); MAX_ORDERS_PER_SIDE];
+        bids[0] = order(Pubkey::new_unique(), 650_000, 1, 1, false);
+        bids[1] = order(Pubkey::new_unique(), 640_000, 1, 2, true);
+        bids[2] = order(Pubkey::new_unique(), 630_000, 1, 3, true);
+
+        let err = plan_bid_fills(&bids, 3, 3, 600_000).unwrap_err();
+        assert!(err.to_string().contains("AtomicTradeIncomplete"));
+    }
+
+    #[test]
+    fn plan_ask_fills_rejects_when_mixed_active_depth_is_still_insufficient() {
+        let mut asks = [Order::default(); MAX_ORDERS_PER_SIDE];
+        asks[0] = order(Pubkey::new_unique(), 300_000, 1, 1, false);
+        asks[1] = order(Pubkey::new_unique(), 350_000, 1, 2, true);
+        asks[2] = order(Pubkey::new_unique(), 360_000, 1, 3, true);
+
+        let err = plan_ask_fills(&asks, 3, 3, 400_000).unwrap_err();
+        assert!(err.to_string().contains("AtomicTradeIncomplete"));
+    }
 }

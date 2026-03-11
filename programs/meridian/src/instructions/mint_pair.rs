@@ -16,7 +16,7 @@ pub struct MintPair<'info> {
         seeds = [GlobalConfig::SEED],
         bump = config.bump,
     )]
-    pub config: Account<'info, GlobalConfig>,
+    pub config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
         mut,
@@ -28,31 +28,31 @@ pub struct MintPair<'info> {
         ],
         bump = market.bump,
     )]
-    pub market: Account<'info, StrikeMarket>,
+    pub market: Box<Account<'info, StrikeMarket>>,
 
     #[account(mut)]
-    pub user_usdc: Account<'info, TokenAccount>,
+    pub user_usdc: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
         seeds = [b"vault", market.key().as_ref()],
         bump,
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
         seeds = [b"yes_mint", market.key().as_ref()],
         bump,
     )]
-    pub yes_mint: Account<'info, Mint>,
+    pub yes_mint: Box<Account<'info, Mint>>,
 
     #[account(
         mut,
         seeds = [b"no_mint", market.key().as_ref()],
         bump,
     )]
-    pub no_mint: Account<'info, Mint>,
+    pub no_mint: Box<Account<'info, Mint>>,
 
     #[account(
         init_if_needed,
@@ -60,7 +60,7 @@ pub struct MintPair<'info> {
         associated_token::mint = yes_mint,
         associated_token::authority = user,
     )]
-    pub user_yes: Account<'info, TokenAccount>,
+    pub user_yes: Box<Account<'info, TokenAccount>>,
 
     #[account(
         init_if_needed,
@@ -68,7 +68,7 @@ pub struct MintPair<'info> {
         associated_token::mint = no_mint,
         associated_token::authority = user,
     )]
-    pub user_no: Account<'info, TokenAccount>,
+    pub user_no: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,

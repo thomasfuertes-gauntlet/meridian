@@ -74,6 +74,11 @@ pub struct InitializeOrderBook<'info> {
 }
 
 pub fn handler(ctx: Context<InitializeOrderBook>) -> Result<()> {
+    require!(
+        !ctx.accounts.market.has_order_book(),
+        MeridianError::InvalidMarketState
+    );
+
     let mut order_book = ctx.accounts.order_book.load_init()?;
     order_book.market = ctx.accounts.market.key();
     order_book.ob_usdc_vault = ctx.accounts.ob_usdc_vault.key();

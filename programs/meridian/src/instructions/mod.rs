@@ -4,6 +4,7 @@
 #![allow(ambiguous_glob_reexports)]
 
 pub mod admin_settle;
+pub mod add_strike;
 pub mod burn_pair;
 pub mod buy_no;
 pub mod buy_yes;
@@ -24,6 +25,7 @@ pub mod unpause;
 pub mod unwind_order;
 
 pub use admin_settle::*;
+pub use add_strike::*;
 pub use burn_pair::*;
 pub use buy_no::*;
 pub use buy_yes::*;

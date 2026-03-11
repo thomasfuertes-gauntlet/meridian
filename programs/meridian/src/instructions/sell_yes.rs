@@ -6,9 +6,10 @@ use crate::instructions::shared::{
     apply_fills_to_orders, escrow_yes, plan_bid_fills, sell_yes_into_bids,
     validate_order_book_for_market,
 };
-use crate::state::{
-    GlobalConfig, Order, OrderBook, StrikeMarket, MAX_ORDERS_PER_SIDE, USDC_PER_PAIR,
-};
+use crate::state::{GlobalConfig, OrderBook, StrikeMarket, USDC_PER_PAIR};
+
+#[cfg(test)]
+use crate::state::{Order, MAX_ORDERS_PER_SIDE};
 
 #[derive(Accounts)]
 pub struct SellYes<'info> {

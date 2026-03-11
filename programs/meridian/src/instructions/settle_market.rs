@@ -2,8 +2,11 @@ use anchor_lang::prelude::*;
 use pyth_solana_receiver_sdk::price_update::{Price, PriceUpdateV2, VerificationLevel};
 
 use crate::errors::MeridianError;
-use crate::instructions::shared::{validate_order_book_drained, validate_order_book_snapshot};
-use crate::state::{GlobalConfig, MarketOutcome, StrikeMarket};
+use crate::instructions::shared::validate_order_book_drained;
+use crate::state::{GlobalConfig, StrikeMarket};
+
+#[cfg(test)]
+use crate::instructions::shared::validate_order_book_snapshot;
 
 #[derive(Accounts)]
 pub struct SettleMarket<'info> {
@@ -32,11 +35,16 @@ pub struct SettleMarket<'info> {
 }
 
 pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleMarket<'info>>) -> Result<()> {
-    let market = &ctx.accounts.market;
-    let market_key = ctx.accounts.market.key();
     let clock = Clock::get()?;
+    let market_key = ctx.accounts.market.key();
+
+    {
+        let market = &mut ctx.accounts.market;
+        market.prepare_for_settlement(clock.unix_timestamp)?;
+    }
+
+    let market = &ctx.accounts.market;
     let oracle_policy = ctx.accounts.config.oracle_policy_for_ticker(&market.ticker)?;
-    market.assert_can_settle(clock.unix_timestamp)?;
     validate_order_book_drained(market, &market_key, ctx.remaining_accounts)?;
 
     // Read a fully verified price update for this feed, then enforce that it was
@@ -72,11 +80,7 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleMarket<'info>>) -
 
     // Settlement uses the product's at-or-above rule: a price exactly equal to
     // the strike resolves to YesWins.
-    let outcome = if oracle_price_usdc >= market.strike_price {
-        MarketOutcome::YesWins
-    } else {
-        MarketOutcome::NoWins
-    };
+    let outcome = market.outcome_for_price(oracle_price_usdc);
 
     let market = &mut ctx.accounts.market;
     market.apply_oracle_settlement(outcome, oracle_price_usdc, clock.unix_timestamp)?;

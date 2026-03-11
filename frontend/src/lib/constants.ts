@@ -12,6 +12,11 @@ export const PROGRAM_ID = new PublicKey(
 export const RPC_URL =
   import.meta.env.VITE_RPC_URL || "http://localhost:8899";
 
+export const IS_LOCAL_RPC =
+  RPC_URL.includes("localhost") || RPC_URL.includes("127.0.0.1");
+
+export const RPC_MODE_LABEL = IS_LOCAL_RPC ? "Local validator" : "Remote RPC";
+
 // MAG7 tickers and their Pyth Hermes price feed IDs (equity feeds)
 export const MAG7 = [
   {

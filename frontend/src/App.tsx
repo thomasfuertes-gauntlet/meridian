@@ -7,7 +7,7 @@ import {
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 import { SettlementCountdown } from "./components/SettlementCountdown";
-import { PROGRAM_ID, RPC_URL } from "./lib/constants";
+import { IS_LOCAL_RPC, PROGRAM_ID, RPC_MODE_LABEL, RPC_URL } from "./lib/constants";
 import { LocalDevWalletAdapter } from "./lib/local-wallet";
 import { WalletButton } from "./components/WalletButton";
 import { Landing } from "./pages/Landing";
@@ -46,9 +46,7 @@ function Chip({ label, value }: { label: string; value: string }) {
 
 export default function App() {
   const useDevWallet =
-    RPC_URL.includes("localhost") ||
-    RPC_URL.includes("127.0.0.1") ||
-    import.meta.env.VITE_DEV_WALLET === "true";
+    IS_LOCAL_RPC || import.meta.env.VITE_DEV_WALLET === "true";
   const wallets = useMemo(
     () => (useDevWallet ? [new LocalDevWalletAdapter()] : []),
     [useDevWallet]
@@ -58,40 +56,97 @@ export default function App() {
     <ConnectionProvider endpoint={RPC_URL}>
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
-          <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.14),_transparent_30%),linear-gradient(180deg,_#120f0c_0%,_#191511_48%,_#0d0c0b_100%)] text-stone-100">
-            <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-5 pb-10 pt-5 sm:px-6 lg:px-8">
-              <header className="sticky top-0 z-20 mb-8 border border-white/10 bg-stone-950/75 px-4 py-4 backdrop-blur sm:px-6">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                    <Link to="/" className="text-2xl font-semibold tracking-[0.18em] text-amber-200">
-                      MERIDIAN
-                    </Link>
-                    <nav className="flex flex-wrap gap-2">
-                      <NavLink to="/" label="Overview" />
-                      <NavLink to="/markets" label="Markets" />
-                      <NavLink to="/portfolio" label="Portfolio" />
-                    </nav>
+          <div className="min-h-screen bg-[#090b12] text-stone-100">
+            <div className="border-b border-white/6 bg-[#06080d]">
+              <div className="ticker-tape-track text-xs text-stone-400">
+                {["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"].map((ticker) => (
+                  <div key={ticker} className="ticker-pill">
+                    <span className="font-mono text-stone-200">{ticker}</span>
+                    <span className="text-stone-500">{RPC_MODE_LABEL}</span>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Chip
-                      label="RPC"
-                      value={RPC_URL.includes("localhost") ? "Local" : "Remote"}
-                    />
-                    <Chip label="Program" value={PROGRAM_ID.toBase58().slice(0, 8)} />
-                    <SettlementCountdown />
-                    <WalletButton />
-                  </div>
-                </div>
-              </header>
+                ))}
+              </div>
+            </div>
 
-              <main className="flex-1">
-                <Routes>
-                  <Route path="/" element={<Landing />} />
-                  <Route path="/markets" element={<Markets />} />
-                  <Route path="/markets/:ticker" element={<MarketDetail />} />
-                  <Route path="/portfolio" element={<Portfolio />} />
-                </Routes>
-              </main>
+            <div className="mx-auto flex min-h-[calc(100vh-44px)] max-w-[1800px] gap-4 px-3 py-4 sm:px-6 lg:px-8">
+              <aside className="terminal-panel hidden w-[252px] shrink-0 flex-col justify-between p-4 lg:flex">
+                <div className="space-y-6">
+                  <div className="space-y-3">
+                    <div className="inline-flex items-center rounded-full border border-sky-400/15 bg-sky-400/10 px-3 py-1 text-[11px] uppercase tracking-[0.28em] text-sky-200">
+                      Desk Mode
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">Binary close terminal</p>
+                      <h1 className="font-display text-3xl text-white">Meridian</h1>
+                      <p className="mt-1 text-xs text-zinc-500">{RPC_MODE_LABEL}</p>
+                    </div>
+                    <p className="text-sm leading-6 text-zinc-400">
+                      Market-first terminal over live Solana state, with the frontend rebuilt around read models and dedicated trade instructions.
+                    </p>
+                  </div>
+
+                  <nav className="space-y-2">
+                    <NavLink to="/" label="Overview" />
+                    <NavLink to="/markets" label="Markets" />
+                    <NavLink to="/portfolio" label="Portfolio" />
+                  </nav>
+                </div>
+
+                <div className="rounded-[22px] border border-white/8 bg-white/[0.03] p-4">
+                  <div className="text-sm text-zinc-200">Runtime notes</div>
+                  <p className="mt-3 text-sm leading-6 text-zinc-400">
+                    Use `npm run dev:local` for validator work and `npm run dev:devnet` when the shared remote environment has active markets.
+                  </p>
+                </div>
+              </aside>
+
+              <div className="flex min-w-0 flex-1 flex-col gap-4">
+                <header className="terminal-panel flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">Session overview</p>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <h2 className="font-display text-3xl text-zinc-50">MAG7 close markets</h2>
+                      <span className="rounded-full border border-emerald-400/15 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">
+                        {IS_LOCAL_RPC ? "Local validator" : "Remote market feed"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
+                    <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">RPC mode</p>
+                      <p className="font-data text-sm text-zinc-200">{RPC_MODE_LABEL}</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">Program</p>
+                      <p className="font-data text-sm text-zinc-200">{PROGRAM_ID.toBase58().slice(0, 8)}</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
+                      <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">Endpoint</p>
+                      <p className="font-data text-sm text-zinc-200">{RPC_URL.slice(0, 18)}{RPC_URL.length > 18 ? "..." : ""}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <SettlementCountdown />
+                      <WalletButton />
+                    </div>
+                  </div>
+                </header>
+
+                <nav className="terminal-panel flex items-center gap-2 overflow-x-auto p-2 lg:hidden">
+                  <NavLink to="/" label="Overview" />
+                  <NavLink to="/markets" label="Markets" />
+                  <NavLink to="/portfolio" label="Portfolio" />
+                </nav>
+
+                <main className="page-enter min-w-0 flex-1 pb-6">
+                  <Routes>
+                    <Route path="/" element={<Landing />} />
+                    <Route path="/markets" element={<Markets />} />
+                    <Route path="/markets/:ticker" element={<MarketDetail />} />
+                    <Route path="/portfolio" element={<Portfolio />} />
+                  </Routes>
+                </main>
+              </div>
             </div>
           </div>
         </WalletModalProvider>

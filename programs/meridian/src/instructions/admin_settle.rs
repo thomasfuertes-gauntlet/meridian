@@ -35,13 +35,8 @@ pub fn handler<'info>(
 ) -> Result<()> {
     let market = &ctx.accounts.market;
     let market_key = ctx.accounts.market.key();
-    require!(!market.is_settled(), MeridianError::MarketAlreadySettled);
-    require!(
-        market.status == MarketStatus::Frozen,
-        MeridianError::MarketNotFrozen
-    );
-
     let clock = Clock::get()?;
+    market.assert_can_settle(clock.unix_timestamp)?;
     // Admin settle is the fallback path and requires a configured delay.
     require!(
         clock.unix_timestamp >= market.close_time + ctx.accounts.config.admin_settle_delay_secs,

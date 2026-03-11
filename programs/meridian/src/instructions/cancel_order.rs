@@ -55,10 +55,7 @@ enum FoundSide {
 }
 
 pub fn handler(ctx: Context<CancelOrder>, order_id: u64) -> Result<()> {
-    require!(
-        ctx.accounts.market.is_trading_active(),
-        MeridianError::MarketFrozen
-    );
+    ctx.accounts.market.assert_trading_active()?;
 
     // Capture market key before mutable borrow of order_book
     let market_key = ctx.accounts.market.key();

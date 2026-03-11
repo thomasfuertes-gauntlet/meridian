@@ -34,17 +34,8 @@ pub struct SettleMarket<'info> {
 pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleMarket<'info>>) -> Result<()> {
     let market = &ctx.accounts.market;
     let market_key = ctx.accounts.market.key();
-    require!(!market.is_settled(), MeridianError::MarketAlreadySettled);
-    require!(
-        market.status == MarketStatus::Frozen,
-        MeridianError::MarketNotFrozen
-    );
-
     let clock = Clock::get()?;
-    require!(
-        clock.unix_timestamp >= market.close_time,
-        MeridianError::SettlementTooEarly
-    );
+    market.assert_can_settle(clock.unix_timestamp)?;
     validate_order_book_drained(market, &market_key, ctx.remaining_accounts)?;
 
     // Read a fully verified price update for this feed, then enforce that it was

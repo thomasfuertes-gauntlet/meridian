@@ -156,14 +156,7 @@ pub fn handler<'info>(
 ) -> Result<()> {
     require!(amount > 0, MeridianError::InvalidAmount);
     require!(!ctx.accounts.config.paused, MeridianError::Paused);
-    require!(
-        !ctx.accounts.market.is_settled(),
-        MeridianError::MarketAlreadySettled
-    );
-    require!(
-        ctx.accounts.market.is_trading_active(),
-        MeridianError::MarketFrozen
-    );
+    ctx.accounts.market.assert_trading_active()?;
     require!(
         max_price > 0 && max_price < USDC_PER_PAIR,
         MeridianError::InvalidPrice

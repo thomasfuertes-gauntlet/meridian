@@ -78,14 +78,7 @@ pub struct MintPair<'info> {
 pub fn handler(ctx: Context<MintPair>, amount: u64) -> Result<()> {
     require!(amount > 0, MeridianError::InvalidAmount);
     require!(!ctx.accounts.config.paused, MeridianError::Paused);
-    require!(
-        !ctx.accounts.market.is_settled(),
-        MeridianError::MarketAlreadySettled
-    );
-    require!(
-        ctx.accounts.market.is_trading_active(),
-        MeridianError::MarketFrozen
-    );
+    ctx.accounts.market.assert_trading_active()?;
 
     let market = &ctx.accounts.market;
     let market_seeds = &[

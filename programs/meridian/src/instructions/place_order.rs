@@ -86,14 +86,7 @@ pub fn handler<'info>(
 
     // --- Validation ---
     require!(!ctx.accounts.config.paused, MeridianError::Paused);
-    require!(
-        !ctx.accounts.market.is_settled(),
-        MeridianError::MarketAlreadySettled
-    );
-    require!(
-        ctx.accounts.market.is_trading_active(),
-        MeridianError::MarketFrozen
-    );
+    ctx.accounts.market.assert_trading_active()?;
     require!(
         price > 0 && price < USDC_PER_PAIR,
         MeridianError::InvalidPrice

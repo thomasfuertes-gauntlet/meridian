@@ -1,6 +1,5 @@
 use anchor_lang::prelude::*;
 
-use crate::errors::MeridianError;
 use crate::state::{GlobalConfig, MarketStatus, StrikeMarket};
 
 #[derive(Accounts)]
@@ -30,16 +29,7 @@ pub struct FreezeMarket<'info> {
 pub fn handler(ctx: Context<FreezeMarket>) -> Result<()> {
     let clock = Clock::get()?;
     let market = &mut ctx.accounts.market;
-
-    require!(!market.is_settled(), MeridianError::MarketAlreadySettled);
-    require!(
-        market.status == MarketStatus::Created,
-        MeridianError::InvalidMarketState
-    );
-    require!(
-        clock.unix_timestamp >= market.close_time,
-        MeridianError::SettlementTooEarly
-    );
+    market.assert_can_freeze(clock.unix_timestamp)?;
 
     market.status = MarketStatus::Frozen;
     market.frozen_at = Some(clock.unix_timestamp);

@@ -1,3 +1,4 @@
+use crate::errors::MeridianError;
 use anchor_lang::prelude::*;
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
@@ -71,5 +72,102 @@ impl StrikeMarket {
         self.total_pairs_minted
             .checked_mul(usdc_per_pair)
             .ok_or_else(|| error!(crate::errors::MeridianError::InvalidAmount))
+    }
+
+    pub fn assert_trading_active(&self) -> Result<()> {
+        require!(!self.is_settled(), MeridianError::MarketAlreadySettled);
+        require!(self.is_trading_active(), MeridianError::MarketFrozen);
+        Ok(())
+    }
+
+    pub fn assert_can_freeze(&self, now: i64) -> Result<()> {
+        require!(!self.is_settled(), MeridianError::MarketAlreadySettled);
+        require!(
+            self.status == MarketStatus::Created,
+            MeridianError::InvalidMarketState
+        );
+        require!(now >= self.close_time, MeridianError::SettlementTooEarly);
+        Ok(())
+    }
+
+    pub fn assert_can_settle(&self, now: i64) -> Result<()> {
+        require!(!self.is_settled(), MeridianError::MarketAlreadySettled);
+        require!(
+            self.status == MarketStatus::Frozen,
+            MeridianError::MarketNotFrozen
+        );
+        require!(now >= self.close_time, MeridianError::SettlementTooEarly);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_market(status: MarketStatus, close_time: i64) -> StrikeMarket {
+        StrikeMarket {
+            ticker: "META".to_string(),
+            strike_price: 680_000_000,
+            date: 1_700_000_000,
+            status,
+            outcome: if status == MarketStatus::Settled {
+                MarketOutcome::YesWins
+            } else {
+                MarketOutcome::Pending
+            },
+            total_pairs_minted: 2,
+            yes_mint: Pubkey::default(),
+            no_mint: Pubkey::default(),
+            vault: Pubkey::default(),
+            usdc_mint: Pubkey::default(),
+            order_book: Pubkey::default(),
+            ob_usdc_vault: Pubkey::default(),
+            ob_yes_vault: Pubkey::default(),
+            admin: Pubkey::default(),
+            bump: 255,
+            frozen_at: None,
+            settled_at: if status == MarketStatus::Settled {
+                Some(close_time + 60)
+            } else {
+                None
+            },
+            close_time,
+            pyth_feed_id: [0; 32],
+        }
+    }
+
+    #[test]
+    fn created_market_allows_trading() {
+        let market = sample_market(MarketStatus::Created, 1_000);
+        market.assert_trading_active().unwrap();
+    }
+
+    #[test]
+    fn frozen_market_blocks_trading() {
+        let market = sample_market(MarketStatus::Frozen, 1_000);
+        let err = market.assert_trading_active().unwrap_err();
+        assert!(err.to_string().contains("MarketFrozen"));
+    }
+
+    #[test]
+    fn freeze_requires_market_close() {
+        let market = sample_market(MarketStatus::Created, 1_000);
+        let err = market.assert_can_freeze(999).unwrap_err();
+        assert!(err.to_string().contains("SettlementTooEarly"));
+    }
+
+    #[test]
+    fn settle_requires_frozen_state() {
+        let market = sample_market(MarketStatus::Created, 1_000);
+        let err = market.assert_can_settle(1_000).unwrap_err();
+        assert!(err.to_string().contains("MarketNotFrozen"));
+    }
+
+    #[test]
+    fn settled_market_cannot_settle_again() {
+        let market = sample_market(MarketStatus::Settled, 1_000);
+        let err = market.assert_can_settle(1_000).unwrap_err();
+        assert!(err.to_string().contains("MarketAlreadySettled"));
     }
 }

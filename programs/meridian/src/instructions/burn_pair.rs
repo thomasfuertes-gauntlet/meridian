@@ -1,7 +1,8 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{Mint, Token, TokenAccount};
 
 use crate::errors::MeridianError;
+use crate::instructions::shared::{assert_market_vault_invariant, burn_complete_set_for_usdc};
 use crate::state::{StrikeMarket, USDC_PER_PAIR};
 
 #[derive(Accounts)]
@@ -64,32 +65,6 @@ pub struct BurnPair<'info> {
 pub fn handler(ctx: Context<BurnPair>, amount: u64) -> Result<()> {
     require!(amount > 0, MeridianError::InvalidAmount);
 
-    // Burn Yes tokens from user
-    token::burn(
-        CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Burn {
-                mint: ctx.accounts.yes_mint.to_account_info(),
-                from: ctx.accounts.user_yes.to_account_info(),
-                authority: ctx.accounts.user.to_account_info(),
-            },
-        ),
-        amount,
-    )?;
-
-    // Burn No tokens from user
-    token::burn(
-        CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Burn {
-                mint: ctx.accounts.no_mint.to_account_info(),
-                from: ctx.accounts.user_no.to_account_info(),
-                authority: ctx.accounts.user.to_account_info(),
-            },
-        ),
-        amount,
-    )?;
-
     let market = &ctx.accounts.market;
     let market_seeds = &[
         StrikeMarket::SEED,
@@ -100,31 +75,28 @@ pub fn handler(ctx: Context<BurnPair>, amount: u64) -> Result<()> {
     ];
     let signer_seeds = &[&market_seeds[..]];
 
-    // Transfer USDC from vault back to user
-    let usdc_amount = amount.checked_mul(USDC_PER_PAIR).unwrap();
-    token::transfer(
-        CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.vault.to_account_info(),
-                to: ctx.accounts.user_usdc.to_account_info(),
-                authority: ctx.accounts.market.to_account_info(),
-            },
-            signer_seeds,
-        ),
-        usdc_amount,
+    // `burn_pair` remains a paired exit path both before and after settlement as
+    // long as the caller still holds one Yes and one No for each unit burned.
+    burn_complete_set_for_usdc(
+        ctx.accounts.token_program.to_account_info(),
+        ctx.accounts.user.to_account_info(),
+        ctx.accounts.market.to_account_info(),
+        ctx.accounts.yes_mint.to_account_info(),
+        ctx.accounts.no_mint.to_account_info(),
+        ctx.accounts.user_yes.to_account_info(),
+        ctx.accounts.user_no.to_account_info(),
+        ctx.accounts.vault.to_account_info(),
+        ctx.accounts.user_usdc.to_account_info(),
+        signer_seeds,
+        amount,
+        USDC_PER_PAIR,
     )?;
 
     let market = &mut ctx.accounts.market;
     market.total_pairs_minted = market.total_pairs_minted.checked_sub(amount).unwrap();
 
-    // Reload vault and assert invariant
     ctx.accounts.vault.reload()?;
-    let expected_vault = market.expected_vault_amount(USDC_PER_PAIR)?;
-    require!(
-        ctx.accounts.vault.amount == expected_vault,
-        MeridianError::VaultInvariantViolation
-    );
+    assert_market_vault_invariant(market, ctx.accounts.vault.amount, USDC_PER_PAIR)?;
 
     Ok(())
 }

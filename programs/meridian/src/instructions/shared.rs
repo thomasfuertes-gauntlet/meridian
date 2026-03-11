@@ -13,6 +13,15 @@ pub struct AtomicFill {
     pub counterparty_owner: Pubkey,
 }
 
+// User-facing trade path mapping:
+// - buy_yes = escrow_usdc + buy_yes_from_asks + refund_ob_usdc_to_user
+// - sell_yes = escrow_yes + sell_yes_into_bids
+// - buy_no = mint_complete_set + escrow_yes + sell_yes_into_bids
+// - sell_no = escrow_usdc + buy_yes_from_asks + refund_ob_usdc_to_user + burn_complete_set_for_usdc
+//
+// The helpers below intentionally model the economic steps directly rather than
+// collapsing them into a single mode-flagged trade engine.
+
 pub fn plan_bid_fills(
     bids: &[Order; MAX_ORDERS_PER_SIDE],
     bid_count: usize,

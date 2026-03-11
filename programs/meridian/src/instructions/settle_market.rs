@@ -69,7 +69,8 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleMarket<'info>>) -
     // We want the price in units of 10^-6 (USDC micro-units).
     let oracle_price_usdc = oracle_price_to_usdc_micro(&price)?;
 
-    // Settlement: at-or-above rule
+    // Settlement uses the product's at-or-above rule: a price exactly equal to
+    // the strike resolves to YesWins.
     let outcome = if oracle_price_usdc >= market.strike_price {
         MarketOutcome::YesWins
     } else {

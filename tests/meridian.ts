@@ -1361,12 +1361,11 @@ describe("meridian", () => {
       expect(ob.asks[0].quantity.toNumber()).to.equal(2);
     });
 
-    // ── place_order - crossing (match) ─────────────────────────
+    // ── place_order - crossing rejected in favor of trade paths ─────────────
 
-    it("crossing bid fills against resting ask with price improvement", async () => {
+    it("crossing bid is rejected and must use buy_yes", async () => {
       const m = await createMarketWithOB("OB5", new anchor.BN(100_000_000));
 
-      // Admin places ask at 500_000 for qty 2 (needs Yes tokens)
       await mintPairsFor(m, admin.publicKey, adminUsdcAta, 2);
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
@@ -1383,7 +1382,6 @@ describe("meridian", () => {
         })
         .rpc();
 
-      // Fund userB USDC for bid
       await mintUsdc(userBUsdc, 5_000_000);
       const userBYes = await createAssociatedTokenAccount(
         connection,
@@ -1391,54 +1389,30 @@ describe("meridian", () => {
         m.yesMintPda,
         userB.publicKey
       );
-      // Need a No ATA for mintPair but userB doesn't need it for place_order
 
-      const userBUsdcBefore = Number((await getAccount(connection, userBUsdc)).amount);
-      const adminUsdcBefore = Number((await getAccount(connection, adminUsdcAta)).amount);
-
-      // userB places bid at 600_000 for qty 3 -> should match 2 at 500_000, rest 1 at 600_000
-      await program.methods
-        .placeOrder({ bid: {} }, new anchor.BN(600_000), new anchor.BN(3))
-        .accountsPartial({
-          user: userB.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          userUsdc: userBUsdc,
-          userYes: userBYes,
-        })
-        .remainingAccounts([
-          { pubkey: adminUsdcAta, isWritable: true, isSigner: false },
-        ])
-        .signers([userB])
-        .rpc();
-
-      // userB should have 2 Yes tokens
-      const userBYesBalance = Number((await getAccount(connection, userBYes)).amount);
-      expect(userBYesBalance).to.equal(2);
-
-      // Admin (ask owner) should receive 2 * 500_000 = 1_000_000 USDC
-      const adminUsdcAfter = Number((await getAccount(connection, adminUsdcAta)).amount);
-      expect(adminUsdcAfter - adminUsdcBefore).to.equal(1_000_000);
-
-      // userB's USDC spent: escrowed 3*600_000=1_800_000, refund for price improvement 2*(600_000-500_000)=200_000
-      // Net: 1_800_000 - 200_000 = 1_600_000 escrowed (1_000_000 to seller + 600_000 resting bid)
-      const userBUsdcAfter = Number((await getAccount(connection, userBUsdc)).amount);
-      expect(userBUsdcBefore - userBUsdcAfter).to.equal(1_600_000);
-
-      // Remaining bid on book
-      const ob = await program.account.orderBook.fetch(m.orderBookPda);
-      expect(ob.bidCount).to.equal(1);
-      expect(ob.askCount).to.equal(0);
-      expect(ob.bids[0].quantity.toNumber()).to.equal(1);
-      expect(ob.bids[0].price.toNumber()).to.equal(600_000);
+      try {
+        await program.methods
+          .placeOrder({ bid: {} }, new anchor.BN(600_000), new anchor.BN(3))
+          .accountsPartial({
+            user: userB.publicKey,
+            market: m.marketPda,
+            orderBook: m.orderBookPda,
+            obUsdcVault: m.obUsdcVault,
+            obYesVault: m.obYesVault,
+            userUsdc: userBUsdc,
+            userYes: userBYes,
+          })
+          .signers([userB])
+          .rpc();
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("CrossingOrdersUseDedicatedPath");
+      }
     });
 
-    it("crossing bid without counterparty ATA fails with MissingCounterpartyAccount", async () => {
+    it("crossing bid rejects before counterparty-account validation", async () => {
       const m = await createMarketWithOB("OB_M", new anchor.BN(100_000_000));
 
-      // Admin places resting ask at 500_000 for qty 1
       await mintPairsFor(m, admin.publicKey, adminUsdcAta, 1);
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
@@ -1455,7 +1429,6 @@ describe("meridian", () => {
         })
         .rpc();
 
-      // Fund userB for crossing bid
       await mintUsdc(userBUsdc, 1_000_000);
       const userBYes = await createAssociatedTokenAccount(
         connection,
@@ -1464,7 +1437,6 @@ describe("meridian", () => {
         userB.publicKey
       );
 
-      // Place crossing bid WITHOUT remainingAccounts (missing counterparty ATA)
       try {
         await program.methods
           .placeOrder({ bid: {} }, new anchor.BN(500_000), new anchor.BN(1))
@@ -1481,11 +1453,11 @@ describe("meridian", () => {
           .rpc();
         expect.fail("Should have thrown");
       } catch (err: any) {
-        expect(err.toString()).to.include("MissingCounterpartyAccount");
+        expect(err.toString()).to.include("CrossingOrdersUseDedicatedPath");
       }
     });
 
-    it("crossing bid rejects attacker-controlled counterparty ATA", async () => {
+    it("crossing bid ignores attacker-controlled remaining accounts and rejects early", async () => {
       const m = await createMarketWithOB("OB_M2", new anchor.BN(100_000_000));
 
       await mintPairsFor(m, admin.publicKey, adminUsdcAta, 1);
@@ -1532,7 +1504,7 @@ describe("meridian", () => {
           .rpc();
         expect.fail("Should have thrown");
       } catch (err: any) {
-        expect(err.toString()).to.include("InvalidCounterpartyAccount");
+        expect(err.toString()).to.include("CrossingOrdersUseDedicatedPath");
       }
 
       const adminUsdcAfter = Number((await getAccount(connection, adminUsdcAta)).amount);
@@ -1545,10 +1517,9 @@ describe("meridian", () => {
 
     // ── place_order - partial fill ─────────────────────────────
 
-    it("partial fill leaves remainder on book", async () => {
+    it("crossing partial-fill attempts are rejected and must use dedicated taker flows", async () => {
       const m = await createMarketWithOB("OB6", new anchor.BN(100_000_000));
 
-      // Admin places ask for qty 5 at 400_000
       await mintPairsFor(m, admin.publicKey, adminUsdcAta, 5);
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
@@ -1565,7 +1536,6 @@ describe("meridian", () => {
         })
         .rpc();
 
-      // userB bids for qty 2 at 400_000
       await mintUsdc(userBUsdc, 2_000_000);
       const userBYes = await createAssociatedTokenAccount(
         connection,
@@ -1574,39 +1544,31 @@ describe("meridian", () => {
         userB.publicKey
       );
 
-      await program.methods
-        .placeOrder({ bid: {} }, new anchor.BN(400_000), new anchor.BN(2))
-        .accountsPartial({
-          user: userB.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          userUsdc: userBUsdc,
-          userYes: userBYes,
-        })
-        .remainingAccounts([
-          { pubkey: adminUsdcAta, isWritable: true, isSigner: false },
-        ])
-        .signers([userB])
-        .rpc();
-
-      // 2 filled, ask should have 3 remaining
-      const ob = await program.account.orderBook.fetch(m.orderBookPda);
-      expect(ob.askCount).to.equal(1);
-      expect(ob.asks[0].quantity.toNumber()).to.equal(3);
-      expect(ob.bidCount).to.equal(0); // fully matched
-
-      const userBYesBalance = Number((await getAccount(connection, userBYes)).amount);
-      expect(userBYesBalance).to.equal(2);
+      try {
+        await program.methods
+          .placeOrder({ bid: {} }, new anchor.BN(400_000), new anchor.BN(2))
+          .accountsPartial({
+            user: userB.publicKey,
+            market: m.marketPda,
+            orderBook: m.orderBookPda,
+            obUsdcVault: m.obUsdcVault,
+            obYesVault: m.obYesVault,
+            userUsdc: userBUsdc,
+            userYes: userBYes,
+          })
+          .signers([userB])
+          .rpc();
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("CrossingOrdersUseDedicatedPath");
+      }
     });
 
     // ── place_order - market orders ────────────────────────────
 
-    it("bid at max price sweeps all asks", async () => {
+    it("market-style bid via place_order is rejected and must use buy_yes", async () => {
       const m = await createMarketWithOB("OB7", new anchor.BN(100_000_000));
 
-      // Admin places asks at different prices
       await mintPairsFor(m, admin.publicKey, adminUsdcAta, 3);
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
@@ -1636,7 +1598,6 @@ describe("meridian", () => {
         })
         .rpc();
 
-      // userB market-buys at 999_999
       await mintUsdc(userBUsdc, 5_000_000);
       const userBYes = await createAssociatedTokenAccount(
         connection,
@@ -1645,30 +1606,24 @@ describe("meridian", () => {
         userB.publicKey
       );
 
-      await program.methods
-        .placeOrder({ bid: {} }, new anchor.BN(999_999), new anchor.BN(3))
-        .accountsPartial({
-          user: userB.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          userUsdc: userBUsdc,
-          userYes: userBYes,
-        })
-        .remainingAccounts([
-          { pubkey: adminUsdcAta, isWritable: true, isSigner: false },
-          { pubkey: adminUsdcAta, isWritable: true, isSigner: false },
-        ])
-        .signers([userB])
-        .rpc();
-
-      const ob = await program.account.orderBook.fetch(m.orderBookPda);
-      expect(ob.askCount).to.equal(0);
-      expect(ob.bidCount).to.equal(0); // all filled, no remainder
-
-      const userBYesBalance = Number((await getAccount(connection, userBYes)).amount);
-      expect(userBYesBalance).to.equal(3);
+      try {
+        await program.methods
+          .placeOrder({ bid: {} }, new anchor.BN(999_999), new anchor.BN(3))
+          .accountsPartial({
+            user: userB.publicKey,
+            market: m.marketPda,
+            orderBook: m.orderBookPda,
+            obUsdcVault: m.obUsdcVault,
+            obYesVault: m.obYesVault,
+            userUsdc: userBUsdc,
+            userYes: userBYes,
+          })
+          .signers([userB])
+          .rpc();
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("CrossingOrdersUseDedicatedPath");
+      }
     });
 
     // ── cancel_order - owner cancel ────────────────────────────
@@ -2652,6 +2607,57 @@ describe("meridian", () => {
       }
     });
 
+    it("admin settlement still succeeds while paused", async () => {
+      const pausedMarket = await createMarket(
+        "PAST",
+        new anchor.BN(112_000_000),
+        new anchor.BN(1800000002)
+      );
+
+      await freezeMarket(pausedMarket);
+
+      await program.methods
+        .adminSettle(new anchor.BN(113_000_000))
+        .accountsPartial({
+          admin: admin.publicKey,
+          config: configPda,
+          market: pausedMarket.marketPda,
+        })
+        .rpc();
+
+      const market = await program.account.strikeMarket.fetch(pausedMarket.marketPda);
+      expect(market.outcome).to.deep.equal({ yesWins: {} });
+    });
+
+    it("redeem still succeeds while paused", async () => {
+      const pausedRedeemMarket = await createMarket(
+        "PRED",
+        new anchor.BN(113_000_000),
+        new anchor.BN(1800000003)
+      );
+      const { userYes } = await mintPairForAdmin(pausedRedeemMarket, 1);
+
+      await adminSettleMarket(pausedRedeemMarket, new anchor.BN(114_000_000));
+
+      const adminUsdcBefore = await tokenAmount(adminUsdcAta);
+      await program.methods
+        .pause()
+        .accountsPartial({ admin: admin.publicKey })
+        .rpc();
+
+      await redeemForUser(
+        pausedRedeemMarket,
+        admin.publicKey,
+        adminUsdcAta,
+        pausedRedeemMarket.yesMintPda,
+        userYes,
+        1
+      );
+
+      const adminUsdcAfter = await tokenAmount(adminUsdcAta);
+      expectIncrease(adminUsdcBefore, adminUsdcAfter, 1_000_000);
+    });
+
     it("unpause sets config.paused = false", async () => {
       await program.methods
         .unpause()
@@ -2920,6 +2926,19 @@ describe("meridian", () => {
 
   describe("token supply invariants", () => {
     const connection = provider.connection;
+    let userB: Keypair;
+    let userBUsdc: PublicKey;
+    let supplyMarketIdx = 1800000022;
+
+    function nextSupplyDate() {
+      return new anchor.BN(supplyMarketIdx++);
+    }
+
+    before(async () => {
+      const funded = await createFundedUser(20_000_000);
+      userB = funded.user;
+      userBUsdc = funded.userUsdc;
+    });
 
     it("after mint: yes_supply == no_supply == totalPairsMinted", async () => {
       const pdas = await createMarket("ISUP", new anchor.BN(230_000_000), new anchor.BN(1800000020));
@@ -2995,6 +3014,101 @@ describe("meridian", () => {
       expect(Number(yesMint.supply)).to.equal(4);
       expect(Number(noMint.supply)).to.equal(4);
       expect(Number(yesMint.supply)).to.equal(Number(noMint.supply));
+    });
+
+    it("after atomic buy_no: unsettled yes_supply == no_supply == totalPairsMinted", async () => {
+      const pdas = await createMarket("ISBN", new anchor.BN(232_000_000), nextSupplyDate());
+      const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
+      const adminYes = await createAssociatedTokenAccount(
+        connection,
+        mintAuthority,
+        pdas.yesMintPda,
+        admin.publicKey
+      );
+      const { userYes: userBYes, userNo: userBNo } = tokenAccountsFor(userB.publicKey, pdas);
+
+      await placeBid({ ...pdas, ...obPdas }, admin.publicKey, adminUsdcAta, adminYes, 650_000, 1);
+
+      await methods
+        .buyNo(new anchor.BN(1), new anchor.BN(600_000))
+        .accountsPartial({
+          user: userB.publicKey,
+          config: configPda,
+          market: pdas.marketPda,
+          userUsdc: userBUsdc,
+          vault: pdas.vaultPda,
+          yesMint: pdas.yesMintPda,
+          noMint: pdas.noMintPda,
+          userYes: userBYes,
+          userNo: userBNo,
+          orderBook: obPdas.orderBookPda,
+          obUsdcVault: obPdas.obUsdcVault,
+          obYesVault: obPdas.obYesVault,
+        })
+        .remainingAccounts([
+          { pubkey: adminYes, isWritable: true, isSigner: false },
+        ])
+        .signers([userB])
+        .rpc();
+
+      const yesMint = await getMint(connection, pdas.yesMintPda);
+      const noMint = await getMint(connection, pdas.noMintPda);
+      const market = await program.account.strikeMarket.fetch(pdas.marketPda);
+
+      expect(Number(yesMint.supply)).to.equal(1);
+      expect(Number(noMint.supply)).to.equal(1);
+      expect(Number(yesMint.supply)).to.equal(Number(noMint.supply));
+      expect(Number(yesMint.supply)).to.equal(market.totalPairsMinted.toNumber());
+    });
+
+    it("after atomic sell_no: unsettled yes_supply == no_supply == totalPairsMinted", async () => {
+      const pdas = await createMarket("ISSN", new anchor.BN(233_000_000), nextSupplyDate());
+      const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
+      const adminYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
+      const { userYes: userBYes, userNo: userBNo } = tokenAccountsFor(userB.publicKey, pdas);
+
+      await mintPairForAdmin({ ...pdas, ...obPdas }, 2);
+      await mintPairForUser(userB.publicKey, userBUsdc, pdas, 2, [userB]);
+
+      await placeAsk(
+        { ...pdas, ...obPdas },
+        admin.publicKey,
+        adminUsdcAta,
+        adminYes,
+        400_000,
+        2
+      );
+
+      await methods
+        .sellNo(new anchor.BN(2), new anchor.BN(400_000))
+        .accountsPartial({
+          user: userB.publicKey,
+          config: configPda,
+          market: pdas.marketPda,
+          userUsdc: userBUsdc,
+          vault: pdas.vaultPda,
+          yesMint: pdas.yesMintPda,
+          noMint: pdas.noMintPda,
+          userYes: userBYes,
+          userNo: userBNo,
+          orderBook: obPdas.orderBookPda,
+          obUsdcVault: obPdas.obUsdcVault,
+          obYesVault: obPdas.obYesVault,
+        })
+        .remainingAccounts([
+          { pubkey: adminUsdcAta, isWritable: true, isSigner: false },
+        ])
+        .signers([userB])
+        .rpc();
+
+      const yesMint = await getMint(connection, pdas.yesMintPda);
+      const noMint = await getMint(connection, pdas.noMintPda);
+      const market = await program.account.strikeMarket.fetch(pdas.marketPda);
+
+      expect(Number(yesMint.supply)).to.equal(2);
+      expect(Number(noMint.supply)).to.equal(2);
+      expect(Number(yesMint.supply)).to.equal(Number(noMint.supply));
+      expect(Number(yesMint.supply)).to.equal(market.totalPairsMinted.toNumber());
     });
   });
 

@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount, Transfer};
 
 use crate::errors::MeridianError;
+use crate::instructions::shared::assert_market_vault_invariant;
 use crate::state::{MarketOutcome, StrikeMarket, USDC_PER_PAIR};
 
 #[derive(Accounts)]
@@ -102,14 +103,16 @@ pub fn handler(ctx: Context<Redeem>, amount: u64) -> Result<()> {
 
         let market = &mut ctx.accounts.market;
         market.total_pairs_minted = market.total_pairs_minted.checked_sub(amount).unwrap();
-
-        ctx.accounts.vault.reload()?;
-        let expected_vault = market.expected_vault_amount(USDC_PER_PAIR)?;
-        require!(
-            ctx.accounts.vault.amount == expected_vault,
-            MeridianError::VaultInvariantViolation
-        );
     }
+
+    // Burning either winning or losing tokens must leave vault accounting
+    // coherent relative to the surviving paired claims.
+    ctx.accounts.vault.reload()?;
+    assert_market_vault_invariant(
+        &ctx.accounts.market,
+        ctx.accounts.vault.amount,
+        USDC_PER_PAIR,
+    )?;
 
     Ok(())
 }

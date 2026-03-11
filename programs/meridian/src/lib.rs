@@ -60,6 +60,14 @@ pub mod meridian {
         instructions::redeem::handler(ctx, amount)
     }
 
+    pub fn sell_no<'info>(
+        ctx: Context<'_, '_, 'info, 'info, SellNo<'info>>,
+        amount: u64,
+        max_price: u64,
+    ) -> Result<()> {
+        instructions::sell_no::handler(ctx, amount, max_price)
+    }
+
     pub fn settle_market<'info>(
         ctx: Context<'_, '_, 'info, 'info, SettleMarket<'info>>,
     ) -> Result<()> {

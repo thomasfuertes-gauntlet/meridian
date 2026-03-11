@@ -5,14 +5,62 @@ use anchor_spl::{
 };
 
 use crate::errors::MeridianError;
-use crate::state::{GlobalConfig, OrderBook, StrikeMarket, USDC_PER_PAIR};
+use crate::state::{
+    GlobalConfig, Order, OrderBook, StrikeMarket, MAX_ORDERS_PER_SIDE, USDC_PER_PAIR,
+};
 
+#[derive(Debug)]
 struct Fill {
     book_index: usize,
     fill_qty: u64,
     fill_cost: u64,
     remaining_acct_idx: usize,
     counterparty_owner: Pubkey,
+}
+
+fn compute_bid_fills(
+    bids: &[Order; MAX_ORDERS_PER_SIDE],
+    bid_count: usize,
+    amount: u64,
+    min_price: u64,
+) -> Result<Vec<Fill>> {
+    let mut fills: Vec<Fill> = Vec::new();
+    let mut rem_qty = amount;
+    let mut ra_idx = 0usize;
+
+    for (i, bid) in bids.iter().enumerate().take(bid_count) {
+        if rem_qty == 0 {
+            break;
+        }
+        if bid.is_active == 0 {
+            continue;
+        }
+        if bid.price < min_price {
+            break;
+        }
+
+        let fill_qty = rem_qty.min(bid.quantity);
+        let fill_cost = fill_qty
+            .checked_mul(bid.price)
+            .ok_or(MeridianError::InvalidAmount)?;
+
+        fills.push(Fill {
+            book_index: i,
+            fill_qty,
+            fill_cost,
+            remaining_acct_idx: ra_idx,
+            counterparty_owner: bid.owner,
+        });
+        ra_idx += 1;
+        rem_qty = rem_qty
+            .checked_sub(fill_qty)
+            .ok_or(MeridianError::InvalidAmount)?;
+    }
+
+    require!(rem_qty == 0, MeridianError::AtomicTradeIncomplete);
+    require!(!fills.is_empty(), MeridianError::NoMatchingOrders);
+
+    Ok(fills)
 }
 
 #[derive(Accounts)]
@@ -204,43 +252,7 @@ pub fn handler<'info>(
             MeridianError::VaultInvariantViolation
         );
 
-        let mut fills: Vec<Fill> = Vec::new();
-        let mut rem_qty = amount;
-        let mut ra_idx = 0usize;
-        let bid_count = ob.bid_count as usize;
-
-        for i in 0..bid_count {
-            if rem_qty == 0 {
-                break;
-            }
-            if ob.bids[i].is_active == 0 {
-                continue;
-            }
-            let bid_price = ob.bids[i].price;
-            if bid_price < min_price {
-                break;
-            }
-
-            let fill_qty = rem_qty.min(ob.bids[i].quantity);
-            let fill_cost = fill_qty
-                .checked_mul(bid_price)
-                .ok_or(MeridianError::InvalidAmount)?;
-
-            fills.push(Fill {
-                book_index: i,
-                fill_qty,
-                fill_cost,
-                remaining_acct_idx: ra_idx,
-                counterparty_owner: ob.bids[i].owner,
-            });
-            ra_idx += 1;
-            rem_qty = rem_qty
-                .checked_sub(fill_qty)
-                .ok_or(MeridianError::InvalidAmount)?;
-        }
-
-        require!(rem_qty == 0, MeridianError::AtomicTradeIncomplete);
-        require!(!fills.is_empty(), MeridianError::NoMatchingOrders);
+        let fills = compute_bid_fills(&ob.bids, ob.bid_count as usize, amount, min_price)?;
 
         (fills, ob.bump)
     };
@@ -348,4 +360,51 @@ fn compact_orders(
 
 fn count_active(orders: &[crate::state::Order; crate::state::MAX_ORDERS_PER_SIDE]) -> usize {
     orders.iter().filter(|order| order.is_active != 0).count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn order(price: u64, quantity: u64, active: bool) -> Order {
+        Order {
+            owner: Pubkey::new_unique(),
+            price,
+            quantity,
+            timestamp: 0,
+            order_id: 1,
+            is_active: u8::from(active),
+            _padding: [0; 7],
+        }
+    }
+
+    #[test]
+    fn buy_no_matches_multiple_bids_for_full_fill() {
+        let mut bids = [Order::default(); MAX_ORDERS_PER_SIDE];
+        bids[0] = order(650_000, 2, true);
+        bids[1] = order(600_000, 1, true);
+
+        let fills = compute_bid_fills(&bids, 2, 3, 550_000).unwrap();
+        assert_eq!(fills.len(), 2);
+        assert_eq!(fills[0].fill_qty, 2);
+        assert_eq!(fills[1].fill_qty, 1);
+    }
+
+    #[test]
+    fn buy_no_rejects_partial_fill() {
+        let mut bids = [Order::default(); MAX_ORDERS_PER_SIDE];
+        bids[0] = order(650_000, 1, true);
+
+        let err = compute_bid_fills(&bids, 1, 2, 600_000).unwrap_err();
+        assert!(err.to_string().contains("AtomicTradeIncomplete"));
+    }
+
+    #[test]
+    fn buy_no_rejects_bids_below_min_price() {
+        let mut bids = [Order::default(); MAX_ORDERS_PER_SIDE];
+        bids[0] = order(500_000, 3, true);
+
+        let err = compute_bid_fills(&bids, 1, 1, 600_000).unwrap_err();
+        assert!(err.to_string().contains("AtomicTradeIncomplete"));
+    }
 }

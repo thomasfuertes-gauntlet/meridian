@@ -2486,23 +2486,9 @@ describe("meridian", () => {
 
     it("after multiple mints: vault == totalPairsMinted * 1_000_000", async () => {
       const pdas = await createMarket("IVLT", new anchor.BN(222_000_000), new anchor.BN(1800000010));
-      const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
-      const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, admin.publicKey);
 
       for (let i = 0; i < 7; i++) {
-        await program.methods
-          .mintPair(new anchor.BN(1))
-          .accountsPartial({
-            user: admin.publicKey,
-            market: pdas.marketPda,
-            userUsdc: adminUsdcAta,
-            vault: pdas.vaultPda,
-            yesMint: pdas.yesMintPda,
-            noMint: pdas.noMintPda,
-            userYes,
-            userNo,
-          })
-          .rpc();
+        await mintPairForAdmin(pdas, 1);
       }
 
       const vault = await getAccount(connection, pdas.vaultPda);
@@ -2513,40 +2499,14 @@ describe("meridian", () => {
 
     it("after mint then burn: vault == totalPairsMinted * 1_000_000", async () => {
       const pdas = await createMarket("IVBU", new anchor.BN(223_000_000), new anchor.BN(1800000011));
-      const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
-      const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, admin.publicKey);
 
       // Mint 5
       for (let i = 0; i < 5; i++) {
-        await program.methods
-          .mintPair(new anchor.BN(1))
-          .accountsPartial({
-            user: admin.publicKey,
-            market: pdas.marketPda,
-            userUsdc: adminUsdcAta,
-            vault: pdas.vaultPda,
-            yesMint: pdas.yesMintPda,
-            noMint: pdas.noMintPda,
-            userYes,
-            userNo,
-          })
-          .rpc();
+        await mintPairForAdmin(pdas, 1);
       }
 
       // Burn 2
-      await program.methods
-        .burnPair(new anchor.BN(2))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: pdas.marketPda,
-          userUsdc: adminUsdcAta,
-          vault: pdas.vaultPda,
-          yesMint: pdas.yesMintPda,
-          noMint: pdas.noMintPda,
-          userYes,
-          userNo,
-        })
-        .rpc();
+      await burnPairForUser(admin.publicKey, adminUsdcAta, pdas, 2);
 
       const vault = await getAccount(connection, pdas.vaultPda);
       const market = await program.account.strikeMarket.fetch(pdas.marketPda);
@@ -2556,41 +2516,25 @@ describe("meridian", () => {
 
     it("after mint, settle, redeem winner: vault == (total - redeemed) * 1_000_000", async () => {
       const pdas = await createMarket("IVRD", new anchor.BN(224_000_000), new anchor.BN(1800000012));
-      const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
-      const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, admin.publicKey);
+      const { userYes } = userTokenAccounts(pdas);
 
       // Mint 6
       for (let i = 0; i < 6; i++) {
-        await program.methods
-          .mintPair(new anchor.BN(1))
-          .accountsPartial({
-            user: admin.publicKey,
-            market: pdas.marketPda,
-            userUsdc: adminUsdcAta,
-            vault: pdas.vaultPda,
-            yesMint: pdas.yesMintPda,
-            noMint: pdas.noMintPda,
-            userYes,
-            userNo,
-          })
-          .rpc();
+        await mintPairForAdmin(pdas, 1);
       }
 
       // Settle -> YesWins
       await adminSettleMarket(pdas, new anchor.BN(224_000_000));
 
       // Redeem 4 Yes (winner)
-      await program.methods
-        .redeem(new anchor.BN(4))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: pdas.marketPda,
-          userUsdc: adminUsdcAta,
-          vault: pdas.vaultPda,
-          tokenMint: pdas.yesMintPda,
-          userToken: userYes,
-        })
-        .rpc();
+      await redeemForUser(
+        pdas,
+        admin.publicKey,
+        adminUsdcAta,
+        pdas.yesMintPda,
+        userYes,
+        4
+      );
 
       const vault = await getAccount(connection, pdas.vaultPda);
       const market = await program.account.strikeMarket.fetch(pdas.marketPda);
@@ -2601,69 +2545,38 @@ describe("meridian", () => {
 
     it("full lifecycle (mint 10, burn 3, settle, redeem 7 winners): vault empty", async () => {
       const pdas = await createMarket("IVFL", new anchor.BN(225_000_000), new anchor.BN(1800000013));
-      const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
-      const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, admin.publicKey);
+      const { userYes, userNo } = userTokenAccounts(pdas);
 
       // Mint 10
       for (let i = 0; i < 10; i++) {
-        await program.methods
-          .mintPair(new anchor.BN(1))
-          .accountsPartial({
-            user: admin.publicKey,
-            market: pdas.marketPda,
-            userUsdc: adminUsdcAta,
-            vault: pdas.vaultPda,
-            yesMint: pdas.yesMintPda,
-            noMint: pdas.noMintPda,
-            userYes,
-            userNo,
-          })
-          .rpc();
+        await mintPairForAdmin(pdas, 1);
       }
 
       // Burn 3
-      await program.methods
-        .burnPair(new anchor.BN(3))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: pdas.marketPda,
-          userUsdc: adminUsdcAta,
-          vault: pdas.vaultPda,
-          yesMint: pdas.yesMintPda,
-          noMint: pdas.noMintPda,
-          userYes,
-          userNo,
-        })
-        .rpc();
+      await burnPairForUser(admin.publicKey, adminUsdcAta, pdas, 3);
 
       // Settle -> NoWins (price below strike)
       await adminSettleMarket(pdas, new anchor.BN(200_000_000));
 
       // Redeem 7 No tokens (winner)
-      await program.methods
-        .redeem(new anchor.BN(7))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: pdas.marketPda,
-          userUsdc: adminUsdcAta,
-          vault: pdas.vaultPda,
-          tokenMint: pdas.noMintPda,
-          userToken: userNo,
-        })
-        .rpc();
+      await redeemForUser(
+        pdas,
+        admin.publicKey,
+        adminUsdcAta,
+        pdas.noMintPda,
+        userNo,
+        7
+      );
 
       // Redeem 7 Yes tokens (loser - 0 USDC)
-      await program.methods
-        .redeem(new anchor.BN(7))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: pdas.marketPda,
-          userUsdc: adminUsdcAta,
-          vault: pdas.vaultPda,
-          tokenMint: pdas.yesMintPda,
-          userToken: userYes,
-        })
-        .rpc();
+      await redeemForUser(
+        pdas,
+        admin.publicKey,
+        adminUsdcAta,
+        pdas.yesMintPda,
+        userYes,
+        7
+      );
 
       const vault = await getAccount(connection, pdas.vaultPda);
       expect(Number(vault.amount)).to.equal(0);
@@ -2695,23 +2608,9 @@ describe("meridian", () => {
 
     it("after mint: yes_supply == no_supply == totalPairsMinted", async () => {
       const pdas = await createMarket("ISUP", new anchor.BN(230_000_000), new anchor.BN(1800000020));
-      const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
-      const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, admin.publicKey);
 
       for (let i = 0; i < 4; i++) {
-        await program.methods
-          .mintPair(new anchor.BN(1))
-          .accountsPartial({
-            user: admin.publicKey,
-            market: pdas.marketPda,
-            userUsdc: adminUsdcAta,
-            vault: pdas.vaultPda,
-            yesMint: pdas.yesMintPda,
-            noMint: pdas.noMintPda,
-            userYes,
-            userNo,
-          })
-          .rpc();
+        await mintPairForAdmin(pdas, 1);
       }
 
       const yesMint = await getMint(connection, pdas.yesMintPda);
@@ -2726,40 +2625,14 @@ describe("meridian", () => {
 
     it("after burn: yes_supply == no_supply (still equal)", async () => {
       const pdas = await createMarket("ISUB", new anchor.BN(231_000_000), new anchor.BN(1800000021));
-      const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
-      const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, admin.publicKey);
 
       // Mint 6
       for (let i = 0; i < 6; i++) {
-        await program.methods
-          .mintPair(new anchor.BN(1))
-          .accountsPartial({
-            user: admin.publicKey,
-            market: pdas.marketPda,
-            userUsdc: adminUsdcAta,
-            vault: pdas.vaultPda,
-            yesMint: pdas.yesMintPda,
-            noMint: pdas.noMintPda,
-            userYes,
-            userNo,
-          })
-          .rpc();
+        await mintPairForAdmin(pdas, 1);
       }
 
       // Burn 2
-      await program.methods
-        .burnPair(new anchor.BN(2))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: pdas.marketPda,
-          userUsdc: adminUsdcAta,
-          vault: pdas.vaultPda,
-          yesMint: pdas.yesMintPda,
-          noMint: pdas.noMintPda,
-          userYes,
-          userNo,
-        })
-        .rpc();
+      await burnPairForUser(admin.publicKey, adminUsdcAta, pdas, 2);
 
       const yesMint = await getMint(connection, pdas.yesMintPda);
       const noMint = await getMint(connection, pdas.noMintPda);
@@ -2782,27 +2655,19 @@ describe("meridian", () => {
 
       await placeBid({ ...pdas, ...obPdas }, admin.publicKey, adminUsdcAta, adminYes, 650_000, 1);
 
-      await methods
-        .buyNo(new anchor.BN(1), new anchor.BN(600_000))
-        .accountsPartial({
-          user: userB.publicKey,
-          config: configPda,
-          market: pdas.marketPda,
-          userUsdc: userBUsdc,
-          vault: pdas.vaultPda,
-          yesMint: pdas.yesMintPda,
-          noMint: pdas.noMintPda,
-          userYes: userBYes,
-          userNo: userBNo,
-          orderBook: obPdas.orderBookPda,
-          obUsdcVault: obPdas.obUsdcVault,
-          obYesVault: obPdas.obYesVault,
-        })
-        .remainingAccounts([
-          { pubkey: adminYes, isWritable: true, isSigner: false },
-        ])
-        .signers([userB])
-        .rpc();
+      await buyNo(
+        { ...pdas, ...obPdas },
+        userB.publicKey,
+        userBUsdc,
+        userBYes,
+        userBNo,
+        600_000,
+        1,
+        {
+          remainingAccounts: [{ pubkey: adminYes, isWritable: true, isSigner: false }],
+          signers: [userB],
+        }
+      );
 
       const yesMint = await getMint(connection, pdas.yesMintPda);
       const noMint = await getMint(connection, pdas.noMintPda);
@@ -2832,27 +2697,19 @@ describe("meridian", () => {
         2
       );
 
-      await methods
-        .sellNo(new anchor.BN(2), new anchor.BN(400_000))
-        .accountsPartial({
-          user: userB.publicKey,
-          config: configPda,
-          market: pdas.marketPda,
-          userUsdc: userBUsdc,
-          vault: pdas.vaultPda,
-          yesMint: pdas.yesMintPda,
-          noMint: pdas.noMintPda,
-          userYes: userBYes,
-          userNo: userBNo,
-          orderBook: obPdas.orderBookPda,
-          obUsdcVault: obPdas.obUsdcVault,
-          obYesVault: obPdas.obYesVault,
-        })
-        .remainingAccounts([
-          { pubkey: adminUsdcAta, isWritable: true, isSigner: false },
-        ])
-        .signers([userB])
-        .rpc();
+      await sellNo(
+        { ...pdas, ...obPdas },
+        userB.publicKey,
+        userBUsdc,
+        userBYes,
+        userBNo,
+        400_000,
+        2,
+        {
+          remainingAccounts: [{ pubkey: adminUsdcAta, isWritable: true, isSigner: false }],
+          signers: [userB],
+        }
+      );
 
       const yesMint = await getMint(connection, pdas.yesMintPda);
       const noMint = await getMint(connection, pdas.noMintPda);
@@ -2926,24 +2783,11 @@ describe("meridian", () => {
 
     it("redeem losing tokens: burns tokens, user gets 0 USDC, vault unchanged", async () => {
       const pdas = await createMarket("ELOSE", new anchor.BN(334_000_000), new anchor.BN(1800000041));
-      const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
-      const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, admin.publicKey);
+      const { userNo } = userTokenAccounts(pdas);
 
       // Mint 3 pairs
       for (let i = 0; i < 3; i++) {
-        await program.methods
-          .mintPair(new anchor.BN(1))
-          .accountsPartial({
-            user: admin.publicKey,
-            market: pdas.marketPda,
-            userUsdc: adminUsdcAta,
-            vault: pdas.vaultPda,
-            yesMint: pdas.yesMintPda,
-            noMint: pdas.noMintPda,
-            userYes,
-            userNo,
-          })
-          .rpc();
+        await mintPairForAdmin(pdas, 1);
       }
 
       // Settle -> YesWins (No tokens are losers)
@@ -2953,17 +2797,14 @@ describe("meridian", () => {
       const usdcBefore = Number((await getAccount(connection, adminUsdcAta)).amount);
 
       // Redeem 3 No tokens (loser)
-      await program.methods
-        .redeem(new anchor.BN(3))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: pdas.marketPda,
-          userUsdc: adminUsdcAta,
-          vault: pdas.vaultPda,
-          tokenMint: pdas.noMintPda,
-          userToken: userNo,
-        })
-        .rpc();
+      await redeemForUser(
+        pdas,
+        admin.publicKey,
+        adminUsdcAta,
+        pdas.noMintPda,
+        userNo,
+        3
+      );
 
       const vaultAfter = Number((await getAccount(connection, pdas.vaultPda)).amount);
       const usdcAfter = Number((await getAccount(connection, adminUsdcAta)).amount);
@@ -2979,42 +2820,16 @@ describe("meridian", () => {
 
     it("burn_pair returns exactly 1 USDC per pair (verify USDC balance delta)", async () => {
       const pdas = await createMarket("EBRN", new anchor.BN(335_000_000), new anchor.BN(1800000042));
-      const userYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
-      const userNo = getAssociatedTokenAddressSync(pdas.noMintPda, admin.publicKey);
 
       // Mint 5 pairs
       for (let i = 0; i < 5; i++) {
-        await program.methods
-          .mintPair(new anchor.BN(1))
-          .accountsPartial({
-            user: admin.publicKey,
-            market: pdas.marketPda,
-            userUsdc: adminUsdcAta,
-            vault: pdas.vaultPda,
-            yesMint: pdas.yesMintPda,
-            noMint: pdas.noMintPda,
-            userYes,
-            userNo,
-          })
-          .rpc();
+        await mintPairForAdmin(pdas, 1);
       }
 
       const usdcBefore = Number((await getAccount(connection, adminUsdcAta)).amount);
 
       // Burn 3 pairs -> should get exactly 3 USDC back
-      await program.methods
-        .burnPair(new anchor.BN(3))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: pdas.marketPda,
-          userUsdc: adminUsdcAta,
-          vault: pdas.vaultPda,
-          yesMint: pdas.yesMintPda,
-          noMint: pdas.noMintPda,
-          userYes,
-          userNo,
-        })
-        .rpc();
+      await burnPairForUser(admin.publicKey, adminUsdcAta, pdas, 3);
 
       const usdcAfter = Number((await getAccount(connection, adminUsdcAta)).amount);
       expect(usdcAfter - usdcBefore).to.equal(3 * 1_000_000); // exactly 3 USDC

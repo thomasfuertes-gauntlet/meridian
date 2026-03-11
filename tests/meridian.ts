@@ -1723,6 +1723,8 @@ describe("meridian", () => {
     const connection = provider.connection;
     let userB: Keypair;
     let userBUsdc: PublicKey;
+    let userC: Keypair;
+    let userCUsdc: PublicKey;
     let atomicMarketIdx = 1900000000;
 
     function nextAtomicDate() {
@@ -1730,9 +1732,14 @@ describe("meridian", () => {
     }
 
     before(async () => {
-      const funded = await createFundedUser(50_000_000);
-      userB = funded.user;
-      userBUsdc = funded.userUsdc;
+      const [fundedB, fundedC] = await Promise.all([
+        createFundedUser(50_000_000),
+        createFundedUser(50_000_000),
+      ]);
+      userB = fundedB.user;
+      userBUsdc = fundedB.userUsdc;
+      userC = fundedC.user;
+      userCUsdc = fundedC.userUsdc;
     });
 
     it("buy yes: a crossing bid acquires Yes from a resting ask", async () => {
@@ -1882,6 +1889,84 @@ describe("meridian", () => {
       expect(orderBook.askCount).to.equal(0);
     });
 
+    it("buy no: partially fills across multiple bids and leaves the residual bid on book", async () => {
+      const pdas = await createMarket("ABNP", new anchor.BN(251_000_000), nextAtomicDate());
+      const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
+      const adminYes = await createAssociatedTokenAccount(
+        connection,
+        mintAuthority,
+        pdas.yesMintPda,
+        admin.publicKey
+      );
+      const userCYes = await createAssociatedTokenAccount(
+        connection,
+        userC,
+        pdas.yesMintPda,
+        userC.publicKey
+      );
+      const { userYes: userBYes, userNo: userBNo } = tokenAccountsFor(userB.publicKey, pdas);
+
+      const adminUsdcBefore = await tokenAmount(adminUsdcAta);
+      const userCUsdcBefore = await tokenAmount(userCUsdc);
+      const userBUsdcBefore = await tokenAmount(userBUsdc);
+
+      await placeBid({ ...pdas, ...obPdas }, admin.publicKey, adminUsdcAta, adminYes, 650_000, 1);
+      await placeBid(
+        { ...pdas, ...obPdas },
+        userC.publicKey,
+        userCUsdc,
+        userCYes,
+        640_000,
+        2,
+        { signers: [userC] }
+      );
+
+      await buyNo(
+        { ...pdas, ...obPdas },
+        userB.publicKey,
+        userBUsdc,
+        userBYes,
+        userBNo,
+        600_000,
+        2,
+        {
+          remainingAccounts: [
+            { pubkey: adminYes, isWritable: true, isSigner: false },
+            { pubkey: userCYes, isWritable: true, isSigner: false },
+          ],
+          signers: [userB],
+        }
+      );
+
+      const adminUsdcAfter = await tokenAmount(adminUsdcAta);
+      const userCUsdcAfter = await tokenAmount(userCUsdc);
+      const userBUsdcAfter = await tokenAmount(userBUsdc);
+      const adminYesAfter = await tokenAmount(adminYes);
+      const userCYesAfter = await tokenAmount(userCYes);
+      const userBYesAfter = await tokenAmount(userBYes);
+      const userBNoAfter = await tokenAmount(userBNo);
+      const yesMint = await getMint(connection, pdas.yesMintPda);
+      const noMint = await getMint(connection, pdas.noMintPda);
+      const market = await program.account.strikeMarket.fetch(pdas.marketPda);
+      const orderBook = await program.account.orderBook.fetch(obPdas.orderBookPda);
+
+      expectDecrease(adminUsdcBefore, adminUsdcAfter, 650_000);
+      expectDecrease(userCUsdcBefore, userCUsdcAfter, 640_000);
+      expectDecrease(userBUsdcBefore, userBUsdcAfter, 710_000);
+      expect(adminYesAfter).to.equal(1);
+      expect(userCYesAfter).to.equal(1);
+      expect(userBYesAfter).to.equal(0);
+      expect(userBNoAfter).to.equal(2);
+      expect(Number(yesMint.supply)).to.equal(2);
+      expect(Number(noMint.supply)).to.equal(2);
+      expect(market.totalPairsMinted.toNumber()).to.equal(2);
+      expect(orderBook.bidCount).to.equal(1);
+      expect(orderBook.askCount).to.equal(0);
+      expect(orderBook.bids[0].owner.toBase58()).to.equal(userC.publicKey.toBase58());
+      expect(orderBook.bids[0].price.toNumber()).to.equal(640_000);
+      expect(orderBook.bids[0].quantity.toNumber()).to.equal(1);
+    });
+
     it("sell no: buys Yes from resting asks, burns the pair, and returns USDC collateral", async () => {
       const pdas = await createMarket("ASNO", new anchor.BN(260_000_000), nextAtomicDate());
       const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
@@ -1936,6 +2021,86 @@ describe("meridian", () => {
       expect(market.totalPairsMinted.toNumber()).to.equal(2);
       expect(orderBook.bidCount).to.equal(0);
       expect(orderBook.askCount).to.equal(0);
+    });
+
+    it("sell no: partially fills across multiple asks and leaves the residual ask on book", async () => {
+      const pdas = await createMarket("ASNP", new anchor.BN(261_000_000), nextAtomicDate());
+      const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
+      const adminYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
+      const { userYes: userCYes } = await mintPairForUser(
+        userC.publicKey,
+        userCUsdc,
+        pdas,
+        2,
+        [userC]
+      );
+      const { userYes: userBYes, userNo: userBNo } = await mintPairForUser(
+        userB.publicKey,
+        userBUsdc,
+        pdas,
+        2,
+        [userB]
+      );
+
+      await mintPairForAdmin({ ...pdas, ...obPdas }, 1);
+
+      await placeAsk({ ...pdas, ...obPdas }, admin.publicKey, adminUsdcAta, adminYes, 300_000, 1);
+      await placeAsk(
+        { ...pdas, ...obPdas },
+        userC.publicKey,
+        userCUsdc,
+        userCYes,
+        350_000,
+        2,
+        { signers: [userC] }
+      );
+
+      const adminUsdcBefore = await tokenAmount(adminUsdcAta);
+      const userCUsdcBefore = await tokenAmount(userCUsdc);
+      const userBUsdcBefore = await tokenAmount(userBUsdc);
+
+      await sellNo(
+        { ...pdas, ...obPdas },
+        userB.publicKey,
+        userBUsdc,
+        userBYes,
+        userBNo,
+        400_000,
+        2,
+        {
+          remainingAccounts: [
+            { pubkey: adminUsdcAta, isWritable: true, isSigner: false },
+            { pubkey: userCUsdc, isWritable: true, isSigner: false },
+          ],
+          signers: [userB],
+        }
+      );
+
+      const adminUsdcAfter = await tokenAmount(adminUsdcAta);
+      const userCUsdcAfter = await tokenAmount(userCUsdc);
+      const userBUsdcAfter = await tokenAmount(userBUsdc);
+      const userBYesAfter = await tokenAmount(userBYes);
+      const userBNoAfter = await tokenAmount(userBNo);
+      const vaultAfter = await tokenAmount(pdas.vaultPda);
+      const yesMint = await getMint(connection, pdas.yesMintPda);
+      const noMint = await getMint(connection, pdas.noMintPda);
+      const market = await program.account.strikeMarket.fetch(pdas.marketPda);
+      const orderBook = await program.account.orderBook.fetch(obPdas.orderBookPda);
+
+      expectIncrease(adminUsdcBefore, adminUsdcAfter, 300_000);
+      expectIncrease(userCUsdcBefore, userCUsdcAfter, 350_000);
+      expectIncrease(userBUsdcBefore, userBUsdcAfter, 1_350_000);
+      expect(userBYesAfter).to.equal(2);
+      expect(userBNoAfter).to.equal(0);
+      expect(vaultAfter).to.equal(3_000_000);
+      expect(Number(yesMint.supply)).to.equal(3);
+      expect(Number(noMint.supply)).to.equal(3);
+      expect(market.totalPairsMinted.toNumber()).to.equal(3);
+      expect(orderBook.bidCount).to.equal(0);
+      expect(orderBook.askCount).to.equal(1);
+      expect(orderBook.asks[0].owner.toBase58()).to.equal(userC.publicKey.toBase58());
+      expect(orderBook.asks[0].price.toNumber()).to.equal(350_000);
+      expect(orderBook.asks[0].quantity.toNumber()).to.equal(1);
     });
   });
 

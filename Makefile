@@ -3,7 +3,7 @@
 	local local-full local-validator local-validator-stop local-validator-reset \
 	local-rpc-check local-bootstrap local-validator-live \
 	local-deploy local-setup local-bots local-live local-strategy local-ui-ready local-ui \
-	local-test-rust local-test-anchor local-test-smoke local-check \
+	local-test-rust local-test-anchor local-test-smoke local-test-grep local-check \
 	devnet-deploy devnet-setup devnet-health devnet-settle devnet-morning devnet-reset \
 	wallet-pubkeys circuit tree clean \
 	dev dev-validator deploy setup bots live strategy-bots test check \
@@ -186,6 +186,14 @@ local-test-anchor: wallets
 local-test-smoke: local-deploy
 	@echo "Running targeted validator-backed roundtrip smoke test..."
 	$(LOCAL_TEST_ENV) npm test -- --grep "$(SMOKE_TEST_GREP)"
+
+local-test-grep:
+	@if [ -z "$(GREP)" ]; then \
+		echo "Usage: make local-test-grep GREP='your test regex'"; \
+		exit 1; \
+	fi
+	@echo "Running focused validator-backed tests matching: $(GREP)"
+	$(LOCAL_TEST_ENV) npm test -- --grep "$(GREP)"
 
 local-check: local-test-rust
 	@echo ""

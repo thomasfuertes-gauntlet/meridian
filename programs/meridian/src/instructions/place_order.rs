@@ -1,4 +1,8 @@
 use crate::errors::MeridianError;
+use crate::instructions::shared::{
+    apply_fills_to_orders, validate_counterparty_token_account, validate_order_book_for_market,
+    AtomicFill,
+};
 use crate::state::{
     GlobalConfig, Order, OrderBook, OrderSide, StrikeMarket, MAX_ORDERS_PER_SIDE, USDC_PER_PAIR,
 };
@@ -66,15 +70,6 @@ pub struct PlaceOrder<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-/// A fill computed during the read phase, executed during the CPI phase.
-struct Fill {
-    book_index: usize,
-    fill_qty: u64,
-    fill_cost: u64, // fill_qty * execution_price
-    remaining_acct_idx: usize,
-    counterparty_owner: Pubkey,
-}
-
 pub fn handler<'info>(
     ctx: Context<'_, '_, 'info, 'info, PlaceOrder<'info>>,
     side: OrderSide,
@@ -134,18 +129,14 @@ pub fn handler<'info>(
     let (fills, remaining_qty, total_fill_cost, ob_bump) = {
         let ob = ctx.accounts.order_book.load()?;
 
-        // Validate order_book belongs to this market
-        require!(ob.market == market_key, MeridianError::Unauthorized);
-        require!(
-            ob.ob_usdc_vault == ctx.accounts.ob_usdc_vault.key(),
-            MeridianError::VaultInvariantViolation
-        );
-        require!(
-            ob.ob_yes_vault == ctx.accounts.ob_yes_vault.key(),
-            MeridianError::VaultInvariantViolation
-        );
+        validate_order_book_for_market(
+            &ob,
+            &market_key,
+            ctx.accounts.ob_usdc_vault.key(),
+            ctx.accounts.ob_yes_vault.key(),
+        )?;
 
-        let mut fills: Vec<Fill> = Vec::new();
+        let mut fills: Vec<AtomicFill> = Vec::new();
         let mut rem_qty = quantity;
         let mut total_cost: u64 = 0;
         let mut ra_idx: usize = 0;
@@ -173,7 +164,7 @@ pub fn handler<'info>(
                         .checked_add(fill_cost)
                         .ok_or(MeridianError::InvalidAmount)?;
 
-                    fills.push(Fill {
+                    fills.push(AtomicFill {
                         book_index: i,
                         fill_qty,
                         fill_cost,
@@ -205,7 +196,7 @@ pub fn handler<'info>(
                         .checked_mul(bid_price)
                         .ok_or(MeridianError::InvalidAmount)?;
 
-                    fills.push(Fill {
+                    fills.push(AtomicFill {
                         book_index: i,
                         fill_qty,
                         fill_cost,
@@ -239,16 +230,11 @@ pub fn handler<'info>(
 
         match side {
             OrderSide::Bid => {
-                require_keys_eq!(
-                    counterparty_token_account.owner,
+                validate_counterparty_token_account(
+                    &counterparty_token_account,
                     fill.counterparty_owner,
-                    MeridianError::InvalidCounterpartyAccount
-                );
-                require_keys_eq!(
-                    counterparty_token_account.mint,
                     ctx.accounts.ob_usdc_vault.mint,
-                    MeridianError::InvalidCounterpartyAccount
-                );
+                )?;
                 // Taker gets Yes tokens
                 token::transfer(
                     CpiContext::new_with_signer(
@@ -277,16 +263,11 @@ pub fn handler<'info>(
                 )?;
             }
             OrderSide::Ask => {
-                require_keys_eq!(
-                    counterparty_token_account.owner,
+                validate_counterparty_token_account(
+                    &counterparty_token_account,
                     fill.counterparty_owner,
-                    MeridianError::InvalidCounterpartyAccount
-                );
-                require_keys_eq!(
-                    counterparty_token_account.mint,
                     ctx.accounts.ob_yes_vault.mint,
-                    MeridianError::InvalidCounterpartyAccount
-                );
+                )?;
                 // Taker gets USDC
                 token::transfer(
                     CpiContext::new_with_signer(
@@ -353,19 +334,8 @@ pub fn handler<'info>(
         match side {
             OrderSide::Bid => {
                 // Update matched asks
-                for fill in &fills {
-                    ob.asks[fill.book_index].quantity = ob.asks[fill.book_index]
-                        .quantity
-                        .checked_sub(fill.fill_qty)
-                        .ok_or(MeridianError::InvalidAmount)?;
-                    if ob.asks[fill.book_index].quantity == 0 {
-                        ob.asks[fill.book_index].is_active = 0;
-                    }
-                }
-
-                // Compact asks
                 let ac = ob.ask_count;
-                ob.ask_count = compact_orders(&mut ob.asks, ac);
+                ob.ask_count = apply_fills_to_orders(&mut ob.asks, ac, &fills)?;
 
                 // Rest remaining quantity as a new bid
                 if remaining_qty > 0 {
@@ -399,19 +369,8 @@ pub fn handler<'info>(
             }
             OrderSide::Ask => {
                 // Update matched bids
-                for fill in &fills {
-                    ob.bids[fill.book_index].quantity = ob.bids[fill.book_index]
-                        .quantity
-                        .checked_sub(fill.fill_qty)
-                        .ok_or(MeridianError::InvalidAmount)?;
-                    if ob.bids[fill.book_index].quantity == 0 {
-                        ob.bids[fill.book_index].is_active = 0;
-                    }
-                }
-
-                // Compact bids
                 let bc = ob.bid_count;
-                ob.bid_count = compact_orders(&mut ob.bids, bc);
+                ob.bid_count = apply_fills_to_orders(&mut ob.bids, bc, &fills)?;
 
                 // Rest remaining quantity as a new ask
                 if remaining_qty > 0 {
@@ -447,25 +406,6 @@ pub fn handler<'info>(
     }
 
     Ok(())
-}
-
-/// Remove inactive orders by shifting active ones left, then zeroing the tail.
-/// Returns the new count.
-fn compact_orders(orders: &mut [Order; MAX_ORDERS_PER_SIDE], count: u16) -> u16 {
-    let mut write = 0usize;
-    let n = count as usize;
-    for read in 0..n {
-        if orders[read].is_active != 0 {
-            if write != read {
-                orders[write] = orders[read];
-            }
-            write += 1;
-        }
-    }
-    for i in write..n {
-        orders[i] = Order::default();
-    }
-    write as u16
 }
 
 /// Find insert position for a bid (descending by price, FIFO at same price).

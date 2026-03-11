@@ -1,8 +1,8 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::TokenAccount;
 
 use crate::errors::MeridianError;
-use crate::state::{GlobalConfig, MarketOutcome, MarketStatus, OrderBook, StrikeMarket};
+use crate::instructions::shared::validate_order_book_drained;
+use crate::state::{GlobalConfig, MarketOutcome, StrikeMarket};
 
 #[derive(Accounts)]
 pub struct AdminSettle<'info> {
@@ -52,9 +52,7 @@ pub fn handler<'info>(
     };
 
     let market = &mut ctx.accounts.market;
-    market.status = MarketStatus::Settled;
-    market.outcome = outcome;
-    market.settled_at = Some(clock.unix_timestamp);
+    market.apply_settlement(outcome, clock.unix_timestamp)?;
 
     Ok(())
 }
@@ -66,70 +64,6 @@ fn validate_admin_settle_delay(close_time: i64, delay_secs: i64, now: i64) -> Re
     );
     Ok(())
 }
-
-fn validate_order_book_drained<'info>(
-    market: &StrikeMarket,
-    market_key: &Pubkey,
-    remaining_accounts: &'info [AccountInfo<'info>],
-) -> Result<()> {
-    if !market.has_order_book() {
-        return Ok(());
-    }
-
-    require!(
-        remaining_accounts.len() >= 3,
-        MeridianError::MissingOrderBookAccounts
-    );
-
-    let order_book_ai = &remaining_accounts[0];
-    let ob_usdc_vault_ai = &remaining_accounts[1];
-    let ob_yes_vault_ai = &remaining_accounts[2];
-
-    require_keys_eq!(
-        *order_book_ai.key,
-        market.order_book,
-        MeridianError::InvalidOrderBookAccount
-    );
-    require_keys_eq!(
-        *ob_usdc_vault_ai.key,
-        market.ob_usdc_vault,
-        MeridianError::InvalidOrderBookAccount
-    );
-    require_keys_eq!(
-        *ob_yes_vault_ai.key,
-        market.ob_yes_vault,
-        MeridianError::InvalidOrderBookAccount
-    );
-
-    let order_book = AccountLoader::<OrderBook>::try_from(order_book_ai)
-        .map_err(|_| error!(MeridianError::InvalidOrderBookAccount))?;
-    let ob = order_book
-        .load()
-        .map_err(|_| error!(MeridianError::InvalidOrderBookAccount))?;
-    require_keys_eq!(
-        ob.market,
-        *market_key,
-        MeridianError::InvalidOrderBookAccount
-    );
-    require!(!ob.has_active_orders(), MeridianError::OrderBookNotEmpty);
-
-    let ob_usdc_vault = Account::<TokenAccount>::try_from(ob_usdc_vault_ai)
-        .map_err(|_| error!(MeridianError::InvalidOrderBookAccount))?;
-    let ob_yes_vault = Account::<TokenAccount>::try_from(ob_yes_vault_ai)
-        .map_err(|_| error!(MeridianError::InvalidOrderBookAccount))?;
-
-    require!(
-        ob_usdc_vault.amount == 0,
-        MeridianError::OrderBookEscrowNotEmpty
-    );
-    require!(
-        ob_yes_vault.amount == 0,
-        MeridianError::OrderBookEscrowNotEmpty
-    );
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

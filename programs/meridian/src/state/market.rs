@@ -1,7 +1,7 @@
 use crate::errors::MeridianError;
 use anchor_lang::prelude::*;
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(Debug, AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
 pub enum MarketOutcome {
     Pending,
     YesWins,
@@ -14,7 +14,7 @@ impl Default for MarketOutcome {
     }
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+#[derive(Debug, AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
 pub enum MarketStatus {
     Created,
     Frozen,
@@ -99,6 +99,17 @@ impl StrikeMarket {
         require!(now >= self.close_time, MeridianError::SettlementTooEarly);
         Ok(())
     }
+
+    pub fn apply_settlement(&mut self, outcome: MarketOutcome, settled_at: i64) -> Result<()> {
+        require!(
+            outcome != MarketOutcome::Pending,
+            MeridianError::InvalidOutcome
+        );
+        self.status = MarketStatus::Settled;
+        self.outcome = outcome;
+        self.settled_at = Some(settled_at);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -169,5 +180,25 @@ mod tests {
         let market = sample_market(MarketStatus::Settled, 1_000);
         let err = market.assert_can_settle(1_000).unwrap_err();
         assert!(err.to_string().contains("MarketAlreadySettled"));
+    }
+
+    #[test]
+    fn apply_settlement_writes_final_state() {
+        let mut market = sample_market(MarketStatus::Frozen, 1_000);
+        market
+            .apply_settlement(MarketOutcome::NoWins, 1_234)
+            .unwrap();
+        assert_eq!(market.status, MarketStatus::Settled);
+        assert_eq!(market.outcome, MarketOutcome::NoWins);
+        assert_eq!(market.settled_at, Some(1_234));
+    }
+
+    #[test]
+    fn apply_settlement_rejects_pending_outcome() {
+        let mut market = sample_market(MarketStatus::Frozen, 1_000);
+        let err = market
+            .apply_settlement(MarketOutcome::Pending, 1_234)
+            .unwrap_err();
+        assert!(err.to_string().contains("InvalidOutcome"));
     }
 }

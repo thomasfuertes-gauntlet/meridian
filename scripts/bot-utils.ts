@@ -79,15 +79,23 @@ export interface MarketCtx {
   obYesVault: PublicKey;
 }
 
+export function getBotTickerFilter(): string | null {
+  const ticker = process.env.DEMO_TICKER?.trim().toUpperCase();
+  return ticker ? ticker : null;
+}
+
 /** Discover all active (pending) markets and derive their PDAs. */
 export async function discoverMarkets(program: Program<Meridian>): Promise<MarketCtx[]> {
   const pid = program.programId;
+  const demoTicker = getBotTickerFilter();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allMarkets = await (program.account as any).strikeMarket.all();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return allMarkets
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .filter((m: any) => m.account.outcome?.pending !== undefined)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .filter((m: any) => !demoTicker || (m.account.ticker as string).toUpperCase() === demoTicker)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .map((m: any) => {
       const pk: PublicKey = m.publicKey;
@@ -134,6 +142,8 @@ const ACTIVE_MARKET_FILE = "/tmp/meridian-active-market.txt";
 
 /** Read the active ticker from env or file signal. Returns null if none set. */
 export function getActiveTicker(): string | null {
+  const demoTicker = getBotTickerFilter();
+  if (demoTicker) return demoTicker;
   if (process.env.ACTIVE_TICKER) return process.env.ACTIVE_TICKER;
   try {
     return fs.readFileSync(ACTIVE_MARKET_FILE, "utf-8").trim() || null;

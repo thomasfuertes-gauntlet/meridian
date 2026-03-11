@@ -22,7 +22,7 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
-import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveTicker } from "./bot-utils";
+import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveTicker, getBotTickerFilter } from "./bot-utils";
 
 const TICK_MS = 45_000;
 const TX_DELAY_MS = Number(process.env.TX_DELAY_MS ?? 1000); // 1s global throttle
@@ -210,6 +210,10 @@ async function main() {
 
   console.log("Strategy Bots (bot-c/d/e/f) using wallet:", bot.publicKey.toString());
   console.log("USDC Mint:", usdcMint.toString());
+  const demoTicker = getBotTickerFilter();
+  if (demoTicker) {
+    console.log("Demo ticker focus:", demoTicker);
+  }
 
   let markets = await discoverMarkets(program);
 

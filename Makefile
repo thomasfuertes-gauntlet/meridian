@@ -35,6 +35,7 @@ DEVNET_URL ?= $(DEVNET_RPC_URL)
 RAILWAY_FRONTEND_SERVICE ?= frontend
 RAILWAY_BOTS_SERVICE ?= bots
 VITE_DEV_WALLET ?= true
+DEMO_TICKER ?= NVDA
 
 ADMIN_PUBKEY = $$(solana-keygen pubkey $(ADMIN_WALLET))
 LOCAL_TS_ENV = ANCHOR_PROVIDER_URL="$(LOCAL_RPC_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" OFFLINE="$(OFFLINE)"
@@ -253,6 +254,7 @@ railway-sync: railway-env-check
 	railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)" "VITE_DEV_WALLET=$(VITE_DEV_WALLET)"
 	railway variable set -s "$(RAILWAY_BOTS_SERVICE)" "ANCHOR_PROVIDER_URL=$(DEVNET_URL)"
 	railway variable set -s "$(RAILWAY_BOTS_SERVICE)" "USDC_MINT=$(DEVNET_USDC_MINT)"
+	railway variable set -s "$(RAILWAY_BOTS_SERVICE)" "DEMO_TICKER=$(DEMO_TICKER)"
 
 railway-deploy-frontend: railway-env-check
 	railway up app --path-as-root -s "$(RAILWAY_FRONTEND_SERVICE)" -d

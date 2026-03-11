@@ -25,7 +25,7 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fairValue, fetchStockPrices } from "./fair-value";
-import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR, MAX_PER_SIDE, weightedMarketSelect } from "./bot-utils";
+import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR, MAX_PER_SIDE, weightedMarketSelect, getBotTickerFilter } from "./bot-utils";
 
 const MIN_PRICE = 50_000;   // $0.05 floor
 const MAX_PRICE = 950_000;  // $0.95 ceiling
@@ -62,6 +62,10 @@ async function main() {
 
   console.log("Bot:", bot.publicKey.toString());
   console.log("USDC Mint:", usdcMint.toString());
+  const demoTicker = getBotTickerFilter();
+  if (demoTicker) {
+    console.log("Demo ticker focus:", demoTicker);
+  }
 
   let markets = await discoverMarkets(program);
 

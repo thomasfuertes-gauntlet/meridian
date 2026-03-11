@@ -21,6 +21,7 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fairValue, computeLevels, fetchStockPrices } from "./fair-value";
+import { getBotTickerFilter } from "./bot-utils";
 
 const USDC_PER_PAIR = 1_000_000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -41,6 +42,10 @@ async function main() {
   console.log("Program ID:", program.programId.toString());
   console.log("Bot wallet (bot-a):", bot.publicKey.toString());
   console.log(`TX delay: ${txDelayMs}ms`);
+  const demoTicker = getBotTickerFilter();
+  if (demoTicker) {
+    console.log(`Demo ticker focus: ${demoTicker}`);
+  }
 
   // Fund bot with SOL (only on localhost - devnet faucets rate-limit heavily)
   const botBal = await connection.getBalance(bot.publicKey);
@@ -68,6 +73,9 @@ async function main() {
   const pendingMarkets = allMarkets.filter(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (m: any) => m.account.outcome?.pending !== undefined
+  ).filter(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (m: any) => !demoTicker || (m.account.ticker as string).toUpperCase() === demoTicker
   );
   console.log(`Found ${pendingMarkets.length} active markets\n`);
 

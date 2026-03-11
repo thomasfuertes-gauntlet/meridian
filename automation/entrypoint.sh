@@ -6,6 +6,7 @@ set -euo pipefail
 # USDC_MINT and ANCHOR_PROVIDER_URL must be set as Railway env vars.
 
 export ANCHOR_WALLET=".wallets/admin.json"
+export DEMO_TICKER="${DEMO_TICKER:-NVDA}"
 
 if [ -z "${USDC_MINT:-}" ]; then
   echo "ERROR: USDC_MINT env var not set. Run setup-devnet.ts first."
@@ -20,6 +21,7 @@ fi
 echo "Meridian Bot Runner"
 echo "  RPC: $ANCHOR_PROVIDER_URL"
 echo "  USDC: $USDC_MINT"
+echo "  Demo ticker: $DEMO_TICKER"
 echo "  Wallet: $(npx tsx -e "const {getDevWallet}=require('./scripts/dev-wallets');console.log(getDevWallet('bot-a').publicKey.toString())" 2>/dev/null || echo 'bot-a')"
 
 echo "Running seed-bots (auto-skips if already seeded)..."

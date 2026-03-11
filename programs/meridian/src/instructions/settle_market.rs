@@ -128,19 +128,35 @@ fn validate_order_book_drained<'info>(
         *market_key,
         MeridianError::InvalidOrderBookAccount
     );
-    require!(!ob.has_active_orders(), MeridianError::OrderBookNotEmpty);
 
     let ob_usdc_vault = Account::<TokenAccount>::try_from(ob_usdc_vault_ai)
         .map_err(|_| error!(MeridianError::InvalidOrderBookAccount))?;
     let ob_yes_vault = Account::<TokenAccount>::try_from(ob_yes_vault_ai)
         .map_err(|_| error!(MeridianError::InvalidOrderBookAccount))?;
 
+    validate_order_book_snapshot(
+        true,
+        ob.has_active_orders(),
+        ob_usdc_vault.amount,
+        ob_yes_vault.amount,
+    )?;
+
+    Ok(())
+}
+
+fn validate_order_book_snapshot(
+    has_order_book: bool,
+    has_active_orders: bool,
+    ob_usdc_amount: u64,
+    ob_yes_amount: u64,
+) -> Result<()> {
+    if !has_order_book {
+        return Ok(());
+    }
+
+    require!(!has_active_orders, MeridianError::OrderBookNotEmpty);
     require!(
-        ob_usdc_vault.amount == 0,
-        MeridianError::OrderBookEscrowNotEmpty
-    );
-    require!(
-        ob_yes_vault.amount == 0,
+        ob_usdc_amount == 0 && ob_yes_amount == 0,
         MeridianError::OrderBookEscrowNotEmpty
     );
 
@@ -261,5 +277,22 @@ mod tests {
     fn rejects_negative_conversion_inputs() {
         let err = oracle_price_to_usdc_micro(&sample_price(-1, -6, 1_000)).unwrap_err();
         assert!(err.to_string().contains("InvalidOraclePrice"));
+    }
+
+    #[test]
+    fn allows_settlement_when_no_order_book_exists() {
+        validate_order_book_snapshot(false, false, 10, 10).unwrap();
+    }
+
+    #[test]
+    fn rejects_settlement_with_active_orders() {
+        let err = validate_order_book_snapshot(true, true, 0, 0).unwrap_err();
+        assert!(err.to_string().contains("OrderBookNotEmpty"));
+    }
+
+    #[test]
+    fn rejects_settlement_with_residual_escrow() {
+        let err = validate_order_book_snapshot(true, false, 1, 0).unwrap_err();
+        assert!(err.to_string().contains("OrderBookEscrowNotEmpty"));
     }
 }

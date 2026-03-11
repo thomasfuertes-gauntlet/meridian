@@ -38,10 +38,11 @@ pub fn handler<'info>(
     let clock = Clock::get()?;
     market.assert_can_settle(clock.unix_timestamp)?;
     // Admin settle is the fallback path and requires a configured delay.
-    require!(
-        clock.unix_timestamp >= market.close_time + ctx.accounts.config.admin_settle_delay_secs,
-        MeridianError::AdminSettleTooEarly
-    );
+    validate_admin_settle_delay(
+        market.close_time,
+        ctx.accounts.config.admin_settle_delay_secs,
+        clock.unix_timestamp,
+    )?;
     validate_order_book_drained(market, &market_key, ctx.remaining_accounts)?;
 
     let outcome = if price >= market.strike_price {
@@ -55,6 +56,14 @@ pub fn handler<'info>(
     market.outcome = outcome;
     market.settled_at = Some(clock.unix_timestamp);
 
+    Ok(())
+}
+
+fn validate_admin_settle_delay(close_time: i64, delay_secs: i64, now: i64) -> Result<()> {
+    require!(
+        now >= close_time + delay_secs,
+        MeridianError::AdminSettleTooEarly
+    );
     Ok(())
 }
 
@@ -119,4 +128,20 @@ fn validate_order_book_drained<'info>(
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_admin_settle_before_delay() {
+        let err = validate_admin_settle_delay(1_000, 3_600, 4_599).unwrap_err();
+        assert!(err.to_string().contains("AdminSettleTooEarly"));
+    }
+
+    #[test]
+    fn allows_admin_settle_after_delay() {
+        validate_admin_settle_delay(1_000, 3_600, 4_600).unwrap();
+    }
 }

@@ -23,7 +23,6 @@ import { getDevWallet } from "./dev-wallets";
 import { fairValue, computeLevels, fetchStockPrices } from "./fair-value";
 
 const USDC_PER_PAIR = 1_000_000;
-const TX_DELAY_MS = 1200; // throttle for devnet/Helius rate limits (1 tx/s free tier)
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
@@ -31,6 +30,9 @@ async function main() {
   anchor.setProvider(provider);
   const program = anchor.workspace.Meridian as Program<Meridian>;
   const connection = provider.connection;
+  const isLocalhost =
+    connection.rpcEndpoint.includes("localhost") || connection.rpcEndpoint.includes("127.0.0.1");
+  const txDelayMs = Number(process.env.TX_DELAY_MS ?? (isLocalhost ? 0 : 1200));
 
   // Use deterministic dev wallets
   const bot = getDevWallet("bot-a");
@@ -38,10 +40,10 @@ async function main() {
 
   console.log("Program ID:", program.programId.toString());
   console.log("Bot wallet (bot-a):", bot.publicKey.toString());
+  console.log(`TX delay: ${txDelayMs}ms`);
 
   // Fund bot with SOL (only on localhost - devnet faucets rate-limit heavily)
   const botBal = await connection.getBalance(bot.publicKey);
-  const isLocalhost = connection.rpcEndpoint.includes("localhost") || connection.rpcEndpoint.includes("127.0.0.1");
   if (isLocalhost && botBal < 5 * LAMPORTS_PER_SOL) {
     const airdropSig = await connection.requestAirdrop(bot.publicKey, 10 * LAMPORTS_PER_SOL);
     await connection.confirmTransaction(airdropSig);
@@ -191,7 +193,7 @@ async function main() {
       createAssociatedTokenAccountIdempotentInstruction(bot.publicKey, botNoAta, bot.publicKey, noMintPda),
     );
     await anchor.web3.sendAndConfirmTransaction(connection, ataSetupTx, [bot]);
-    await sleep(TX_DELAY_MS);
+    await sleep(txDelayMs);
 
     // Total ask quantity needed for Yes token supply
     const totalAskQty = askLevels.reduce((sum, [, qty]) => sum + qty, 0);
@@ -214,7 +216,7 @@ async function main() {
       })
       .signers([bot])
       .rpc();
-    await sleep(TX_DELAY_MS);
+    await sleep(txDelayMs);
     console.log(`  Minted ${mintQty} pairs`);
 
     // Place ask orders (sell Yes tokens at various prices)
@@ -234,7 +236,7 @@ async function main() {
         .signers([bot])
         .rpc();
       console.log(`    Ask: ${qty} @ $${(price / USDC_PER_PAIR).toFixed(2)}`);
-      await sleep(TX_DELAY_MS);
+      await sleep(txDelayMs);
     }
 
     // Place bid orders (buy Yes tokens at various prices, escrows USDC)
@@ -254,7 +256,7 @@ async function main() {
         .signers([bot])
         .rpc();
       console.log(`    Bid: ${qty} @ $${(price / USDC_PER_PAIR).toFixed(2)}`);
-      await sleep(TX_DELAY_MS);
+      await sleep(txDelayMs);
     }
 
     console.log(`  Done: ${bidLevels.length} bids, ${askLevels.length} asks (${totalAskQty} depth/side)\n`);

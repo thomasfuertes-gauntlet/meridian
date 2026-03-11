@@ -58,8 +58,10 @@ pub struct StrikeMarket {
 }
 
 impl StrikeMarket {
-    // Slightly oversized to leave room for the explicit lifecycle metadata.
-    pub const SPACE: usize = 8 + 320;
+    // 342 bytes are currently required at max occupancy:
+    // discriminator (8) + ticker string (4 + 10) + scalar fields + 8 pubkeys
+    // + optional settlement metadata. Keep a little headroom for future metadata.
+    pub const SPACE: usize = 8 + 352;
     pub const SEED: &'static [u8] = b"market";
     pub const MAX_TICKER_LEN: usize = 10;
 
@@ -69,6 +71,14 @@ impl StrikeMarket {
 
     pub fn is_settled(&self) -> bool {
         self.status == MarketStatus::Settled
+    }
+
+    pub fn outcome_for_price(&self, settlement_price: u64) -> MarketOutcome {
+        if settlement_price >= self.strike_price {
+            MarketOutcome::YesWins
+        } else {
+            MarketOutcome::NoWins
+        }
     }
 
     pub fn has_order_book(&self) -> bool {
@@ -110,6 +120,22 @@ impl StrikeMarket {
             MeridianError::InvalidMarketState
         );
         require!(now >= self.close_time, MeridianError::SettlementTooEarly);
+        Ok(())
+    }
+
+    pub fn prepare_for_settlement(&mut self, now: i64) -> Result<()> {
+        require!(!self.is_settled(), MeridianError::MarketAlreadySettled);
+        require!(now >= self.close_time, MeridianError::SettlementTooEarly);
+
+        match self.status {
+            MarketStatus::Created => {
+                self.status = MarketStatus::Frozen;
+                self.frozen_at = Some(now);
+            }
+            MarketStatus::Frozen => {}
+            MarketStatus::Settled => unreachable!(),
+        }
+
         Ok(())
     }
 
@@ -241,6 +267,44 @@ mod tests {
     }
 
     #[test]
+    fn prepare_for_settlement_freezes_created_market() {
+        let mut market = sample_market(MarketStatus::Created, 1_000);
+        market.prepare_for_settlement(1_000).unwrap();
+        assert_eq!(market.status, MarketStatus::Frozen);
+        assert_eq!(market.frozen_at, Some(1_000));
+    }
+
+    #[test]
+    fn prepare_for_settlement_keeps_frozen_market() {
+        let mut market = sample_market(MarketStatus::Frozen, 1_000);
+        market.prepare_for_settlement(1_005).unwrap();
+        assert_eq!(market.status, MarketStatus::Frozen);
+        assert_eq!(market.frozen_at, None);
+    }
+
+    #[test]
+    fn prepare_for_settlement_rejects_created_market_before_close() {
+        let mut market = sample_market(MarketStatus::Created, 1_000);
+        let err = market.prepare_for_settlement(999).unwrap_err();
+        assert!(err.to_string().contains("SettlementTooEarly"));
+    }
+
+    #[test]
+    fn prepare_for_settlement_rejects_frozen_market_before_close() {
+        let mut market = sample_market(MarketStatus::Frozen, 1_000);
+        let err = market.prepare_for_settlement(999).unwrap_err();
+        assert!(err.to_string().contains("SettlementTooEarly"));
+    }
+
+    #[test]
+    fn prepare_for_settlement_preserves_existing_frozen_timestamp() {
+        let mut market = sample_market(MarketStatus::Frozen, 1_000);
+        market.frozen_at = Some(1_001);
+        market.prepare_for_settlement(1_010).unwrap();
+        assert_eq!(market.frozen_at, Some(1_001));
+    }
+
+    #[test]
     fn settled_market_cannot_settle_again() {
         let market = sample_market(MarketStatus::Settled, 1_000);
         let err = market.assert_can_settle(1_000).unwrap_err();
@@ -295,10 +359,62 @@ mod tests {
     }
 
     #[test]
+    fn settled_metadata_is_immutable_after_auto_freeze_preparation() {
+        let mut market = sample_market(MarketStatus::Created, 1_000);
+        market.prepare_for_settlement(1_000).unwrap();
+        market
+            .apply_oracle_settlement(MarketOutcome::YesWins, 680_000_000, 1_234)
+            .unwrap();
+
+        let err = market
+            .apply_admin_settlement(MarketOutcome::NoWins, 679_000_000, 1_235)
+            .unwrap_err();
+        assert!(err.to_string().contains("MarketAlreadySettled"));
+        assert_eq!(market.status, MarketStatus::Settled);
+        assert_eq!(market.outcome, MarketOutcome::YesWins);
+        assert_eq!(market.frozen_at, Some(1_000));
+    }
+
+    #[test]
     fn open_interest_consumption_rejects_underflow() {
         let mut market = sample_market(MarketStatus::Created, 1_000);
         let err = market.consume_open_interest(3).unwrap_err();
         assert!(err.to_string().contains("InvalidAmount"));
         assert_eq!(market.total_pairs_minted, 2);
+    }
+
+    #[test]
+    fn expected_vault_amount_rejects_overflow() {
+        let mut market = sample_market(MarketStatus::Created, 1_000);
+        market.total_pairs_minted = u64::MAX;
+        let err = market.expected_vault_amount(2).unwrap_err();
+        assert!(err.to_string().contains("InvalidAmount"));
+    }
+
+    #[test]
+    fn increase_open_interest_rejects_overflow() {
+        let mut market = sample_market(MarketStatus::Created, 1_000);
+        market.total_pairs_minted = u64::MAX - 1;
+        let err = market.increase_open_interest(2).unwrap_err();
+        assert!(err.to_string().contains("InvalidAmount"));
+        assert_eq!(market.total_pairs_minted, u64::MAX - 1);
+    }
+
+    #[test]
+    fn settlement_below_strike_resolves_no() {
+        let market = sample_market(MarketStatus::Frozen, 1_000);
+        assert_eq!(market.outcome_for_price(679_999_999), MarketOutcome::NoWins);
+    }
+
+    #[test]
+    fn settlement_at_strike_resolves_yes() {
+        let market = sample_market(MarketStatus::Frozen, 1_000);
+        assert_eq!(market.outcome_for_price(680_000_000), MarketOutcome::YesWins);
+    }
+
+    #[test]
+    fn settlement_above_strike_resolves_yes() {
+        let market = sample_market(MarketStatus::Frozen, 1_000);
+        assert_eq!(market.outcome_for_price(680_000_001), MarketOutcome::YesWins);
     }
 }

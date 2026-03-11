@@ -14,6 +14,7 @@ import { Landing } from "./pages/Landing";
 import { Markets } from "./pages/Markets";
 import { MarketDetail } from "./pages/MarketDetail";
 import { Portfolio } from "./pages/Portfolio";
+import { Activity } from "./pages/Activity";
 
 function NavLink({ to, label }: { to: string; label: string }) {
   const { pathname } = useLocation();
@@ -88,6 +89,7 @@ export default function App() {
                   <nav className="space-y-2">
                     <NavLink to="/" label="Overview" />
                     <NavLink to="/markets" label="Markets" />
+                    <NavLink to="/activity" label="Activity" />
                     <NavLink to="/portfolio" label="Portfolio" />
                   </nav>
                 </div>
@@ -135,6 +137,7 @@ export default function App() {
                 <nav className="terminal-panel flex items-center gap-2 overflow-x-auto p-2 lg:hidden">
                   <NavLink to="/" label="Overview" />
                   <NavLink to="/markets" label="Markets" />
+                  <NavLink to="/activity" label="Activity" />
                   <NavLink to="/portfolio" label="Portfolio" />
                 </nav>
 
@@ -143,6 +146,7 @@ export default function App() {
                     <Route path="/" element={<Landing />} />
                     <Route path="/markets" element={<Markets />} />
                     <Route path="/markets/:ticker" element={<MarketDetail />} />
+                    <Route path="/activity" element={<Activity />} />
                     <Route path="/portfolio" element={<Portfolio />} />
                   </Routes>
                 </main>

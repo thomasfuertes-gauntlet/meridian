@@ -17,9 +17,8 @@ import {
   mintTo,
   getAssociatedTokenAddressSync,
   createAssociatedTokenAccountIdempotentInstruction,
+  getAccount,
 } from "@solana/spl-token";
-import * as fs from "fs";
-import * as path from "path";
 import { getDevWallet } from "./dev-wallets";
 import { fairValue, computeLevels, fetchStockPrices } from "./fair-value";
 
@@ -33,24 +32,10 @@ async function main() {
   const program = anchor.workspace.Meridian as Program<Meridian>;
   const connection = provider.connection;
 
-  // Load USDC mint from env var or local-config.json
-  let usdcMintStr = process.env.USDC_MINT;
-  if (!usdcMintStr) {
-    const configPath = path.join(import.meta.dirname, "../frontend/src/lib/local-config.json");
-    if (!fs.existsSync(configPath)) {
-      console.error("USDC mint not found. Set USDC_MINT env var or run `make setup`.");
-      process.exit(1);
-    }
-    const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    usdcMintStr = config.usdcMint;
-  }
-  const usdcMint = new PublicKey(usdcMintStr!);
-
   // Use deterministic dev wallets
   const bot = getDevWallet("bot-a");
   const admin = getDevWallet("admin"); // USDC mint authority
 
-  console.log("USDC Mint:", usdcMint.toString());
   console.log("Program ID:", program.programId.toString());
   console.log("Bot wallet (bot-a):", bot.publicKey.toString());
 
@@ -64,21 +49,6 @@ async function main() {
   } else {
     console.log(`Bot SOL balance: ${(botBal / LAMPORTS_PER_SOL).toFixed(2)} SOL`);
   }
-
-  // Create bot USDC ATA and mint USDC (10,000 for deep liquidity)
-  const botUsdcAta = getAssociatedTokenAddressSync(usdcMint, bot.publicKey);
-  const createAtaTx = new anchor.web3.Transaction().add(
-    createAssociatedTokenAccountIdempotentInstruction(
-      bot.publicKey,
-      botUsdcAta,
-      bot.publicKey,
-      usdcMint,
-    )
-  );
-  await anchor.web3.sendAndConfirmTransaction(connection, createAtaTx, [bot]);
-
-  await mintTo(connection, admin, usdcMint, botUsdcAta, admin, 20_000 * USDC_PER_PAIR);
-  console.log("Minted 20,000 USDC to bot");
 
   // Fetch live stock prices from Pyth Hermes
   console.log("Fetching stock prices from Pyth Hermes...");
@@ -98,6 +68,50 @@ async function main() {
     (m: any) => m.account.outcome?.pending !== undefined
   );
   console.log(`Found ${pendingMarkets.length} active markets\n`);
+
+  if (pendingMarkets.length === 0) {
+    console.log("No active markets found. Nothing to seed.");
+    return;
+  }
+
+  const usdcMints = Array.from(
+    new Set(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      pendingMarkets.map((m: any) => m.account.usdcMint.toString())
+    )
+  ).map((mint) => new PublicKey(mint));
+
+  console.log(
+    `USDC mints in active markets: ${usdcMints.map((mint) => mint.toString()).join(", ")}`
+  );
+
+  const botUsdcAtas = new Map<string, PublicKey>();
+  for (const usdcMint of usdcMints) {
+    const botUsdcAta = getAssociatedTokenAddressSync(usdcMint, bot.publicKey);
+    const createAtaTx = new anchor.web3.Transaction().add(
+      createAssociatedTokenAccountIdempotentInstruction(
+        bot.publicKey,
+        botUsdcAta,
+        bot.publicKey,
+        usdcMint,
+      )
+    );
+    await anchor.web3.sendAndConfirmTransaction(connection, createAtaTx, [bot]);
+
+    const botUsdcAccount = await getAccount(connection, botUsdcAta);
+    const currentBalance = Number(botUsdcAccount.amount);
+    const targetBalance = 20_000 * USDC_PER_PAIR;
+    if (currentBalance < targetBalance) {
+      await mintTo(connection, admin, usdcMint, botUsdcAta, admin, targetBalance - currentBalance);
+      console.log(
+        `Minted ${((targetBalance - currentBalance) / USDC_PER_PAIR).toLocaleString()} USDC to bot for mint ${usdcMint.toString()}`
+      );
+    } else {
+      console.log(`Bot already funded for mint ${usdcMint.toString()}`);
+    }
+
+    botUsdcAtas.set(usdcMint.toString(), botUsdcAta);
+  }
 
   // Auto-skip if order books already have orders (idempotent seeding)
   if (pendingMarkets.length > 0) {
@@ -127,6 +141,7 @@ async function main() {
     const strikePrice: number = m.account.strikePrice.toNumber();
     const strikeDollars = strikePrice / USDC_PER_PAIR;
     const closeTime: number = m.account.closeTime.toNumber();
+    const marketUsdcMint: PublicKey = m.account.usdcMint;
     const hoursUntilClose = (closeTime - Date.now() / 1000) / 3600;
 
     // Compute fair value from oracle price
@@ -163,6 +178,10 @@ async function main() {
       program.programId,
     );
 
+    const botUsdcAta = botUsdcAtas.get(marketUsdcMint.toString());
+    if (!botUsdcAta) {
+      throw new Error(`Missing bot USDC ATA for mint ${marketUsdcMint.toString()}`);
+    }
     const botYesAta = getAssociatedTokenAddressSync(yesMintPda, bot.publicKey);
     const botNoAta = getAssociatedTokenAddressSync(noMintPda, bot.publicKey);
 

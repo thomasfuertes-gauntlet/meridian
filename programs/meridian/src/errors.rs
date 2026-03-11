@@ -52,6 +52,10 @@ pub enum MeridianError {
     OrderBookNotEmpty,
     #[msg("Order book escrow is not empty")]
     OrderBookEscrowNotEmpty,
+    #[msg("Missing order book validation accounts")]
+    MissingOrderBookAccounts,
+    #[msg("Invalid order book validation accounts")]
+    InvalidOrderBookAccount,
     #[msg("Missing counterparty account for fill")]
     MissingCounterpartyAccount,
     #[msg("Invalid counterparty token account")]

@@ -52,11 +52,16 @@ pub mod meridian {
         instructions::redeem::handler(ctx, amount)
     }
 
-    pub fn settle_market(ctx: Context<SettleMarket>) -> Result<()> {
+    pub fn settle_market<'info>(
+        ctx: Context<'_, '_, 'info, 'info, SettleMarket<'info>>,
+    ) -> Result<()> {
         instructions::settle_market::handler(ctx)
     }
 
-    pub fn admin_settle(ctx: Context<AdminSettle>, price: u64) -> Result<()> {
+    pub fn admin_settle<'info>(
+        ctx: Context<'_, '_, 'info, 'info, AdminSettle<'info>>,
+        price: u64,
+    ) -> Result<()> {
         instructions::admin_settle::handler(ctx, price)
     }
 

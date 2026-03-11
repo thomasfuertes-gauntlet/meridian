@@ -100,6 +100,9 @@ pub fn handler(
     market.no_mint = ctx.accounts.no_mint.key();
     market.vault = ctx.accounts.vault.key();
     market.usdc_mint = ctx.accounts.usdc_mint.key();
+    market.order_book = Pubkey::default();
+    market.ob_usdc_vault = Pubkey::default();
+    market.ob_yes_vault = Pubkey::default();
     market.admin = ctx.accounts.admin.key();
     market.bump = ctx.bumps.market;
     market.frozen_at = None;

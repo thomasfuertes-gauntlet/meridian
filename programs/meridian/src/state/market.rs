@@ -38,6 +38,9 @@ pub struct StrikeMarket {
     pub no_mint: Pubkey,
     pub vault: Pubkey,
     pub usdc_mint: Pubkey,
+    pub order_book: Pubkey,
+    pub ob_usdc_vault: Pubkey,
+    pub ob_yes_vault: Pubkey,
     pub admin: Pubkey,
     pub bump: u8,
     pub frozen_at: Option<i64>,
@@ -58,6 +61,10 @@ impl StrikeMarket {
 
     pub fn is_settled(&self) -> bool {
         self.status == MarketStatus::Settled
+    }
+
+    pub fn has_order_book(&self) -> bool {
+        self.order_book != Pubkey::default()
     }
 
     pub fn expected_vault_amount(&self, usdc_per_pair: u64) -> Result<u64> {

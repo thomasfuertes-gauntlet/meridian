@@ -16,6 +16,7 @@ pub struct InitializeOrderBook<'info> {
     pub config: Account<'info, GlobalConfig>,
 
     #[account(
+        mut,
         seeds = [
             StrikeMarket::SEED,
             market.ticker.as_bytes(),
@@ -81,5 +82,11 @@ pub fn handler(ctx: Context<InitializeOrderBook>) -> Result<()> {
     order_book.bid_count = 0;
     order_book.ask_count = 0;
     order_book.bump = ctx.bumps.order_book;
+
+    let market = &mut ctx.accounts.market;
+    market.order_book = ctx.accounts.order_book.key();
+    market.ob_usdc_vault = ctx.accounts.ob_usdc_vault.key();
+    market.ob_yes_vault = ctx.accounts.ob_yes_vault.key();
+
     Ok(())
 }

@@ -291,6 +291,24 @@ describe("meridian", () => {
       .rpc();
   }
 
+  async function pauseProtocol(adminSigner: PublicKey = admin.publicKey, signers?: Keypair[]) {
+    const tx = program.methods.pause().accountsPartial({ admin: adminSigner });
+    if (signers) {
+      await tx.signers(signers).rpc();
+    } else {
+      await tx.rpc();
+    }
+  }
+
+  async function unpauseProtocol(adminSigner: PublicKey = admin.publicKey, signers?: Keypair[]) {
+    const tx = program.methods.unpause().accountsPartial({ admin: adminSigner });
+    if (signers) {
+      await tx.signers(signers).rpc();
+    } else {
+      await tx.rpc();
+    }
+  }
+
   async function adminSettleMarket(
     market: ReturnType<typeof deriveMarketPdas>,
     price: anchor.BN
@@ -2321,39 +2339,15 @@ describe("meridian", () => {
     });
 
     it("pause sets config.paused = true", async () => {
-      await program.methods
-        .pause()
-        .accountsPartial({ admin: admin.publicKey })
-        .rpc();
+      await pauseProtocol();
 
       const config = await program.account.globalConfig.fetch(configPda);
       expect(config.paused).to.equal(true);
     });
 
     it("mint rejected during pause (Paused error)", async () => {
-      const userYes = getAssociatedTokenAddressSync(
-        pMarket.yesMintPda,
-        admin.publicKey
-      );
-      const userNo = getAssociatedTokenAddressSync(
-        pMarket.noMintPda,
-        admin.publicKey
-      );
-
       try {
-        await program.methods
-          .mintPair(new anchor.BN(1))
-          .accountsPartial({
-            user: admin.publicKey,
-            market: pMarket.marketPda,
-            userUsdc: adminUsdcAta,
-            vault: pMarket.vaultPda,
-            yesMint: pMarket.yesMintPda,
-            noMint: pMarket.noMintPda,
-            userYes,
-            userNo,
-          })
-          .rpc();
+        await mintPairForAdmin(pMarket, 1);
         expect.fail("Should have thrown");
       } catch (err: any) {
         expect(err.toString()).to.include("Paused");
@@ -2368,15 +2362,7 @@ describe("meridian", () => {
       );
 
       await freezeMarket(pausedMarket);
-
-      await program.methods
-        .adminSettle(new anchor.BN(113_000_000))
-        .accountsPartial({
-          admin: admin.publicKey,
-          config: configPda,
-          market: pausedMarket.marketPda,
-        })
-        .rpc();
+      await settleWithOrderBookProof(pausedMarket, new anchor.BN(113_000_000));
 
       const market = await program.account.strikeMarket.fetch(pausedMarket.marketPda);
       expect(market.outcome).to.deep.equal({ yesWins: {} });
@@ -2393,10 +2379,7 @@ describe("meridian", () => {
       await adminSettleMarket(pausedRedeemMarket, new anchor.BN(114_000_000));
 
       const adminUsdcBefore = await tokenAmount(adminUsdcAta);
-      await program.methods
-        .pause()
-        .accountsPartial({ admin: admin.publicKey })
-        .rpc();
+      await pauseProtocol();
 
       await redeemForUser(
         pausedRedeemMarket,
@@ -2412,38 +2395,14 @@ describe("meridian", () => {
     });
 
     it("unpause sets config.paused = false", async () => {
-      await program.methods
-        .unpause()
-        .accountsPartial({ admin: admin.publicKey })
-        .rpc();
+      await unpauseProtocol();
 
       const config = await program.account.globalConfig.fetch(configPda);
       expect(config.paused).to.equal(false);
     });
 
     it("mint succeeds after unpause", async () => {
-      const userYes = getAssociatedTokenAddressSync(
-        pMarket.yesMintPda,
-        admin.publicKey
-      );
-      const userNo = getAssociatedTokenAddressSync(
-        pMarket.noMintPda,
-        admin.publicKey
-      );
-
-      await program.methods
-        .mintPair(new anchor.BN(1))
-        .accountsPartial({
-          user: admin.publicKey,
-          market: pMarket.marketPda,
-          userUsdc: adminUsdcAta,
-          vault: pMarket.vaultPda,
-          yesMint: pMarket.yesMintPda,
-          noMint: pMarket.noMintPda,
-          userYes,
-          userNo,
-        })
-        .rpc();
+      await mintPairForAdmin(pMarket, 1);
 
       const vaultAccount = await getAccount(connection, pMarket.vaultPda);
       expect(Number(vaultAccount.amount)).to.equal(1_000_000);
@@ -2451,11 +2410,7 @@ describe("meridian", () => {
 
     it("non-admin cannot pause (Unauthorized)", async () => {
       try {
-        await program.methods
-          .pause()
-          .accountsPartial({ admin: nonAdmin.publicKey })
-          .signers([nonAdmin])
-          .rpc();
+        await pauseProtocol(nonAdmin.publicKey, [nonAdmin]);
         expect.fail("Should have thrown");
       } catch (err: any) {
         // Anchor constraint error - has_one = admin
@@ -2465,11 +2420,7 @@ describe("meridian", () => {
 
     it("non-admin cannot unpause (Unauthorized)", async () => {
       try {
-        await program.methods
-          .unpause()
-          .accountsPartial({ admin: nonAdmin.publicKey })
-          .signers([nonAdmin])
-          .rpc();
+        await unpauseProtocol(nonAdmin.publicKey, [nonAdmin]);
         expect.fail("Should have thrown");
       } catch (err: any) {
         expect(err.toString()).to.match(/Unauthorized|ConstraintHasOne|2012/);

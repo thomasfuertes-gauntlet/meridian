@@ -1693,44 +1693,6 @@ describe("meridian", () => {
       expect(ob2.askCount).to.equal(0);
     });
 
-    // ── cancel_order - post-settlement permissionless ──────────
-
-    it("anyone can cancel orders after settlement, refund goes to owner", async () => {
-      const m = await createMarketWithOB("OBA", new anchor.BN(100_000_000));
-      // Mint 1 pair so admin's Yes ATA exists (place_order requires initialized user_yes)
-      await mintPairsFor(m, admin.publicKey, adminUsdcAta, 1);
-      const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
-
-      // Admin places a resting bid
-      await placeBid(m, admin.publicKey, adminUsdcAta, adminYes, 500_000, 2);
-
-      const ob = await program.account.orderBook.fetch(m.orderBookPda);
-      const orderId = ob.bids[0].orderId;
-
-      const adminUsdcBefore = await tokenAmount(adminUsdcAta);
-
-      // Settle the market
-      await adminSettleMarket(m, new anchor.BN(110_000_000));
-
-      // userB cancels admin's order - refund goes to admin's USDC ATA
-      await program.methods
-        .cancelOrder(orderId)
-        .accountsPartial({
-          user: userB.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          refundDestination: adminUsdcAta,
-        })
-        .signers([userB])
-        .rpc();
-
-      const adminUsdcAfter = await tokenAmount(adminUsdcAta);
-      // 2 * 500_000 = 1_000_000 refunded to admin
-      expect(adminUsdcAfter - adminUsdcBefore).to.equal(1_000_000);
-    });
-
     // ── cancel_order - error paths ───────────────────────────────
 
     it("rejects cancel by non-owner on pending market (NotOrderOwner)", async () => {

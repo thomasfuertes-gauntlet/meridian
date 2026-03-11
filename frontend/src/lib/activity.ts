@@ -315,6 +315,7 @@ export function useActivityFeed(limit = ACTIVITY_LIMIT) {
   useEffect(() => {
     let alive = true;
     async function load() {
+      if (document.visibilityState === "hidden") return;
       setLoading(true);
       try {
         const next = await fetchActivityFeed(limit);

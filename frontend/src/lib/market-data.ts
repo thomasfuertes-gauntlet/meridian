@@ -271,6 +271,7 @@ export function useMarketUniverse(pollMs = MARKET_POLL_MS) {
     let alive = true;
 
     async function load() {
+      if (document.visibilityState === "hidden") return;
       try {
         const next = await fetchMarketUniverse();
         if (!alive) return;

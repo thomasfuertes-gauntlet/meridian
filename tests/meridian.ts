@@ -3,6 +3,8 @@ import { Program } from "@coral-xyz/anchor";
 import { Meridian } from "../target/types/meridian";
 import { expect } from "chai";
 import { Keypair, PublicKey } from "@solana/web3.js";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   createMint,
   createAssociatedTokenAccount,
@@ -13,7 +15,18 @@ import {
 } from "@solana/spl-token";
 
 describe("meridian", () => {
-  const provider = anchor.AnchorProvider.env();
+  const supportedTickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"];
+  const rpcUrl = process.env.ANCHOR_PROVIDER_URL || "http://127.0.0.1:8899";
+  const walletPath = resolve(process.env.ANCHOR_WALLET || ".wallets/admin.json");
+  const walletSecret = JSON.parse(readFileSync(walletPath, "utf-8"));
+  const wallet = new anchor.Wallet(
+    Keypair.fromSecretKey(Uint8Array.from(walletSecret))
+  );
+  const provider = new anchor.AnchorProvider(
+    new anchor.web3.Connection(rpcUrl, "confirmed"),
+    wallet,
+    { commitment: "confirmed" }
+  );
   anchor.setProvider(provider);
 
   const program = anchor.workspace.Meridian as Program<Meridian>;
@@ -61,6 +74,15 @@ describe("meridian", () => {
   }
 
   // Helper: create a strike market with oracle fields
+  function normalizeTicker(ticker: string) {
+    if (supportedTickers.includes(ticker)) {
+      return ticker;
+    }
+    let sum = 0;
+    for (const ch of ticker) sum += ch.charCodeAt(0);
+    return supportedTickers[sum % supportedTickers.length];
+  }
+
   async function createMarket(
     ticker: string,
     strikePrice: anchor.BN,
@@ -68,9 +90,10 @@ describe("meridian", () => {
     closeTime: anchor.BN = pastCloseTime,
     pythFeedId: number[] = dummyPythFeedId
   ) {
-    const pdas = deriveMarketPdas(ticker, strikePrice, date);
+    const normalizedTicker = normalizeTicker(ticker);
+    const pdas = deriveMarketPdas(normalizedTicker, strikePrice, date);
     await program.methods
-      .createStrikeMarket(ticker, strikePrice, date, closeTime, pythFeedId)
+      .createStrikeMarket(normalizedTicker, strikePrice, date, closeTime, pythFeedId)
       .accountsPartial({
         admin: admin.publicKey,
         usdcMint: usdcMint,
@@ -89,6 +112,69 @@ describe("meridian", () => {
       mintAuthority,
       amount
     );
+  }
+
+  function userTokenAccounts(market: ReturnType<typeof deriveMarketPdas>) {
+    return {
+      userYes: getAssociatedTokenAddressSync(market.yesMintPda, admin.publicKey),
+      userNo: getAssociatedTokenAddressSync(market.noMintPda, admin.publicKey),
+    };
+  }
+
+  async function mintPairForAdmin(
+    market: ReturnType<typeof deriveMarketPdas>,
+    amount = 1
+  ) {
+    const { userYes, userNo } = userTokenAccounts(market);
+    await program.methods
+      .mintPair(new anchor.BN(amount))
+      .accountsPartial({
+        user: admin.publicKey,
+        market: market.marketPda,
+        userUsdc: adminUsdcAta,
+        vault: market.vaultPda,
+        yesMint: market.yesMintPda,
+        noMint: market.noMintPda,
+        userYes,
+        userNo,
+      })
+      .rpc();
+    return { userYes, userNo };
+  }
+
+  async function freezeMarket(market: ReturnType<typeof deriveMarketPdas>) {
+    await program.methods
+      .freezeMarket()
+      .accountsPartial({
+        authority: admin.publicKey,
+        config: configPda,
+        market: market.marketPda,
+      })
+      .rpc();
+  }
+
+  async function adminSettleMarket(
+    market: ReturnType<typeof deriveMarketPdas>,
+    price: anchor.BN
+  ) {
+    await freezeMarket(market);
+    await program.methods
+      .adminSettle(price)
+      .accountsPartial({
+        admin: admin.publicKey,
+        config: configPda,
+        market: market.marketPda,
+      })
+      .rpc();
+  }
+
+  async function getCurrentUnixTimestamp(): Promise<number> {
+    const slot = await provider.connection.getSlot("confirmed");
+    const blockTime = await provider.connection.getBlockTime(slot);
+    if (blockTime === null) {
+      throw new Error("Failed to fetch block time");
+    }
+    return blockTime;
   }
 
   before(async () => {
@@ -396,14 +482,7 @@ describe("meridian", () => {
   });
 
   it("rejects mint on settled market", async () => {
-    // Admin-settle the shared market (close_time=0, so 0+3600 < validator clock)
-    await program.methods
-      .adminSettle(new anchor.BN(680_000_000)) // price == strike -> YesWins
-      .accountsPartial({
-        admin: admin.publicKey,
-        market: sharedMarket.marketPda,
-      })
-      .rpc();
+    await adminSettleMarket(sharedMarket, new anchor.BN(680_000_000));
 
     const userYes = getAssociatedTokenAddressSync(
       sharedMarket.yesMintPda,
@@ -526,13 +605,7 @@ describe("meridian", () => {
     expect(usdcBefore - usdcAfterMint).to.equal(10_000_000);
 
     // Admin settle with price exactly at strike (at-or-above -> YesWins)
-    await program.methods
-      .adminSettle(new anchor.BN(400_000_000))
-      .accountsPartial({
-        admin: admin.publicKey,
-        market: pdas.marketPda,
-      })
-      .rpc();
+    await adminSettleMarket(pdas, new anchor.BN(400_000_000));
 
     // Redeem 10 Yes tokens (winner - gets USDC back)
     await program.methods
@@ -618,13 +691,7 @@ describe("meridian", () => {
     }
 
     // Admin settle with price below strike -> NoWins
-    await program.methods
-      .adminSettle(new anchor.BN(140_000_000))
-      .accountsPartial({
-        admin: admin.publicKey,
-        market: pdas.marketPda,
-      })
-      .rpc();
+    await adminSettleMarket(pdas, new anchor.BN(140_000_000));
 
     // Redeem 5 No tokens (winner)
     await program.methods
@@ -686,13 +753,7 @@ describe("meridian", () => {
     }
 
     // Admin settle
-    await program.methods
-      .adminSettle(new anchor.BN(200_000_000))
-      .accountsPartial({
-        admin: admin.publicKey,
-        market: pdas.marketPda,
-      })
-      .rpc();
+    await adminSettleMarket(pdas, new anchor.BN(200_000_000));
 
     // Burn 1 pair (should still work post-settlement)
     await program.methods
@@ -727,13 +788,7 @@ describe("meridian", () => {
     const date = new anchor.BN(1700000005);
     const pdas = await createMarket(ticker, strikePrice, date);
 
-    await program.methods
-      .adminSettle(new anchor.BN(500_000_000)) // exactly at strike
-      .accountsPartial({
-        admin: admin.publicKey,
-        market: pdas.marketPda,
-      })
-      .rpc();
+    await adminSettleMarket(pdas, new anchor.BN(500_000_000));
 
     const marketAccount = await program.account.strikeMarket.fetch(
       pdas.marketPda
@@ -748,13 +803,7 @@ describe("meridian", () => {
     const date = new anchor.BN(1700000006);
     const pdas = await createMarket(ticker, strikePrice, date);
 
-    await program.methods
-      .adminSettle(new anchor.BN(299_999_999)) // 1 micro-cent below strike
-      .accountsPartial({
-        admin: admin.publicKey,
-        market: pdas.marketPda,
-      })
-      .rpc();
+    await adminSettleMarket(pdas, new anchor.BN(299_999_999));
 
     const marketAccount = await program.account.strikeMarket.fetch(
       pdas.marketPda
@@ -763,23 +812,26 @@ describe("meridian", () => {
   });
 
   it("rejects admin settle before 1hr delay", async () => {
-    const ticker = "NFLX";
+    const ticker = "AAPL";
     const strikePrice = new anchor.BN(600_000_000);
     const date = new anchor.BN(1700000007);
-    // Set close_time far in the future so the 1hr delay check fails
-    const futureCloseTime = new anchor.BN(9999999999);
+    const now = await getCurrentUnixTimestamp();
+    const recentCloseTime = new anchor.BN(now - 60);
     const pdas = await createMarket(
       ticker,
       strikePrice,
       date,
-      futureCloseTime
+      recentCloseTime
     );
+
+    await freezeMarket(pdas);
 
     try {
       await program.methods
         .adminSettle(new anchor.BN(650_000_000))
         .accountsPartial({
           admin: admin.publicKey,
+          config: configPda,
           market: pdas.marketPda,
         })
         .rpc();
@@ -790,19 +842,13 @@ describe("meridian", () => {
   });
 
   it("rejects admin settle on already settled market", async () => {
-    const ticker = "DIS";
+    const ticker = "META";
     const strikePrice = new anchor.BN(100_000_000);
     const date = new anchor.BN(1700000008);
     const pdas = await createMarket(ticker, strikePrice, date);
 
     // Settle once
-    await program.methods
-      .adminSettle(new anchor.BN(110_000_000))
-      .accountsPartial({
-        admin: admin.publicKey,
-        market: pdas.marketPda,
-      })
-      .rpc();
+    await adminSettleMarket(pdas, new anchor.BN(110_000_000));
 
     // Try to settle again
     try {
@@ -810,6 +856,7 @@ describe("meridian", () => {
         .adminSettle(new anchor.BN(90_000_000))
         .accountsPartial({
           admin: admin.publicKey,
+          config: configPda,
           market: pdas.marketPda,
         })
         .rpc();
@@ -944,10 +991,7 @@ describe("meridian", () => {
       const pdas = await createMarket("OB2", new anchor.BN(100_000_000), date);
 
       // Settle first
-      await program.methods
-        .adminSettle(new anchor.BN(110_000_000))
-        .accountsPartial({ admin: admin.publicKey, market: pdas.marketPda })
-        .rpc();
+      await adminSettleMarket(pdas, new anchor.BN(110_000_000));
 
       try {
         await initOrderBook(pdas.marketPda, pdas.yesMintPda);
@@ -1477,10 +1521,7 @@ describe("meridian", () => {
       const adminUsdcBefore = Number((await getAccount(connection, adminUsdcAta)).amount);
 
       // Settle the market
-      await program.methods
-        .adminSettle(new anchor.BN(110_000_000))
-        .accountsPartial({ admin: admin.publicKey, market: m.marketPda })
-        .rpc();
+      await adminSettleMarket(m, new anchor.BN(110_000_000));
 
       // userB cancels admin's order - refund goes to admin's USDC ATA
       await program.methods
@@ -1648,10 +1689,7 @@ describe("meridian", () => {
       await mintPairsFor(m, admin.publicKey, adminUsdcAta, 1);
       const adminYes = getAssociatedTokenAddressSync(m.yesMintPda, admin.publicKey);
 
-      await program.methods
-        .adminSettle(new anchor.BN(110_000_000))
-        .accountsPartial({ admin: admin.publicKey, market: m.marketPda })
-        .rpc();
+      await adminSettleMarket(m, new anchor.BN(110_000_000));
 
       try {
         await program.methods
@@ -1941,10 +1979,7 @@ describe("meridian", () => {
       }
 
       // Settle -> YesWins
-      await program.methods
-        .adminSettle(new anchor.BN(224_000_000))
-        .accountsPartial({ admin: admin.publicKey, market: pdas.marketPda })
-        .rpc();
+      await adminSettleMarket(pdas, new anchor.BN(224_000_000));
 
       // Redeem 4 Yes (winner)
       await program.methods
@@ -2004,10 +2039,7 @@ describe("meridian", () => {
         .rpc();
 
       // Settle -> NoWins (price below strike)
-      await program.methods
-        .adminSettle(new anchor.BN(200_000_000))
-        .accountsPartial({ admin: admin.publicKey, market: pdas.marketPda })
-        .rpc();
+      await adminSettleMarket(pdas, new anchor.BN(200_000_000));
 
       // Redeem 7 No tokens (winner)
       await program.methods
@@ -2135,15 +2167,16 @@ describe("meridian", () => {
     it("re-settling raises MarketAlreadySettled", async () => {
       const pdas = await createMarket("ISIM", new anchor.BN(240_000_000), new anchor.BN(1800000030));
 
-      await program.methods
-        .adminSettle(new anchor.BN(250_000_000))
-        .accountsPartial({ admin: admin.publicKey, market: pdas.marketPda })
-        .rpc();
+      await adminSettleMarket(pdas, new anchor.BN(250_000_000));
 
       try {
         await program.methods
           .adminSettle(new anchor.BN(200_000_000))
-          .accountsPartial({ admin: admin.publicKey, market: pdas.marketPda })
+          .accountsPartial({
+            admin: admin.publicKey,
+            config: configPda,
+            market: pdas.marketPda,
+          })
           .rpc();
         expect.fail("Should have thrown");
       } catch (err: any) {
@@ -2155,10 +2188,7 @@ describe("meridian", () => {
       const pdas = await createMarket("ISRF", new anchor.BN(241_000_000), new anchor.BN(1800000031));
 
       // Settle -> YesWins (price above strike)
-      await program.methods
-        .adminSettle(new anchor.BN(300_000_000))
-        .accountsPartial({ admin: admin.publicKey, market: pdas.marketPda })
-        .rpc();
+      await adminSettleMarket(pdas, new anchor.BN(300_000_000));
 
       const market1 = await program.account.strikeMarket.fetch(pdas.marketPda);
       expect(market1.outcome).to.deep.equal({ yesWins: {} });
@@ -2182,10 +2212,7 @@ describe("meridian", () => {
       const strikePrice = new anchor.BN(333_000_000);
       const pdas = await createMarket("EEXA", strikePrice, new anchor.BN(1800000040));
 
-      await program.methods
-        .adminSettle(new anchor.BN(333_000_000)) // exactly at strike
-        .accountsPartial({ admin: admin.publicKey, market: pdas.marketPda })
-        .rpc();
+      await adminSettleMarket(pdas, new anchor.BN(333_000_000));
 
       const market = await program.account.strikeMarket.fetch(pdas.marketPda);
       expect(market.outcome).to.deep.equal({ yesWins: {} });
@@ -2214,10 +2241,7 @@ describe("meridian", () => {
       }
 
       // Settle -> YesWins (No tokens are losers)
-      await program.methods
-        .adminSettle(new anchor.BN(400_000_000))
-        .accountsPartial({ admin: admin.publicKey, market: pdas.marketPda })
-        .rpc();
+      await adminSettleMarket(pdas, new anchor.BN(400_000_000));
 
       const vaultBefore = Number((await getAccount(connection, pdas.vaultPda)).amount);
       const usdcBefore = Number((await getAccount(connection, adminUsdcAta)).amount);

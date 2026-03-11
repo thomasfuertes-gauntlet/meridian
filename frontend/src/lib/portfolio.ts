@@ -122,7 +122,8 @@ export async function buildRedeemTx(
   return tx;
 }
 
-// Build burn_pair TX for pre-settlement exit
+// Build a pre-settlement complete-set exit through the canonical redeem
+// instruction.
 export async function buildBurnPairTx(
   program: Program,
   user: PublicKey,
@@ -148,16 +149,18 @@ export async function buildBurnPairTx(
   );
 
   const ix = await program.methods
-    .burnPair(new BN(amount))
+    .redeem(new BN(amount))
     .accountsPartial({
       user,
       market,
       userUsdc,
-      yesMint,
-      noMint,
-      userYes,
-      userNo,
+      tokenMint: yesMint,
+      userToken: userYes,
     })
+    .remainingAccounts([
+      { pubkey: noMint, isWritable: true, isSigner: false },
+      { pubkey: userNo, isWritable: true, isSigner: false },
+    ])
     .instruction();
 
   tx.add(ix);

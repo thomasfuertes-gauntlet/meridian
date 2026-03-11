@@ -26,9 +26,9 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
+import { calculateStrikes } from "../automation/src/strikes.js";
 
 const MAG7_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"];
-// Strike generation uses +/-$10 from nearest rounded reference, no ATM (see generateStrikes)
 
 const DEVNET_DELAY_MS = 1500; // throttle to stay under devnet rate limits
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -47,15 +47,6 @@ async function withRetry<T>(fn: () => Promise<T>, label: string, retries = 3): P
     }
   }
   throw new Error("unreachable");
-}
-
-/**
- * Generate 2 strikes: nearest $10 below and above reference price.
- * Drops ATM to concentrate liquidity on directional brackets.
- */
-function generateStrikes(refPrice: number): number[] {
-  const at = Math.round(refPrice / 10) * 10;
-  return [at - 10, at + 10];
 }
 
 const USDC_DECIMALS = 6;
@@ -218,7 +209,7 @@ async function main() {
       console.warn(`  No reference price for ${ticker}, skipping`);
       continue;
     }
-    const strikes = generateStrikes(refPrice);
+    const strikes = calculateStrikes(refPrice);
     console.log(`  ${ticker} ref=$${refPrice.toFixed(2)} -> strikes: ${strikes.map((s) => `$${s}`).join(", ")}`);
 
     for (const strikeDollars of strikes) {

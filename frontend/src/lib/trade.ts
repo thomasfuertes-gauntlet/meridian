@@ -229,6 +229,14 @@ export async function buildBuyNoTx(
   tx.add(
     createAssociatedTokenAccountIdempotentInstruction(
       user,
+      userUsdcAta,
+      user,
+      usdcMint
+    )
+  );
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      user,
       userYesAta,
       user,
       yesMint
@@ -243,9 +251,9 @@ export async function buildBuyNoTx(
     )
   );
 
-  // Step 1: Mint pairs
+  // Step 1: Mint the collateralized pair through the canonical lifecycle entrypoint.
   const mintIx = await program.methods
-    .buyNo(quantity, price)
+    .mintPair(quantity)
     .accountsPartial({
       user,
       market,
@@ -255,21 +263,35 @@ export async function buildBuyNoTx(
       noMint,
       userYes: userYesAta,
       userNo: userNoAta,
-      orderBook,
-      obUsdcVault,
-      obYesVault,
       tokenProgram: TOKEN_PROGRAM_ID,
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
-    .remainingAccounts(remaining)
     .instruction();
   tx.add(mintIx);
+
+  // Step 2: Sell the freshly minted Yes into the bid side of the single Yes/USDC book.
+  const sellIx = await program.methods
+    .sellYes(quantity, price)
+    .accountsPartial({
+      user,
+      market,
+      userUsdc: userUsdcAta,
+      userYes: userYesAta,
+      orderBook,
+      obUsdcVault,
+      obYesVault,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    })
+    .remainingAccounts(remaining)
+    .instruction();
+  tx.add(sellIx);
 
   return tx;
 }
 
-// Sell No = buy Yes from book + burn_pair (Yes+No -> $1.00 USDC)
+// Sell No = buy Yes from the ask side, then redeem the complete set through the
+// canonical redeem instruction.
 export async function buildSellNoTx(
   params: TradeParams
 ): Promise<Transaction> {
@@ -289,25 +311,14 @@ export async function buildSellNoTx(
   const userUsdcAta = getAssociatedTokenAddressSync(usdcMint, user);
   const userYesAta = getAssociatedTokenAddressSync(yesMint, user);
   const userNoAta = getAssociatedTokenAddressSync(noMint, user);
-  const [vault] = findVaultPda("vault", market);
   const [obUsdcVault] = findVaultPda("ob_usdc_vault", market);
   const [obYesVault] = findVaultPda("ob_yes_vault", market);
 
-  // Sell No places a bid, so opposite side is asks
   const remaining = oppositeOrders
     ? buildRemainingAccounts("bid", price.toNumber(), quantity.toNumber(), oppositeOrders, usdcMint, yesMint)
     : [];
 
   const tx = new Transaction();
-
-  tx.add(
-    createAssociatedTokenAccountIdempotentInstruction(
-      user,
-      userYesAta,
-      user,
-      yesMint
-    )
-  );
 
   tx.add(
     createAssociatedTokenAccountIdempotentInstruction(
@@ -334,25 +345,40 @@ export async function buildSellNoTx(
     )
   );
 
-  const placeIx = await program.methods
-    .sellNo(quantity, price)
+  const buyIx = await program.methods
+    .buyYes(quantity, price)
     .accountsPartial({
       user,
       market,
       userUsdc: userUsdcAta,
-      vault,
       yesMint,
-      noMint,
       userYes: userYesAta,
-      userNo: userNoAta,
       orderBook,
       obUsdcVault,
       obYesVault,
       tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
     })
     .remainingAccounts(remaining)
     .instruction();
-  tx.add(placeIx);
+  tx.add(buyIx);
+
+  const redeemIx = await program.methods
+    .redeem(quantity)
+    .accountsPartial({
+      user,
+      market,
+      userUsdc: userUsdcAta,
+      tokenMint: yesMint,
+      userToken: userYesAta,
+    })
+    .remainingAccounts([
+      { pubkey: noMint, isWritable: true, isSigner: false },
+      { pubkey: userNoAta, isWritable: true, isSigner: false },
+    ])
+    .instruction();
+  tx.add(redeemIx);
 
   return tx;
 }

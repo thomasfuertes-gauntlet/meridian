@@ -206,6 +206,10 @@ describe("meridian", () => {
     yesMintPda: PublicKey
   ) {
     const obPdas = deriveOrderBookPdas(marketPda);
+    const existing = await program.account.orderBook.fetchNullable(obPdas.orderBookPda);
+    if (existing) {
+      return obPdas;
+    }
     await methods
       .initializeOrderBook()
       .accountsPartial({
@@ -262,17 +266,19 @@ describe("meridian", () => {
   ) {
     const { userYes: ownerYes, userNo: ownerNo } = tokenAccountsFor(user, market);
     const tx = methods
-      .burnPair(new anchor.BN(amount))
+      .redeem(new anchor.BN(amount))
       .accountsPartial({
         user,
         market: market.marketPda,
         userUsdc: userUsdcAta,
         vault: market.vaultPda,
-        yesMint: market.yesMintPda,
-        noMint: market.noMintPda,
-        userYes: ownerYes,
-        userNo: ownerNo,
-      });
+        tokenMint: market.yesMintPda,
+        userToken: ownerYes,
+      })
+      .remainingAccounts([
+        { pubkey: market.noMintPda, isWritable: true, isSigner: false },
+        { pubkey: ownerNo, isWritable: true, isSigner: false },
+      ]);
     if (signers) {
       await tx.signers(signers).rpc();
     } else {
@@ -554,11 +560,10 @@ describe("meridian", () => {
       remainingAccounts?: { pubkey: PublicKey; isWritable: boolean; isSigner: boolean }[];
     }
   ) {
-    const tx = methods
-      .buyNo(new anchor.BN(amount), new anchor.BN(maxNetCost))
+    const mintIx = await methods
+      .mintPair(new anchor.BN(amount))
       .accountsPartial({
         user,
-        config: configPda,
         market: market.marketPda,
         userUsdc,
         vault: market.vaultPda,
@@ -566,18 +571,26 @@ describe("meridian", () => {
         noMint: market.noMintPda,
         userYes,
         userNo,
+      })
+      .instruction();
+
+    const sellIx = await methods
+      .sellYes(new anchor.BN(amount), new anchor.BN(maxNetCost))
+      .accountsPartial({
+        user,
+        config: configPda,
+        market: market.marketPda,
+        userUsdc,
+        userYes,
         orderBook: market.orderBookPda,
         obUsdcVault: market.obUsdcVault,
         obYesVault: market.obYesVault,
-      });
-    if (options?.remainingAccounts) {
-      tx.remainingAccounts(options.remainingAccounts);
-    }
-    if (options?.signers) {
-      await tx.signers(options.signers).rpc();
-    } else {
-      await tx.rpc();
-    }
+      })
+      .remainingAccounts(options?.remainingAccounts ?? [])
+      .instruction();
+
+    const tx = new anchor.web3.Transaction().add(mintIx, sellIx);
+    await provider.sendAndConfirm(tx, options?.signers ?? []);
   }
 
   async function sellNo(
@@ -597,30 +610,40 @@ describe("meridian", () => {
       remainingAccounts?: { pubkey: PublicKey; isWritable: boolean; isSigner: boolean }[];
     }
   ) {
-    const tx = methods
-      .sellNo(new anchor.BN(amount), new anchor.BN(minNetPrice))
+    const buyIx = await methods
+      .buyYes(new anchor.BN(amount), new anchor.BN(minNetPrice))
       .accountsPartial({
         user,
         config: configPda,
         market: market.marketPda,
         userUsdc,
-        vault: market.vaultPda,
         yesMint: market.yesMintPda,
-        noMint: market.noMintPda,
         userYes,
-        userNo,
         orderBook: market.orderBookPda,
         obUsdcVault: market.obUsdcVault,
         obYesVault: market.obYesVault,
-      });
-    if (options?.remainingAccounts) {
-      tx.remainingAccounts(options.remainingAccounts);
-    }
-    if (options?.signers) {
-      await tx.signers(options.signers).rpc();
-    } else {
-      await tx.rpc();
-    }
+      })
+      .remainingAccounts(options?.remainingAccounts ?? [])
+      .instruction();
+
+    const redeemIx = await methods
+      .redeem(new anchor.BN(amount))
+      .accountsPartial({
+        user,
+        market: market.marketPda,
+        userUsdc,
+        vault: market.vaultPda,
+        tokenMint: market.yesMintPda,
+        userToken: userYes,
+      })
+      .remainingAccounts([
+        { pubkey: market.noMintPda, isWritable: true, isSigner: false },
+        { pubkey: userNo, isWritable: true, isSigner: false },
+      ])
+      .instruction();
+
+    const tx = new anchor.web3.Transaction().add(buyIx, redeemIx);
+    await provider.sendAndConfirm(tx, options?.signers ?? []);
   }
 
   async function redeemForUser(
@@ -630,7 +653,8 @@ describe("meridian", () => {
     tokenMint: PublicKey,
     userToken: PublicKey,
     amount: number,
-    signers?: Keypair[]
+    signers?: Keypair[],
+    remainingAccounts?: { pubkey: PublicKey; isWritable: boolean; isSigner: boolean }[]
   ) {
     const tx = methods
       .redeem(new anchor.BN(amount))
@@ -642,6 +666,9 @@ describe("meridian", () => {
         tokenMint,
         userToken,
       });
+    if (remainingAccounts) {
+      tx.remainingAccounts(remainingAccounts);
+    }
     if (signers) {
       await tx.signers(signers).rpc();
     } else {
@@ -930,7 +957,7 @@ describe("meridian", () => {
     }
   });
 
-  it("rejects burn_pair when amount exceeds token balance", async () => {
+  it("rejects pre-settlement complete-set redeem when amount exceeds token balance", async () => {
     try {
       await burnPairForUser(admin.publicKey, adminUsdcAta, sharedMarket, 999);
       expect.fail("Should have thrown");
@@ -951,7 +978,7 @@ describe("meridian", () => {
     }
   });
 
-  it("rejects redeem on unsettled market", async () => {
+  it("rejects unsettled redeem without the counterpart token accounts", async () => {
     // Create a new unsettled market
     const ticker = "AAPL";
     const strikePrice = new anchor.BN(200_000_000);
@@ -972,7 +999,78 @@ describe("meridian", () => {
       );
       expect.fail("Should have thrown");
     } catch (err: any) {
-      expect(err.toString()).to.include("MarketNotSettled");
+      expect(err.toString()).to.include("MissingCounterpartyAccount");
+    }
+  });
+
+  it("allows pre-settlement complete-set redeem with No as the primary token account", async () => {
+    const ticker = "NFLX";
+    const strikePrice = new anchor.BN(210_000_000);
+    const date = new anchor.BN(17000000015);
+    const pdas = await createMarket(ticker, strikePrice, date);
+
+    const { userYes, userNo } = await mintPairForAdmin(pdas, 2);
+    const usdcBefore = Number((await getAccount(provider.connection, adminUsdcAta)).amount);
+
+    await redeemForUser(
+      pdas,
+      admin.publicKey,
+      adminUsdcAta,
+      pdas.noMintPda,
+      userNo,
+      1,
+      undefined,
+      [
+        { pubkey: pdas.yesMintPda, isWritable: true, isSigner: false },
+        { pubkey: userYes, isWritable: true, isSigner: false },
+      ]
+    );
+
+    const usdcAfter = Number((await getAccount(provider.connection, adminUsdcAta)).amount);
+    const yesAfter = Number((await getAccount(provider.connection, userYes)).amount);
+    const noAfter = Number((await getAccount(provider.connection, userNo)).amount);
+    const vaultAfter = Number((await getAccount(provider.connection, pdas.vaultPda)).amount);
+    const marketAccount = await program.account.strikeMarket.fetch(pdas.marketPda);
+
+    expect(usdcAfter - usdcBefore).to.equal(1_000_000);
+    expect(yesAfter).to.equal(1);
+    expect(noAfter).to.equal(1);
+    expect(vaultAfter).to.equal(1_000_000);
+    expect(marketAccount.totalPairsMinted.toNumber()).to.equal(1);
+  });
+
+  it("rejects pre-settlement complete-set redeem when the counterpart token account is owned by someone else", async () => {
+    const ticker = "ORCL";
+    const strikePrice = new anchor.BN(220_000_000);
+    const date = new anchor.BN(17000000016);
+    const pdas = await createMarket(ticker, strikePrice, date);
+
+    const { userYes } = await mintPairForAdmin(pdas, 1);
+    const funded = await createFundedUser(1_000_000);
+    const otherNo = await createAssociatedTokenAccount(
+      provider.connection,
+      funded.user,
+      pdas.noMintPda,
+      funded.user.publicKey
+    );
+
+    try {
+      await redeemForUser(
+        pdas,
+        admin.publicKey,
+        adminUsdcAta,
+        pdas.yesMintPda,
+        userYes,
+        1,
+        undefined,
+        [
+          { pubkey: pdas.noMintPda, isWritable: true, isSigner: false },
+          { pubkey: otherNo, isWritable: true, isSigner: false },
+        ]
+      );
+      expect.fail("Should have thrown");
+    } catch (err: any) {
+      expect(err.toString()).to.include("InvalidCounterpartyAccount");
     }
   });
 
@@ -1086,7 +1184,7 @@ describe("meridian", () => {
     expect(marketAccount.totalPairsMinted.toNumber()).to.equal(0);
   });
 
-  it("burn_pair works on settled market too", async () => {
+  it("redeems winning tokens after settlement while pre-settlement complete-set exits use redeem", async () => {
     // Create, mint, settle, then burn
     const ticker = "AMZN";
     const strikePrice = new anchor.BN(180_000_000);
@@ -1101,7 +1199,7 @@ describe("meridian", () => {
     // Admin settle
     await adminSettleMarket(pdas, new anchor.BN(200_000_000));
 
-    // Burn 1 pair (should still work post-settlement)
+    // Redeem 1 winning Yes token post-settlement.
     await burnPairForUser(admin.publicKey, adminUsdcAta, pdas, 1);
 
     const vaultAccount = await getAccount(
@@ -2348,7 +2446,7 @@ describe("meridian", () => {
       }
     });
 
-    it("rejects buy_no after market freeze while settlement still succeeds", async () => {
+    it("rejects composed buy-no flow after market freeze while settlement still succeeds", async () => {
       const pdas = await createMarket("FRZB", new anchor.BN(272_000_000), nextFreezeDate());
       const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
       const adminYes = await createAssociatedTokenAccount(
@@ -2425,8 +2523,15 @@ describe("meridian", () => {
       }
     });
 
-    it("rejects sell_no after market settles", async () => {
-      const pdas = await createMarket("STNO", new anchor.BN(274_000_000), nextFreezeDate());
+    it("rejects composed sell-no flow after market settles", async () => {
+      const closedAt = await getCurrentUnixTimestamp();
+      const marketDate = new anchor.BN(closedAt - 3_700);
+      const pdas = await createMarket(
+        "STNO",
+        new anchor.BN(274_000_000),
+        marketDate,
+        new anchor.BN(closedAt - 3_600)
+      );
       const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
       const { userYes: userBYes, userNo: userBNo } = await mintPairForUser(
         userB.publicKey,
@@ -3108,7 +3213,7 @@ describe("meridian", () => {
       expect(Number(yesMint.supply)).to.equal(Number(noMint.supply));
     });
 
-    it("after atomic buy_no: unsettled yes_supply == no_supply == totalPairsMinted", async () => {
+    it("after atomic buy-no composition: unsettled yes_supply == no_supply == totalPairsMinted", async () => {
       const pdas = await createMarket("ISBN", new anchor.BN(232_000_000), nextSupplyDate());
       const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
       const adminYes = await createAssociatedTokenAccount(
@@ -3145,7 +3250,7 @@ describe("meridian", () => {
       expect(Number(yesMint.supply)).to.equal(market.totalPairsMinted.toNumber());
     });
 
-    it("after atomic sell_no: unsettled yes_supply == no_supply == totalPairsMinted", async () => {
+    it("after atomic sell-no composition: unsettled yes_supply == no_supply == totalPairsMinted", async () => {
       const pdas = await createMarket("ISSN", new anchor.BN(233_000_000), nextSupplyDate());
       const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
       const adminYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
@@ -3370,7 +3475,7 @@ describe("meridian", () => {
       expect(noBalance).to.equal(0);
     });
 
-    it("burn_pair returns exactly 1 USDC per pair (verify USDC balance delta)", async () => {
+    it("pre-settlement complete-set redeem returns exactly 1 USDC per pair", async () => {
       const pdas = await createMarket("EBRN", new anchor.BN(335_000_000), new anchor.BN(1800000042));
 
       // Mint 5 pairs

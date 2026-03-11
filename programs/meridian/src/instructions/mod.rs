@@ -5,8 +5,6 @@
 
 pub mod admin_settle;
 pub mod add_strike;
-pub mod burn_pair;
-pub mod buy_no;
 pub mod buy_yes;
 pub mod cancel_order;
 pub mod create_strike_market;
@@ -17,7 +15,6 @@ pub mod mint_pair;
 pub mod pause;
 pub mod place_order;
 pub mod redeem;
-pub mod sell_no;
 pub mod sell_yes;
 pub mod settle_market;
 pub mod shared;
@@ -26,8 +23,6 @@ pub mod unwind_order;
 
 pub use admin_settle::*;
 pub use add_strike::*;
-pub use burn_pair::*;
-pub use buy_no::*;
 pub use buy_yes::*;
 pub use cancel_order::*;
 pub use create_strike_market::*;
@@ -38,7 +33,6 @@ pub use mint_pair::*;
 pub use pause::*;
 pub use place_order::*;
 pub use redeem::*;
-pub use sell_no::*;
 pub use sell_yes::*;
 pub use settle_market::*;
 pub use shared::*;

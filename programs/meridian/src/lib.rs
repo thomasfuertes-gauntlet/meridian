@@ -42,14 +42,6 @@ pub mod meridian {
         instructions::mint_pair::handler(ctx, amount)
     }
 
-    pub fn buy_no<'info>(
-        ctx: Context<'_, '_, 'info, 'info, BuyNo<'info>>,
-        amount: u64,
-        min_price: u64,
-    ) -> Result<()> {
-        instructions::buy_no::handler(ctx, amount, min_price)
-    }
-
     pub fn buy_yes<'info>(
         ctx: Context<'_, '_, 'info, 'info, BuyYes<'info>>,
         amount: u64,
@@ -62,20 +54,11 @@ pub mod meridian {
         instructions::freeze_market::handler(ctx)
     }
 
-    pub fn burn_pair(ctx: Context<BurnPair>, amount: u64) -> Result<()> {
-        instructions::burn_pair::handler(ctx, amount)
-    }
-
-    pub fn redeem(ctx: Context<Redeem>, amount: u64) -> Result<()> {
-        instructions::redeem::handler(ctx, amount)
-    }
-
-    pub fn sell_no<'info>(
-        ctx: Context<'_, '_, 'info, 'info, SellNo<'info>>,
+    pub fn redeem<'info>(
+        ctx: Context<'_, '_, 'info, 'info, Redeem<'info>>,
         amount: u64,
-        max_price: u64,
     ) -> Result<()> {
-        instructions::sell_no::handler(ctx, amount, max_price)
+        instructions::redeem::handler(ctx, amount)
     }
 
     pub fn sell_yes<'info>(

@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount, Transfer};
 
 use crate::errors::MeridianError;
-use crate::instructions::shared::assert_market_vault_invariant;
+use crate::instructions::shared::{assert_market_vault_invariant, burn_complete_set_for_usdc};
 use crate::state::{MarketOutcome, StrikeMarket, USDC_PER_PAIR};
 
 #[derive(Accounts)]
@@ -49,12 +49,15 @@ pub struct Redeem<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<Redeem>, amount: u64) -> Result<()> {
-    require!(
-        ctx.accounts.market.is_settled(),
-        MeridianError::MarketNotSettled
-    );
+pub fn handler<'info>(
+    ctx: Context<'_, '_, 'info, 'info, Redeem<'info>>,
+    amount: u64,
+) -> Result<()> {
     require!(amount > 0, MeridianError::InvalidAmount);
+
+    if !ctx.accounts.market.is_settled() {
+        return handle_unsettled_pair_redeem(ctx, amount);
+    }
 
     let market = &ctx.accounts.market;
     let is_winner = (ctx.accounts.token_mint.key() == market.yes_mint
@@ -112,6 +115,103 @@ pub fn handler(ctx: Context<Redeem>, amount: u64) -> Result<()> {
 
     // Burning either winning or losing tokens must leave vault accounting
     // coherent relative to the surviving paired claims.
+    ctx.accounts.vault.reload()?;
+    assert_market_vault_invariant(
+        &ctx.accounts.market,
+        ctx.accounts.vault.amount,
+        USDC_PER_PAIR,
+    )?;
+
+    Ok(())
+}
+
+fn handle_unsettled_pair_redeem<'info>(
+    ctx: Context<'_, '_, 'info, 'info, Redeem<'info>>,
+    amount: u64,
+) -> Result<()> {
+    require!(
+        ctx.accounts.market.outcome == MarketOutcome::Pending,
+        MeridianError::InvalidMarketState
+    );
+    require!(
+        ctx.remaining_accounts.len() >= 2,
+        MeridianError::MissingCounterpartyAccount
+    );
+
+    let counterpart_mint = Account::<Mint>::try_from(&ctx.remaining_accounts[0])
+        .map_err(|_| error!(MeridianError::InvalidTokenMint))?;
+    let counterpart_user_token = Account::<TokenAccount>::try_from(&ctx.remaining_accounts[1])
+        .map_err(|_| error!(MeridianError::InvalidCounterpartyAccount))?;
+
+    let market = &ctx.accounts.market;
+    let primary_is_yes = ctx.accounts.token_mint.key() == market.yes_mint;
+    let expected_counterpart_mint = if primary_is_yes {
+        market.no_mint
+    } else if ctx.accounts.token_mint.key() == market.no_mint {
+        market.yes_mint
+    } else {
+        return err!(MeridianError::InvalidTokenMint);
+    };
+
+    require_keys_eq!(
+        counterpart_mint.key(),
+        expected_counterpart_mint,
+        MeridianError::InvalidTokenMint
+    );
+    require_keys_eq!(
+        counterpart_user_token.owner,
+        ctx.accounts.user.key(),
+        MeridianError::InvalidCounterpartyAccount
+    );
+    require_keys_eq!(
+        counterpart_user_token.mint,
+        expected_counterpart_mint,
+        MeridianError::InvalidCounterpartyAccount
+    );
+
+    let market_seeds = &[
+        StrikeMarket::SEED,
+        market.ticker.as_bytes(),
+        &market.strike_price.to_le_bytes(),
+        &market.date.to_le_bytes(),
+        &[market.bump],
+    ];
+    let signer_seeds = &[&market_seeds[..]];
+
+    let (yes_mint, no_mint, user_yes, user_no) = if primary_is_yes {
+        (
+            ctx.accounts.token_mint.to_account_info(),
+            counterpart_mint.to_account_info(),
+            ctx.accounts.user_token.to_account_info(),
+            counterpart_user_token.to_account_info(),
+        )
+    } else {
+        (
+            counterpart_mint.to_account_info(),
+            ctx.accounts.token_mint.to_account_info(),
+            counterpart_user_token.to_account_info(),
+            ctx.accounts.user_token.to_account_info(),
+        )
+    };
+
+    burn_complete_set_for_usdc(
+        ctx.accounts.token_program.to_account_info(),
+        ctx.accounts.user.to_account_info(),
+        ctx.accounts.market.to_account_info(),
+        yes_mint,
+        no_mint,
+        user_yes,
+        user_no,
+        ctx.accounts.vault.to_account_info(),
+        ctx.accounts.user_usdc.to_account_info(),
+        signer_seeds,
+        amount,
+        USDC_PER_PAIR,
+    )?;
+
+    let market = &mut ctx.accounts.market;
+    market.consume_open_interest(amount)?;
+
     ctx.accounts.vault.reload()?;
     assert_market_vault_invariant(
         &ctx.accounts.market,

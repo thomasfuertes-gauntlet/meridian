@@ -3,8 +3,8 @@
  * Run after `anchor deploy` on local validator.
  * Idempotent - safe to run multiple times.
  *
- * Creates: config, USDC mint, 7 test markets (one per MAG7 stock),
- * order books, and airdrops USDC to a specified wallet.
+ * Creates: config, USDC mint, and spec-aligned daily strike markets for MAG7,
+ * plus order books and dev wallet funding.
  *
  * Uses deterministic dev wallets from scripts/dev-wallets.ts.
  * Admin wallet is both program admin and USDC mint authority.
@@ -23,17 +23,9 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
+import { calculateStrikes } from "../automation/src/strikes.js";
 
 const MAG7_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"];
-/**
- * Generate 2 strikes: nearest $10 below and above reference price.
- * E.g., ref=$255 -> [$250, $260] or ref=$390 -> [$380, $400].
- * Drops ATM to concentrate liquidity on directional brackets.
- */
-function generateStrikes(refPrice: number): number[] {
-  const at = Math.round(refPrice / 10) * 10;
-  return [at - 10, at + 10];
-}
 
 const USDC_DECIMALS = 6;
 const USDC_PER_PAIR = 1_000_000;
@@ -206,7 +198,7 @@ async function main() {
       console.warn(`  No reference price for ${ticker}, skipping`);
       continue;
     }
-    const strikes = generateStrikes(refPrice);
+    const strikes = calculateStrikes(refPrice);
     console.log(`  ${ticker} ref=$${refPrice.toFixed(2)} -> strikes: ${strikes.map((s) => `$${s}`).join(", ")}`);
 
     for (const strikeDollars of strikes) {

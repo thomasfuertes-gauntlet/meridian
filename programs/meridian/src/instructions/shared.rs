@@ -16,8 +16,9 @@ pub struct AtomicFill {
 // User-facing trade path mapping:
 // - buy_yes = escrow_usdc + buy_yes_from_asks + refund_ob_usdc_to_user
 // - sell_yes = escrow_yes + sell_yes_into_bids
-// - buy_no = mint_complete_set + escrow_yes + sell_yes_into_bids
-// - sell_no = escrow_usdc + buy_yes_from_asks + refund_ob_usdc_to_user + burn_complete_set_for_usdc
+// Higher-level UX composition:
+// - buy_no = mint_complete_set + sell_yes_into_bids
+// - sell_no = buy_yes_from_asks + burn_complete_set_for_usdc
 //
 // The helpers below intentionally model the economic steps directly rather than
 // collapsing them into a single mode-flagged trade engine.

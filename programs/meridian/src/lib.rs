@@ -48,6 +48,14 @@ pub mod meridian {
         instructions::buy_no::handler(ctx, amount, min_price)
     }
 
+    pub fn buy_yes<'info>(
+        ctx: Context<'_, '_, 'info, 'info, BuyYes<'info>>,
+        amount: u64,
+        max_price: u64,
+    ) -> Result<()> {
+        instructions::buy_yes::handler(ctx, amount, max_price)
+    }
+
     pub fn freeze_market(ctx: Context<FreezeMarket>) -> Result<()> {
         instructions::freeze_market::handler(ctx)
     }
@@ -66,6 +74,14 @@ pub mod meridian {
         max_price: u64,
     ) -> Result<()> {
         instructions::sell_no::handler(ctx, amount, max_price)
+    }
+
+    pub fn sell_yes<'info>(
+        ctx: Context<'_, '_, 'info, 'info, SellYes<'info>>,
+        amount: u64,
+        min_price: u64,
+    ) -> Result<()> {
+        instructions::sell_yes::handler(ctx, amount, min_price)
     }
 
     pub fn settle_market<'info>(

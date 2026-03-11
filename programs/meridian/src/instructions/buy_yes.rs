@@ -6,15 +6,15 @@ use anchor_spl::{
 
 use crate::errors::MeridianError;
 use crate::instructions::shared::{
-    apply_fills_to_orders, assert_market_vault_invariant, escrow_yes, mint_complete_set,
-    plan_bid_fills, sell_yes_into_bids, validate_order_book_for_market,
+    apply_fills_to_orders, buy_yes_from_asks, escrow_usdc, plan_ask_fills, refund_ob_usdc_to_user,
+    total_fill_cost, validate_order_book_for_market,
 };
 use crate::state::{
     GlobalConfig, Order, OrderBook, StrikeMarket, MAX_ORDERS_PER_SIDE, USDC_PER_PAIR,
 };
 
 #[derive(Accounts)]
-pub struct BuyNo<'info> {
+pub struct BuyYes<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
@@ -25,7 +25,6 @@ pub struct BuyNo<'info> {
     pub config: Account<'info, GlobalConfig>,
 
     #[account(
-        mut,
         seeds = [
             StrikeMarket::SEED,
             market.ticker.as_bytes(),
@@ -41,24 +40,10 @@ pub struct BuyNo<'info> {
 
     #[account(
         mut,
-        seeds = [b"vault", market.key().as_ref()],
-        bump,
-    )]
-    pub vault: Account<'info, TokenAccount>,
-
-    #[account(
-        mut,
         seeds = [b"yes_mint", market.key().as_ref()],
         bump,
     )]
     pub yes_mint: Account<'info, Mint>,
-
-    #[account(
-        mut,
-        seeds = [b"no_mint", market.key().as_ref()],
-        bump,
-    )]
-    pub no_mint: Account<'info, Mint>,
 
     #[account(
         init_if_needed,
@@ -67,14 +52,6 @@ pub struct BuyNo<'info> {
         associated_token::authority = user,
     )]
     pub user_yes: Account<'info, TokenAccount>,
-
-    #[account(
-        init_if_needed,
-        payer = user,
-        associated_token::mint = no_mint,
-        associated_token::authority = user,
-    )]
-    pub user_no: Account<'info, TokenAccount>,
 
     #[account(
         mut,
@@ -103,56 +80,33 @@ pub struct BuyNo<'info> {
 }
 
 pub fn handler<'info>(
-    ctx: Context<'_, '_, 'info, 'info, BuyNo<'info>>,
+    ctx: Context<'_, '_, 'info, 'info, BuyYes<'info>>,
     amount: u64,
-    min_price: u64,
+    max_price: u64,
 ) -> Result<()> {
     require!(amount > 0, MeridianError::InvalidAmount);
     require!(!ctx.accounts.config.paused, MeridianError::Paused);
     ctx.accounts.market.assert_trading_active()?;
     require!(
-        min_price > 0 && min_price < USDC_PER_PAIR,
+        max_price > 0 && max_price < USDC_PER_PAIR,
         MeridianError::InvalidPrice
     );
 
     let market_key = ctx.accounts.market.key();
-    let market = &ctx.accounts.market;
-    let market_seeds = &[
-        StrikeMarket::SEED,
-        market.ticker.as_bytes(),
-        &market.strike_price.to_le_bytes(),
-        &market.date.to_le_bytes(),
-        &[market.bump],
-    ];
-    let market_signer = &[&market_seeds[..]];
+    let order_book_ai = ctx.accounts.order_book.to_account_info();
 
-    // 1. Mint the pair against fresh USDC collateral.
-    mint_complete_set(
+    let escrow_amount = amount
+        .checked_mul(max_price)
+        .ok_or(MeridianError::InvalidAmount)?;
+    escrow_usdc(
         ctx.accounts.token_program.to_account_info(),
         ctx.accounts.user.to_account_info(),
-        ctx.accounts.market.to_account_info(),
         ctx.accounts.user_usdc.to_account_info(),
-        ctx.accounts.vault.to_account_info(),
-        ctx.accounts.yes_mint.to_account_info(),
-        ctx.accounts.no_mint.to_account_info(),
-        ctx.accounts.user_yes.to_account_info(),
-        ctx.accounts.user_no.to_account_info(),
-        market_signer,
-        amount,
-        USDC_PER_PAIR,
+        ctx.accounts.ob_usdc_vault.to_account_info(),
+        escrow_amount,
     )?;
 
-    // 2. Escrow the freshly minted Yes into the order book.
-    escrow_yes(
-        ctx.accounts.token_program.to_account_info(),
-        ctx.accounts.user.to_account_info(),
-        ctx.accounts.user_yes.to_account_info(),
-        ctx.accounts.ob_yes_vault.to_account_info(),
-        amount,
-    )?;
-
-    // 3. Compute matches against resting bids. This must fully fill.
-    let (fills, ob_bump) = {
+    let (fills, total_fill_cost, ob_bump) = {
         let ob = ctx.accounts.order_book.load()?;
 
         validate_order_book_for_market(
@@ -162,19 +116,19 @@ pub fn handler<'info>(
             ctx.accounts.ob_yes_vault.key(),
         )?;
 
-        let fills = plan_bid_fills(&ob.bids, ob.bid_count as usize, amount, min_price)?;
+        let fills = plan_ask_fills(&ob.asks, ob.ask_count as usize, amount, max_price)?;
+        let total_fill_cost = total_fill_cost(&fills)?;
 
-        (fills, ob.bump)
+        (fills, total_fill_cost, ob.bump)
     };
 
-    // 4. Execute transfers.
-    let order_book_ai = ctx.accounts.order_book.to_account_info();
     let ob_seeds: &[&[u8]] = &[OrderBook::SEED, market_key.as_ref(), &[ob_bump]];
     let ob_signer = &[ob_seeds];
-    sell_yes_into_bids(
+
+    buy_yes_from_asks(
         ctx.accounts.token_program.to_account_info(),
-        order_book_ai,
-        ctx.accounts.user_usdc.to_account_info(),
+        order_book_ai.clone(),
+        ctx.accounts.user_yes.to_account_info(),
         &ctx.accounts.ob_usdc_vault,
         &ctx.accounts.ob_yes_vault,
         ob_signer,
@@ -182,18 +136,23 @@ pub fn handler<'info>(
         ctx.remaining_accounts,
     )?;
 
-    // 5. Update the resting bid book and market collateral accounting.
+    let refund = escrow_amount
+        .checked_sub(total_fill_cost)
+        .ok_or(MeridianError::InvalidAmount)?;
+    refund_ob_usdc_to_user(
+        ctx.accounts.token_program.to_account_info(),
+        order_book_ai,
+        ctx.accounts.user_usdc.to_account_info(),
+        ctx.accounts.ob_usdc_vault.to_account_info(),
+        ob_signer,
+        refund,
+    )?;
+
     {
         let mut ob = ctx.accounts.order_book.load_mut()?;
-        let bid_count = ob.bid_count;
-        ob.bid_count = apply_fills_to_orders(&mut ob.bids, bid_count, &fills)?;
+        let ask_count = ob.ask_count;
+        ob.ask_count = apply_fills_to_orders(&mut ob.asks, ask_count, &fills)?;
     }
-
-    let market = &mut ctx.accounts.market;
-    market.total_pairs_minted = market.total_pairs_minted.checked_add(amount).unwrap();
-
-    ctx.accounts.vault.reload()?;
-    assert_market_vault_invariant(market, ctx.accounts.vault.amount, USDC_PER_PAIR)?;
 
     Ok(())
 }
@@ -215,32 +174,32 @@ mod tests {
     }
 
     #[test]
-    fn buy_no_matches_multiple_bids_for_full_fill() {
-        let mut bids = [Order::default(); MAX_ORDERS_PER_SIDE];
-        bids[0] = order(650_000, 2, true);
-        bids[1] = order(600_000, 1, true);
+    fn buy_yes_matches_multiple_asks_for_full_fill() {
+        let mut asks = [Order::default(); MAX_ORDERS_PER_SIDE];
+        asks[0] = order(300_000, 1, true);
+        asks[1] = order(350_000, 2, true);
 
-        let fills = plan_bid_fills(&bids, 2, 3, 550_000).unwrap();
+        let fills = plan_ask_fills(&asks, 2, 3, 400_000).unwrap();
+        let total_cost = total_fill_cost(&fills).unwrap();
         assert_eq!(fills.len(), 2);
-        assert_eq!(fills[0].fill_qty, 2);
-        assert_eq!(fills[1].fill_qty, 1);
+        assert_eq!(total_cost, 1_000_000);
     }
 
     #[test]
-    fn buy_no_rejects_partial_fill() {
-        let mut bids = [Order::default(); MAX_ORDERS_PER_SIDE];
-        bids[0] = order(650_000, 1, true);
+    fn buy_yes_rejects_partial_fill() {
+        let mut asks = [Order::default(); MAX_ORDERS_PER_SIDE];
+        asks[0] = order(300_000, 1, true);
 
-        let err = plan_bid_fills(&bids, 1, 2, 600_000).unwrap_err();
+        let err = plan_ask_fills(&asks, 1, 2, 400_000).unwrap_err();
         assert!(err.to_string().contains("AtomicTradeIncomplete"));
     }
 
     #[test]
-    fn buy_no_rejects_bids_below_min_price() {
-        let mut bids = [Order::default(); MAX_ORDERS_PER_SIDE];
-        bids[0] = order(500_000, 3, true);
+    fn buy_yes_rejects_asks_above_max_price() {
+        let mut asks = [Order::default(); MAX_ORDERS_PER_SIDE];
+        asks[0] = order(700_000, 1, true);
 
-        let err = plan_bid_fills(&bids, 1, 1, 600_000).unwrap_err();
+        let err = plan_ask_fills(&asks, 1, 1, 600_000).unwrap_err();
         assert!(err.to_string().contains("AtomicTradeIncomplete"));
     }
 }

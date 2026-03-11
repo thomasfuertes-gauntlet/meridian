@@ -1,68 +1,15 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{Mint, Token, TokenAccount};
 
 use crate::errors::MeridianError;
+use crate::instructions::shared::{
+    apply_fills_to_orders, assert_market_vault_invariant, burn_complete_set_for_usdc,
+    buy_yes_from_asks, escrow_usdc, plan_ask_fills, refund_ob_usdc_to_user, total_fill_cost,
+    validate_order_book_for_market,
+};
 use crate::state::{
     GlobalConfig, Order, OrderBook, StrikeMarket, MAX_ORDERS_PER_SIDE, USDC_PER_PAIR,
 };
-
-#[derive(Debug)]
-struct Fill {
-    book_index: usize,
-    fill_qty: u64,
-    fill_cost: u64,
-    remaining_acct_idx: usize,
-    counterparty_owner: Pubkey,
-}
-
-fn compute_ask_fills(
-    asks: &[Order; MAX_ORDERS_PER_SIDE],
-    ask_count: usize,
-    amount: u64,
-    max_price: u64,
-) -> Result<(Vec<Fill>, u64)> {
-    let mut fills: Vec<Fill> = Vec::new();
-    let mut rem_qty = amount;
-    let mut total_cost: u64 = 0;
-    let mut ra_idx = 0usize;
-
-    for (i, ask) in asks.iter().enumerate().take(ask_count) {
-        if rem_qty == 0 {
-            break;
-        }
-        if ask.is_active == 0 {
-            continue;
-        }
-        if ask.price > max_price {
-            break;
-        }
-
-        let fill_qty = rem_qty.min(ask.quantity);
-        let fill_cost = fill_qty
-            .checked_mul(ask.price)
-            .ok_or(MeridianError::InvalidAmount)?;
-        total_cost = total_cost
-            .checked_add(fill_cost)
-            .ok_or(MeridianError::InvalidAmount)?;
-
-        fills.push(Fill {
-            book_index: i,
-            fill_qty,
-            fill_cost,
-            remaining_acct_idx: ra_idx,
-            counterparty_owner: ask.owner,
-        });
-        ra_idx += 1;
-        rem_qty = rem_qty
-            .checked_sub(fill_qty)
-            .ok_or(MeridianError::InvalidAmount)?;
-    }
-
-    require!(rem_qty == 0, MeridianError::AtomicTradeIncomplete);
-    require!(!fills.is_empty(), MeridianError::NoMatchingOrders);
-
-    Ok((fills, total_cost))
-}
 
 #[derive(Accounts)]
 pub struct SellNo<'info> {
@@ -168,15 +115,11 @@ pub fn handler<'info>(
     let escrow_amount = amount
         .checked_mul(max_price)
         .ok_or(MeridianError::InvalidAmount)?;
-    token::transfer(
-        CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.user_usdc.to_account_info(),
-                to: ctx.accounts.ob_usdc_vault.to_account_info(),
-                authority: ctx.accounts.user.to_account_info(),
-            },
-        ),
+    escrow_usdc(
+        ctx.accounts.token_program.to_account_info(),
+        ctx.accounts.user.to_account_info(),
+        ctx.accounts.user_usdc.to_account_info(),
+        ctx.accounts.ob_usdc_vault.to_account_info(),
         escrow_amount,
     )?;
 
@@ -184,20 +127,15 @@ pub fn handler<'info>(
     let (fills, total_fill_cost, ob_bump) = {
         let ob = ctx.accounts.order_book.load()?;
 
-        require_keys_eq!(ob.market, market_key);
-        require_keys_eq!(
-            ob.ob_usdc_vault,
+        validate_order_book_for_market(
+            &ob,
+            &market_key,
             ctx.accounts.ob_usdc_vault.key(),
-            MeridianError::VaultInvariantViolation
-        );
-        require_keys_eq!(
-            ob.ob_yes_vault,
             ctx.accounts.ob_yes_vault.key(),
-            MeridianError::VaultInvariantViolation
-        );
+        )?;
 
-        let (fills, total_cost) =
-            compute_ask_fills(&ob.asks, ob.ask_count as usize, amount, max_price)?;
+        let fills = plan_ask_fills(&ob.asks, ob.ask_count as usize, amount, max_price)?;
+        let total_cost = total_fill_cost(&fills)?;
 
         (fills, total_cost, ob.bump)
     };
@@ -206,115 +144,38 @@ pub fn handler<'info>(
     let order_book_ai = ctx.accounts.order_book.to_account_info();
     let ob_seeds: &[&[u8]] = &[OrderBook::SEED, market_key.as_ref(), &[ob_bump]];
     let ob_signer = &[ob_seeds];
-
-    for fill in &fills {
-        require!(
-            fill.remaining_acct_idx < ctx.remaining_accounts.len(),
-            MeridianError::MissingCounterpartyAccount
-        );
-        let counterparty_ata = &ctx.remaining_accounts[fill.remaining_acct_idx];
-        let counterparty_token_account = Account::<TokenAccount>::try_from(counterparty_ata)
-            .map_err(|_| MeridianError::InvalidCounterpartyAccount)?;
-
-        require_keys_eq!(
-            counterparty_token_account.owner,
-            fill.counterparty_owner,
-            MeridianError::InvalidCounterpartyAccount
-        );
-        require_keys_eq!(
-            counterparty_token_account.mint,
-            ctx.accounts.ob_usdc_vault.mint,
-            MeridianError::InvalidCounterpartyAccount
-        );
-
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.ob_yes_vault.to_account_info(),
-                    to: ctx.accounts.user_yes.to_account_info(),
-                    authority: order_book_ai.clone(),
-                },
-                ob_signer,
-            ),
-            fill.fill_qty,
-        )?;
-
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.ob_usdc_vault.to_account_info(),
-                    to: counterparty_ata.to_account_info(),
-                    authority: order_book_ai.clone(),
-                },
-                ob_signer,
-            ),
-            fill.fill_cost,
-        )?;
-    }
+    buy_yes_from_asks(
+        ctx.accounts.token_program.to_account_info(),
+        order_book_ai.clone(),
+        ctx.accounts.user_yes.to_account_info(),
+        &ctx.accounts.ob_usdc_vault,
+        &ctx.accounts.ob_yes_vault,
+        ob_signer,
+        &fills,
+        ctx.remaining_accounts,
+    )?;
 
     // Refund any price improvement before burning the pair.
     let refund = escrow_amount
         .checked_sub(total_fill_cost)
         .ok_or(MeridianError::InvalidAmount)?;
-    if refund > 0 {
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.ob_usdc_vault.to_account_info(),
-                    to: ctx.accounts.user_usdc.to_account_info(),
-                    authority: order_book_ai.clone(),
-                },
-                ob_signer,
-            ),
-            refund,
-        )?;
-    }
+    refund_ob_usdc_to_user(
+        ctx.accounts.token_program.to_account_info(),
+        order_book_ai.clone(),
+        ctx.accounts.user_usdc.to_account_info(),
+        ctx.accounts.ob_usdc_vault.to_account_info(),
+        ob_signer,
+        refund,
+    )?;
 
     // 4. Update the ask book.
     {
         let mut ob = ctx.accounts.order_book.load_mut()?;
         let ask_count = ob.ask_count;
-        for fill in &fills {
-            ob.asks[fill.book_index].quantity = ob.asks[fill.book_index]
-                .quantity
-                .checked_sub(fill.fill_qty)
-                .ok_or(MeridianError::InvalidAmount)?;
-            if ob.asks[fill.book_index].quantity == 0 {
-                ob.asks[fill.book_index].is_active = 0;
-            }
-        }
-        compact_orders(&mut ob.asks, ask_count);
-        ob.ask_count = count_active(&ob.asks) as u16;
+        ob.ask_count = apply_fills_to_orders(&mut ob.asks, ask_count, &fills)?;
     }
 
     // 5. Burn the acquired Yes together with the user's No, then release USDC.
-    token::burn(
-        CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Burn {
-                mint: ctx.accounts.yes_mint.to_account_info(),
-                from: ctx.accounts.user_yes.to_account_info(),
-                authority: ctx.accounts.user.to_account_info(),
-            },
-        ),
-        amount,
-    )?;
-
-    token::burn(
-        CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Burn {
-                mint: ctx.accounts.no_mint.to_account_info(),
-                from: ctx.accounts.user_no.to_account_info(),
-                authority: ctx.accounts.user.to_account_info(),
-            },
-        ),
-        amount,
-    )?;
-
     let market = &ctx.accounts.market;
     let market_seeds = &[
         StrikeMarket::SEED,
@@ -325,54 +186,28 @@ pub fn handler<'info>(
     ];
     let market_signer = &[&market_seeds[..]];
 
-    let redeem_amount = amount.checked_mul(USDC_PER_PAIR).unwrap();
-    token::transfer(
-        CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.vault.to_account_info(),
-                to: ctx.accounts.user_usdc.to_account_info(),
-                authority: ctx.accounts.market.to_account_info(),
-            },
-            market_signer,
-        ),
-        redeem_amount,
+    burn_complete_set_for_usdc(
+        ctx.accounts.token_program.to_account_info(),
+        ctx.accounts.user.to_account_info(),
+        ctx.accounts.market.to_account_info(),
+        ctx.accounts.yes_mint.to_account_info(),
+        ctx.accounts.no_mint.to_account_info(),
+        ctx.accounts.user_yes.to_account_info(),
+        ctx.accounts.user_no.to_account_info(),
+        ctx.accounts.vault.to_account_info(),
+        ctx.accounts.user_usdc.to_account_info(),
+        market_signer,
+        amount,
+        USDC_PER_PAIR,
     )?;
 
     let market = &mut ctx.accounts.market;
     market.total_pairs_minted = market.total_pairs_minted.checked_sub(amount).unwrap();
 
     ctx.accounts.vault.reload()?;
-    let expected_vault = market.expected_vault_amount(USDC_PER_PAIR)?;
-    require!(
-        ctx.accounts.vault.amount == expected_vault,
-        MeridianError::VaultInvariantViolation
-    );
+    assert_market_vault_invariant(market, ctx.accounts.vault.amount, USDC_PER_PAIR)?;
 
     Ok(())
-}
-
-fn compact_orders(
-    orders: &mut [crate::state::Order; crate::state::MAX_ORDERS_PER_SIDE],
-    count: u16,
-) {
-    let mut write = 0usize;
-    let n = count as usize;
-    for read in 0..n {
-        if orders[read].is_active != 0 {
-            if write != read {
-                orders[write] = orders[read];
-            }
-            write += 1;
-        }
-    }
-    for item in orders.iter_mut().take(n).skip(write) {
-        *item = crate::state::Order::default();
-    }
-}
-
-fn count_active(orders: &[crate::state::Order; crate::state::MAX_ORDERS_PER_SIDE]) -> usize {
-    orders.iter().filter(|order| order.is_active != 0).count()
 }
 
 #[cfg(test)]
@@ -397,7 +232,8 @@ mod tests {
         asks[0] = order(300_000, 1, true);
         asks[1] = order(350_000, 2, true);
 
-        let (fills, total_cost) = compute_ask_fills(&asks, 2, 3, 400_000).unwrap();
+        let fills = plan_ask_fills(&asks, 2, 3, 400_000).unwrap();
+        let total_cost = total_fill_cost(&fills).unwrap();
         assert_eq!(fills.len(), 2);
         assert_eq!(total_cost, 1_000_000);
     }
@@ -407,7 +243,7 @@ mod tests {
         let mut asks = [Order::default(); MAX_ORDERS_PER_SIDE];
         asks[0] = order(300_000, 1, true);
 
-        let err = compute_ask_fills(&asks, 1, 2, 400_000).unwrap_err();
+        let err = plan_ask_fills(&asks, 1, 2, 400_000).unwrap_err();
         assert!(err.to_string().contains("AtomicTradeIncomplete"));
     }
 
@@ -416,7 +252,7 @@ mod tests {
         let mut asks = [Order::default(); MAX_ORDERS_PER_SIDE];
         asks[0] = order(700_000, 1, true);
 
-        let err = compute_ask_fills(&asks, 1, 1, 600_000).unwrap_err();
+        let err = plan_ask_fills(&asks, 1, 1, 600_000).unwrap_err();
         assert!(err.to_string().contains("AtomicTradeIncomplete"));
     }
 }

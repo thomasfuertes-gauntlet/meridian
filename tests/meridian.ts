@@ -2116,6 +2116,139 @@ describe("meridian", () => {
       expect(orderBook.asks[0].price.toNumber()).to.equal(350_000);
       expect(orderBook.asks[0].quantity.toNumber()).to.equal(1);
     });
+
+    it("buy no: incomplete atomic fill leaves user balances and vaults unchanged", async () => {
+      const pdas = await createMarket("ABNF", new anchor.BN(252_000_000), nextAtomicDate());
+      const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
+      const adminYes = await createAssociatedTokenAccount(
+        connection,
+        mintAuthority,
+        pdas.yesMintPda,
+        admin.publicKey
+      );
+      const userBYes = await createAssociatedTokenAccount(
+        connection,
+        userB,
+        pdas.yesMintPda,
+        userB.publicKey
+      );
+      const userBNo = await createAssociatedTokenAccount(
+        connection,
+        userB,
+        pdas.noMintPda,
+        userB.publicKey
+      );
+
+      await placeBid({ ...pdas, ...obPdas }, admin.publicKey, adminUsdcAta, adminYes, 650_000, 1);
+
+      const userBUsdcBefore = await tokenAmount(userBUsdc);
+      const userBYesBefore = await tokenAmount(userBYes);
+      const userBNoBefore = await tokenAmount(userBNo);
+      const marketVaultBefore = await tokenAmount(pdas.vaultPda);
+      const obUsdcBefore = await tokenAmount(obPdas.obUsdcVault);
+      const obYesBefore = await tokenAmount(obPdas.obYesVault);
+      const orderBookBefore = await program.account.orderBook.fetch(obPdas.orderBookPda);
+
+      try {
+        await buyNo(
+          { ...pdas, ...obPdas },
+          userB.publicKey,
+          userBUsdc,
+          userBYes,
+          userBNo,
+          600_000,
+          2,
+          {
+            remainingAccounts: [{ pubkey: adminYes, isWritable: true, isSigner: false }],
+            signers: [userB],
+          }
+        );
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("AtomicTradeIncomplete");
+      }
+
+      const userBUsdcAfter = await tokenAmount(userBUsdc);
+      const userBYesAfter = await tokenAmount(userBYes);
+      const userBNoAfter = await tokenAmount(userBNo);
+      const marketVaultAfter = await tokenAmount(pdas.vaultPda);
+      const obUsdcAfter = await tokenAmount(obPdas.obUsdcVault);
+      const obYesAfter = await tokenAmount(obPdas.obYesVault);
+      const orderBookAfter = await program.account.orderBook.fetch(obPdas.orderBookPda);
+
+      expect(userBUsdcAfter).to.equal(userBUsdcBefore);
+      expect(userBYesAfter).to.equal(userBYesBefore);
+      expect(userBNoAfter).to.equal(userBNoBefore);
+      expect(marketVaultAfter).to.equal(marketVaultBefore);
+      expect(obUsdcAfter).to.equal(obUsdcBefore);
+      expect(obYesAfter).to.equal(obYesBefore);
+      expect(orderBookAfter.bidCount).to.equal(orderBookBefore.bidCount);
+      expect(orderBookAfter.bids[0].quantity.toNumber()).to.equal(
+        orderBookBefore.bids[0].quantity.toNumber()
+      );
+    });
+
+    it("sell no: incomplete atomic fill leaves user balances and vaults unchanged", async () => {
+      const pdas = await createMarket("ASNF", new anchor.BN(262_000_000), nextAtomicDate());
+      const obPdas = await initOrderBookForMarket(pdas.marketPda, pdas.yesMintPda);
+      const adminYes = getAssociatedTokenAddressSync(pdas.yesMintPda, admin.publicKey);
+      const { userYes: userBYes, userNo: userBNo } = await mintPairForUser(
+        userB.publicKey,
+        userBUsdc,
+        pdas,
+        2,
+        [userB]
+      );
+
+      await mintPairForAdmin({ ...pdas, ...obPdas }, 1);
+      await placeAsk({ ...pdas, ...obPdas }, admin.publicKey, adminUsdcAta, adminYes, 400_000, 1);
+
+      const userBUsdcBefore = await tokenAmount(userBUsdc);
+      const userBYesBefore = await tokenAmount(userBYes);
+      const userBNoBefore = await tokenAmount(userBNo);
+      const marketVaultBefore = await tokenAmount(pdas.vaultPda);
+      const obUsdcBefore = await tokenAmount(obPdas.obUsdcVault);
+      const obYesBefore = await tokenAmount(obPdas.obYesVault);
+      const orderBookBefore = await program.account.orderBook.fetch(obPdas.orderBookPda);
+
+      try {
+        await sellNo(
+          { ...pdas, ...obPdas },
+          userB.publicKey,
+          userBUsdc,
+          userBYes,
+          userBNo,
+          400_000,
+          2,
+          {
+            remainingAccounts: [{ pubkey: adminUsdcAta, isWritable: true, isSigner: false }],
+            signers: [userB],
+          }
+        );
+        expect.fail("Should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("AtomicTradeIncomplete");
+      }
+
+      const userBUsdcAfter = await tokenAmount(userBUsdc);
+      const userBYesAfter = await tokenAmount(userBYes);
+      const userBNoAfter = await tokenAmount(userBNo);
+      const marketVaultAfter = await tokenAmount(pdas.vaultPda);
+      const obUsdcAfter = await tokenAmount(obPdas.obUsdcVault);
+      const obYesAfter = await tokenAmount(obPdas.obYesVault);
+      const orderBookAfter = await program.account.orderBook.fetch(obPdas.orderBookPda);
+
+      expect(userBUsdcAfter).to.equal(userBUsdcBefore);
+      expect(userBYesAfter).to.equal(userBYesBefore);
+      expect(userBNoAfter).to.equal(userBNoBefore);
+      expect(marketVaultAfter).to.equal(marketVaultBefore);
+      expect(obUsdcAfter).to.equal(obUsdcBefore);
+      expect(obYesAfter).to.equal(obYesBefore);
+      expect(orderBookAfter.askCount).to.equal(orderBookBefore.askCount);
+      expect(orderBookAfter.asks[0].quantity.toNumber()).to.equal(
+        orderBookBefore.asks[0].quantity.toNumber()
+      );
+    });
   });
 
   describe("frozen market behavior", () => {

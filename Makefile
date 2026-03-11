@@ -4,6 +4,8 @@
 	local-rpc-check local-bootstrap local-validator-live \
 	local-deploy local-setup local-bots local-live local-strategy local-ui-ready local-ui \
 	local-test-rust local-test-anchor local-test-smoke local-test-grep local-check \
+	devnet-env-check railway-env-check railway-sync \
+	railway-deploy-frontend railway-deploy-bots railway-deploy railway-release \
 	devnet-deploy devnet-setup devnet-health devnet-settle devnet-morning devnet-reset \
 	wallet-pubkeys circuit tree clean \
 	dev dev-validator deploy setup bots live strategy-bots test check \
@@ -11,6 +13,8 @@
 
 # Toolchain from the Solana installer plus cargo.
 export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.cargo/bin:$(PATH)
+
+-include config/devnet.env
 
 ADMIN_WALLET := .wallets/admin.json
 BOT_A_WALLET := .wallets/bot-a.json
@@ -27,8 +31,10 @@ LOCAL_BOT_LOG ?= $(LOCAL_STATE_DIR)/bots.log
 LOCAL_VALIDATOR_BOOT_WAIT ?= 30
 TSX ?= node --import tsx
 
-DEVNET_URL ?= https://api.devnet.solana.com
-DEVNET_USDC_MINT ?= AKmi2ZrBwWi49xf5EdvVRB7679QM7wSVGxPMbFKZ7rqE
+DEVNET_URL ?= $(DEVNET_RPC_URL)
+RAILWAY_FRONTEND_SERVICE ?= frontend
+RAILWAY_BOTS_SERVICE ?= bots
+VITE_DEV_WALLET ?= true
 
 ADMIN_PUBKEY = $$(solana-keygen pubkey $(ADMIN_WALLET))
 LOCAL_TS_ENV = ANCHOR_PROVIDER_URL="$(LOCAL_RPC_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" OFFLINE="$(OFFLINE)"
@@ -37,6 +43,28 @@ DEVNET_READONLY_ENV = ANCHOR_PROVIDER_URL="$(DEVNET_URL)" ANCHOR_WALLET="$(ADMIN
 DEVNET_TS_ENV = ANCHOR_PROVIDER_URL="$(DEVNET_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" USDC_MINT="$(DEVNET_USDC_MINT)"
 DEVNET_AUTOMATION_ENV = RPC_URL="$(DEVNET_URL)" USDC_MINT="$(DEVNET_USDC_MINT)" ADMIN_KEYPAIR_PATH=../$(ADMIN_WALLET)
 SMOKE_TEST_GREP = roundtrips create -> freeze -> settle-with-proof -> redeem against config-backed oracle policy
+
+define require_var
+	@if [ -z "$($1)" ]; then \
+		echo "Missing required config: $1"; \
+		echo "Set it in config/devnet.env, export it in your shell, or pass it inline."; \
+		if [ -f config/devnet.env.example ]; then \
+			echo "Start from: cp config/devnet.env.example config/devnet.env"; \
+		fi; \
+		exit 1; \
+	fi
+endef
+
+define require_any_var
+	@if [ -z "$($1)" ] && [ -z "$($2)" ]; then \
+		echo "Missing required config: $1 or $2"; \
+		echo "Set one of them in config/devnet.env, export it in your shell, or pass it inline."; \
+		if [ -f config/devnet.env.example ]; then \
+			echo "Start from: cp config/devnet.env.example config/devnet.env"; \
+		fi; \
+		exit 1; \
+	fi
+endef
 
 wallets:
 	@$(TSX) scripts/dev-wallets.ts
@@ -199,31 +227,68 @@ local-check: local-test-rust
 	@echo ""
 	@echo "Local Rust checks passed"
 
-devnet-deploy: wallets
+devnet-env-check:
+	$(call require_any_var,DEVNET_RPC_URL,DEVNET_URL)
+	$(call require_var,DEVNET_USDC_MINT)
+	@echo "Devnet config"
+	@echo "  RPC: $(DEVNET_URL)"
+	@echo "  USDC mint: $(DEVNET_USDC_MINT)"
+
+railway-env-check:
+	$(call require_any_var,DEVNET_RPC_URL,DEVNET_URL)
+	$(call require_var,DEVNET_USDC_MINT)
+	$(call require_var,RAILWAY_FRONTEND_SERVICE)
+	$(call require_var,RAILWAY_BOTS_SERVICE)
+	@echo "Railway config"
+	@echo "  Frontend service: $(RAILWAY_FRONTEND_SERVICE)"
+	@echo "  Bots service: $(RAILWAY_BOTS_SERVICE)"
+	@echo "  RPC: $(DEVNET_URL)"
+	@echo "  USDC mint: $(DEVNET_USDC_MINT)"
+
+railway-sync: railway-env-check
+	railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)" "ANCHOR_PROVIDER_URL=$(DEVNET_URL)"
+	railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)" "USDC_MINT=$(DEVNET_USDC_MINT)"
+	railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)" "VITE_RPC_URL=$(DEVNET_URL)"
+	railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)" "VITE_USDC_MINT=$(DEVNET_USDC_MINT)"
+	railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)" "VITE_DEV_WALLET=$(VITE_DEV_WALLET)"
+	railway variable set -s "$(RAILWAY_BOTS_SERVICE)" "ANCHOR_PROVIDER_URL=$(DEVNET_URL)"
+	railway variable set -s "$(RAILWAY_BOTS_SERVICE)" "USDC_MINT=$(DEVNET_USDC_MINT)"
+
+railway-deploy-frontend: railway-env-check
+	railway up app --path-as-root -s "$(RAILWAY_FRONTEND_SERVICE)" -d
+
+railway-deploy-bots: railway-env-check
+	railway up -s "$(RAILWAY_BOTS_SERVICE)" -d
+
+railway-deploy: railway-env-check railway-deploy-frontend railway-deploy-bots
+
+railway-release: railway-sync railway-deploy
+
+devnet-deploy: wallets devnet-env-check
 	@echo "Admin pubkey: $(ADMIN_PUBKEY)"
 	@$(MAKE) build
 	anchor deploy --provider.cluster devnet --provider.wallet "$(ADMIN_WALLET)" --no-idl
 
 # Devnet should be static. Reuse the configured mint instead of silently creating
 # a new one each run.
-devnet-setup: wallets
+devnet-setup: wallets devnet-env-check
 	@echo "Setting up devnet markets with static USDC mint $(DEVNET_USDC_MINT)..."
 	$(DEVNET_TS_ENV) $(TSX) scripts/setup-devnet.ts
 
-devnet-health: wallets
+devnet-health: wallets devnet-env-check
 	$(DEVNET_READONLY_ENV) $(TSX) scripts/health-check.ts
 
-devnet-settle: wallets
+devnet-settle: wallets devnet-env-check
 	@echo "Running settlement job against devnet..."
 	cd automation && $(DEVNET_AUTOMATION_ENV) $(TSX) src/index.ts --settle
 
-devnet-morning: wallets
+devnet-morning: wallets devnet-env-check
 	@echo "Running morning job against devnet..."
 	cd automation && $(DEVNET_AUTOMATION_ENV) $(TSX) src/index.ts --now
 
-devnet-reset: wallets devnet-settle devnet-morning
+devnet-reset: wallets devnet-env-check devnet-settle devnet-morning
 	@echo "Seeding devnet order books..."
-	$(DEVNET_READONLY_ENV) $(TSX) scripts/seed-bots.ts
+	$(DEVNET_TS_ENV) $(TSX) scripts/seed-bots.ts
 
 wallet-pubkeys: wallets
 	@echo "Admin: $$(solana-keygen pubkey $(ADMIN_WALLET))"

@@ -1,6 +1,7 @@
 gm.local.md
 .claude/
 .env
+config/devnet.env
 frontend/.env.local
 
 # TypeScript build artifacts (tsc -b emits in-place without outDir)

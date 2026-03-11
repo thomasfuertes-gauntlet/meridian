@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 import {
   createMint,
   createAssociatedTokenAccount,
+  createTransferInstruction,
   mintTo,
   getAccount,
   getMint,
@@ -646,6 +647,19 @@ describe("meridian", () => {
     } else {
       await tx.rpc();
     }
+  }
+
+  async function transferTokens(
+    source: PublicKey,
+    destination: PublicKey,
+    owner: PublicKey,
+    amount: number,
+    signers?: Keypair[]
+  ) {
+    const tx = new anchor.web3.Transaction().add(
+      createTransferInstruction(source, destination, owner, amount)
+    );
+    await provider.sendAndConfirm(tx, signers ?? []);
   }
 
   async function getCurrentUnixTimestamp(): Promise<number> {
@@ -2228,6 +2242,8 @@ describe("meridian", () => {
     const connection = provider.connection;
     let userB: Keypair;
     let userBUsdc: PublicKey;
+    let userC: Keypair;
+    let userCUsdc: PublicKey;
     let settlementIdx = 1960000000;
 
     function nextSettlementDate() {
@@ -2235,9 +2251,14 @@ describe("meridian", () => {
     }
 
     before(async () => {
-      const funded = await createFundedUser(20_000_000);
-      userB = funded.user;
-      userBUsdc = funded.userUsdc;
+      const [fundedB, fundedC] = await Promise.all([
+        createFundedUser(20_000_000),
+        createFundedUser(20_000_000),
+      ]);
+      userB = fundedB.user;
+      userBUsdc = fundedB.userUsdc;
+      userC = fundedC.user;
+      userCUsdc = fundedC.userUsdc;
     });
 
     it("pays only the winning side across two users and drains the vault after all claims", async () => {
@@ -2278,6 +2299,57 @@ describe("meridian", () => {
       expect(adminNoAfter).to.equal(0);
       expect(userBYesAfter).to.equal(0);
       expect(userBNoAfter).to.equal(0);
+    });
+
+    it("drains the vault after redeeming winners and losers held across opposite-side wallets", async () => {
+      const pdas = await createMarket("MSPL", new anchor.BN(281_000_000), nextSettlementDate());
+      const { userYes: adminYes, userNo: adminNo } = await mintPairForAdmin(pdas, 5);
+      const userBYes = await createAssociatedTokenAccount(
+        connection,
+        userB,
+        pdas.yesMintPda,
+        userB.publicKey
+      );
+      const userCNo = await createAssociatedTokenAccount(
+        connection,
+        userC,
+        pdas.noMintPda,
+        userC.publicKey
+      );
+
+      await transferTokens(adminYes, userBYes, admin.publicKey, 2);
+      await transferTokens(adminNo, userCNo, admin.publicKey, 3);
+
+      const adminUsdcBefore = await tokenAmount(adminUsdcAta);
+      const userBUsdcBefore = await tokenAmount(userBUsdc);
+      const userCUsdcBefore = await tokenAmount(userCUsdc);
+
+      await adminSettleMarket(pdas, new anchor.BN(300_000_000));
+
+      await redeemForUser(pdas, admin.publicKey, adminUsdcAta, pdas.yesMintPda, adminYes, 3);
+      await redeemForUser(pdas, userB.publicKey, userBUsdc, pdas.yesMintPda, userBYes, 2, [userB]);
+      await redeemForUser(pdas, admin.publicKey, adminUsdcAta, pdas.noMintPda, adminNo, 2);
+      await redeemForUser(pdas, userC.publicKey, userCUsdc, pdas.noMintPda, userCNo, 3, [userC]);
+
+      const adminUsdcAfter = await tokenAmount(adminUsdcAta);
+      const userBUsdcAfter = await tokenAmount(userBUsdc);
+      const userCUsdcAfter = await tokenAmount(userCUsdc);
+      const vaultAfter = await tokenAmount(pdas.vaultPda);
+      const market = await program.account.strikeMarket.fetch(pdas.marketPda);
+      const adminYesAfter = await tokenAmount(adminYes);
+      const adminNoAfter = await tokenAmount(adminNo);
+      const userBYesAfter = await tokenAmount(userBYes);
+      const userCNoAfter = await tokenAmount(userCNo);
+
+      expectIncrease(adminUsdcBefore, adminUsdcAfter, 3_000_000);
+      expectIncrease(userBUsdcBefore, userBUsdcAfter, 2_000_000);
+      expect(userCUsdcAfter).to.equal(userCUsdcBefore);
+      expect(vaultAfter).to.equal(0);
+      expect(market.totalPairsMinted.toNumber()).to.equal(0);
+      expect(adminYesAfter).to.equal(0);
+      expect(adminNoAfter).to.equal(0);
+      expect(userBYesAfter).to.equal(0);
+      expect(userCNoAfter).to.equal(0);
     });
   });
 

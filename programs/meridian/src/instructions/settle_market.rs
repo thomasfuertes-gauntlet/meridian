@@ -2,14 +2,18 @@ use anchor_lang::prelude::*;
 use pyth_solana_receiver_sdk::price_update::{Price, PriceUpdateV2, VerificationLevel};
 
 use crate::errors::MeridianError;
-use crate::state::{MarketOutcome, StrikeMarket};
-
-const SETTLEMENT_WINDOW_SECS: i64 = 300;
+use crate::state::{GlobalConfig, MarketOutcome, MarketStatus, StrikeMarket};
 
 #[derive(Accounts)]
 pub struct SettleMarket<'info> {
     #[account(mut)]
     pub settler: Signer<'info>,
+
+    #[account(
+        seeds = [GlobalConfig::SEED],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, GlobalConfig>,
 
     #[account(
         mut,
@@ -28,10 +32,7 @@ pub struct SettleMarket<'info> {
 
 pub fn handler(ctx: Context<SettleMarket>) -> Result<()> {
     let market = &ctx.accounts.market;
-    require!(
-        market.outcome == MarketOutcome::Pending,
-        MeridianError::MarketAlreadySettled
-    );
+    require!(!market.is_settled(), MeridianError::MarketAlreadySettled);
 
     let clock = Clock::get()?;
     require!(
@@ -51,12 +52,17 @@ pub fn handler(ctx: Context<SettleMarket>) -> Result<()> {
         ctx.accounts.price_update.verification_level,
         market.close_time,
         clock.unix_timestamp,
+        ctx.accounts.config.max_price_staleness_secs,
     )?;
 
-    // Confidence check: conf must be < 1% of price
+    // Confidence check: conf must be <= configured basis points of price.
     let price_abs = price.price.unsigned_abs();
+    let conf_limit = price_abs
+        .checked_mul(u64::from(ctx.accounts.config.default_conf_filter_bps))
+        .ok_or(MeridianError::InvalidOraclePrice)?
+        / 10_000;
     require!(
-        price.conf.checked_mul(100).unwrap_or(u64::MAX) <= price_abs,
+        conf_limit > 0 && price.conf <= conf_limit,
         MeridianError::PriceConfidenceTooWide
     );
 
@@ -73,6 +79,15 @@ pub fn handler(ctx: Context<SettleMarket>) -> Result<()> {
     };
 
     let market = &mut ctx.accounts.market;
+    if market.status == MarketStatus::Created {
+        market.status = MarketStatus::Frozen;
+        market.frozen_at = Some(clock.unix_timestamp);
+    }
+    require!(
+        market.status == MarketStatus::Frozen,
+        MeridianError::InvalidMarketState
+    );
+    market.status = MarketStatus::Settled;
     market.outcome = outcome;
     market.settled_at = Some(clock.unix_timestamp);
 
@@ -84,6 +99,7 @@ fn validate_price_for_settlement(
     verification_level: VerificationLevel,
     close_time: i64,
     now: i64,
+    max_price_staleness_secs: i64,
 ) -> Result<()> {
     require!(
         verification_level == VerificationLevel::Full,
@@ -92,7 +108,7 @@ fn validate_price_for_settlement(
     require!(price.price > 0, MeridianError::InvalidOraclePrice);
     require!(
         price.publish_time >= close_time
-            && price.publish_time <= close_time + SETTLEMENT_WINDOW_SECS
+            && price.publish_time <= close_time + max_price_staleness_secs
             && price.publish_time <= now,
         MeridianError::InvalidSettlementWindow
     );
@@ -133,6 +149,7 @@ mod tests {
             VerificationLevel::Partial { num_signatures: 5 },
             900,
             1_000,
+            300,
         )
         .unwrap_err();
 
@@ -146,6 +163,7 @@ mod tests {
             VerificationLevel::Full,
             900,
             1_000,
+            300,
         )
         .unwrap_err();
 
@@ -159,6 +177,7 @@ mod tests {
             VerificationLevel::Full,
             900,
             1_206,
+            300,
         )
         .unwrap_err();
 
@@ -172,6 +191,7 @@ mod tests {
             VerificationLevel::Full,
             900,
             999,
+            300,
         )
         .unwrap_err();
 

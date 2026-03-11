@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 use crate::errors::MeridianError;
-use crate::state::{MarketOutcome, Order, OrderBook, StrikeMarket};
+use crate::state::{Order, OrderBook, StrikeMarket};
 
 #[derive(Accounts)]
 pub struct CancelOrder<'info> {
@@ -95,7 +95,7 @@ pub fn handler(ctx: Context<CancelOrder>, order_id: u64) -> Result<()> {
         };
 
         // Authorization: pending market requires owner == signer
-        if ctx.accounts.market.outcome == MarketOutcome::Pending {
+        if !ctx.accounts.market.is_settled() {
             require!(
                 order.owner == ctx.accounts.user.key(),
                 MeridianError::NotOrderOwner

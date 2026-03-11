@@ -26,7 +26,14 @@ pub mod meridian {
         close_time: i64,
         pyth_feed_id: [u8; 32],
     ) -> Result<()> {
-        instructions::create_strike_market::handler(ctx, ticker, strike_price, date, close_time, pyth_feed_id)
+        instructions::create_strike_market::handler(
+            ctx,
+            ticker,
+            strike_price,
+            date,
+            close_time,
+            pyth_feed_id,
+        )
     }
 
     pub fn mint_pair(ctx: Context<MintPair>, amount: u64) -> Result<()> {
@@ -61,7 +68,12 @@ pub mod meridian {
         instructions::initialize_order_book::handler(ctx)
     }
 
-    pub fn place_order<'info>(ctx: Context<'_, '_, 'info, 'info, PlaceOrder<'info>>, side: OrderSide, price: u64, quantity: u64) -> Result<()> {
+    pub fn place_order<'info>(
+        ctx: Context<'_, '_, 'info, 'info, PlaceOrder<'info>>,
+        side: OrderSide,
+        price: u64,
+        quantity: u64,
+    ) -> Result<()> {
         instructions::place_order::handler(ctx, side, price, quantity)
     }
 

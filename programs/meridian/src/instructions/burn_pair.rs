@@ -120,10 +120,7 @@ pub fn handler(ctx: Context<BurnPair>, amount: u64) -> Result<()> {
 
     // Reload vault and assert invariant
     ctx.accounts.vault.reload()?;
-    let expected_vault = market
-        .total_pairs_minted
-        .checked_mul(USDC_PER_PAIR)
-        .unwrap();
+    let expected_vault = market.expected_vault_amount(USDC_PER_PAIR)?;
     require!(
         ctx.accounts.vault.amount == expected_vault,
         MeridianError::VaultInvariantViolation

@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
 use crate::errors::MeridianError;
-use crate::state::{GlobalConfig, MarketOutcome, StrikeMarket};
+use crate::state::{GlobalConfig, MarketOutcome, MarketStatus, StrikeMarket};
 
 #[derive(Accounts)]
 pub struct AdminSettle<'info> {
@@ -30,15 +30,12 @@ pub struct AdminSettle<'info> {
 
 pub fn handler(ctx: Context<AdminSettle>, price: u64) -> Result<()> {
     let market = &ctx.accounts.market;
-    require!(
-        market.outcome == MarketOutcome::Pending,
-        MeridianError::MarketAlreadySettled
-    );
+    require!(!market.is_settled(), MeridianError::MarketAlreadySettled);
 
     let clock = Clock::get()?;
-    // Admin settle requires 1 hour after close_time
+    // Admin settle is the fallback path and requires a configured delay.
     require!(
-        clock.unix_timestamp >= market.close_time + 3600,
+        clock.unix_timestamp >= market.close_time + ctx.accounts.config.admin_settle_delay_secs,
         MeridianError::AdminSettleTooEarly
     );
 
@@ -49,6 +46,15 @@ pub fn handler(ctx: Context<AdminSettle>, price: u64) -> Result<()> {
     };
 
     let market = &mut ctx.accounts.market;
+    if market.status == MarketStatus::Created {
+        market.status = MarketStatus::Frozen;
+        market.frozen_at = Some(clock.unix_timestamp);
+    }
+    require!(
+        market.status == MarketStatus::Frozen,
+        MeridianError::InvalidMarketState
+    );
+    market.status = MarketStatus::Settled;
     market.outcome = outcome;
     market.settled_at = Some(clock.unix_timestamp);
 

@@ -50,7 +50,7 @@ pub struct Redeem<'info> {
 
 pub fn handler(ctx: Context<Redeem>, amount: u64) -> Result<()> {
     require!(
-        ctx.accounts.market.outcome != MarketOutcome::Pending,
+        ctx.accounts.market.is_settled(),
         MeridianError::MarketNotSettled
     );
     require!(amount > 0, MeridianError::InvalidAmount);
@@ -102,6 +102,13 @@ pub fn handler(ctx: Context<Redeem>, amount: u64) -> Result<()> {
 
         let market = &mut ctx.accounts.market;
         market.total_pairs_minted = market.total_pairs_minted.checked_sub(amount).unwrap();
+
+        ctx.accounts.vault.reload()?;
+        let expected_vault = market.expected_vault_amount(USDC_PER_PAIR)?;
+        require!(
+            ctx.accounts.vault.amount == expected_vault,
+            MeridianError::VaultInvariantViolation
+        );
     }
 
     Ok(())

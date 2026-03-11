@@ -1,7 +1,7 @@
+use crate::errors::MeridianError;
+use crate::state::{GlobalConfig, OrderBook, StrikeMarket};
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
-use crate::state::{GlobalConfig, StrikeMarket, OrderBook, MarketOutcome};
-use crate::errors::MeridianError;
 
 #[derive(Accounts)]
 pub struct InitializeOrderBook<'info> {
@@ -23,7 +23,7 @@ pub struct InitializeOrderBook<'info> {
             &market.date.to_le_bytes(),
         ],
         bump = market.bump,
-        constraint = market.outcome == MarketOutcome::Pending @ MeridianError::MarketAlreadySettled,
+        constraint = market.is_trading_active() @ MeridianError::InvalidMarketState,
     )]
     pub market: Account<'info, StrikeMarket>,
 

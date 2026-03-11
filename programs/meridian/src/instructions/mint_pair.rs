@@ -5,7 +5,7 @@ use anchor_spl::{
 };
 
 use crate::errors::MeridianError;
-use crate::state::{GlobalConfig, MarketOutcome, StrikeMarket, USDC_PER_PAIR};
+use crate::state::{GlobalConfig, StrikeMarket, USDC_PER_PAIR};
 
 #[derive(Accounts)]
 pub struct MintPair<'info> {
@@ -79,8 +79,12 @@ pub fn handler(ctx: Context<MintPair>, amount: u64) -> Result<()> {
     require!(amount > 0, MeridianError::InvalidAmount);
     require!(!ctx.accounts.config.paused, MeridianError::Paused);
     require!(
-        ctx.accounts.market.outcome == MarketOutcome::Pending,
+        !ctx.accounts.market.is_settled(),
         MeridianError::MarketAlreadySettled
+    );
+    require!(
+        ctx.accounts.market.is_trading_active(),
+        MeridianError::MarketFrozen
     );
 
     let market = &ctx.accounts.market;
@@ -140,10 +144,7 @@ pub fn handler(ctx: Context<MintPair>, amount: u64) -> Result<()> {
 
     // Reload vault and assert invariant
     ctx.accounts.vault.reload()?;
-    let expected_vault = market
-        .total_pairs_minted
-        .checked_mul(USDC_PER_PAIR)
-        .unwrap();
+    let expected_vault = market.expected_vault_amount(USDC_PER_PAIR)?;
     require!(
         ctx.accounts.vault.amount == expected_vault,
         MeridianError::VaultInvariantViolation

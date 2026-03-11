@@ -12,14 +12,22 @@ pub enum MeridianError {
     Paused,
     #[msg("Invalid ticker")]
     InvalidTicker,
+    #[msg("Unsupported ticker for this deployment")]
+    UnsupportedTicker,
     #[msg("Invalid amount: must be greater than zero")]
     InvalidAmount,
+    #[msg("Invalid close time for market")]
+    InvalidCloseTime,
     #[msg("Vault invariant violation: balance mismatch")]
     VaultInvariantViolation,
     #[msg("Invalid token mint: not a market mint")]
     InvalidTokenMint,
     #[msg("Invalid outcome: cannot settle as Pending")]
     InvalidOutcome,
+    #[msg("Invalid market state for this instruction")]
+    InvalidMarketState,
+    #[msg("Market trading is frozen")]
+    MarketFrozen,
     #[msg("Settlement too early: market not closed yet")]
     SettlementTooEarly,
     #[msg("Admin settle too early: must wait 1 hour after close")]

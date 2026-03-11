@@ -29,16 +29,16 @@ pub const MAX_ORDERS_PER_SIDE: usize = 32;
 //   = 32+32+32+8+2+2+1+3 + 2304 + 2304 = 4720
 #[account(zero_copy)]
 pub struct OrderBook {
-    pub market: Pubkey,        // 32, offset 0
-    pub ob_usdc_vault: Pubkey, // 32, offset 32
-    pub ob_yes_vault: Pubkey,  // 32, offset 64
-    pub next_order_id: u64,    // 8,  offset 96
-    pub bid_count: u16,        // 2,  offset 104
-    pub ask_count: u16,        // 2,  offset 106
-    pub bump: u8,              // 1,  offset 108
-    pub _padding: [u8; 3],     // 3,  offset 109 -> 112 (8-byte aligned for bids)
-    pub bids: [Order; MAX_ORDERS_PER_SIDE],  // 72 * 32 = 2304, offset 112
-    pub asks: [Order; MAX_ORDERS_PER_SIDE],  // 72 * 32 = 2304, offset 2416
+    pub market: Pubkey,                     // 32, offset 0
+    pub ob_usdc_vault: Pubkey,              // 32, offset 32
+    pub ob_yes_vault: Pubkey,               // 32, offset 64
+    pub next_order_id: u64,                 // 8,  offset 96
+    pub bid_count: u16,                     // 2,  offset 104
+    pub ask_count: u16,                     // 2,  offset 106
+    pub bump: u8,                           // 1,  offset 108
+    pub _padding: [u8; 3],                  // 3,  offset 109 -> 112 (8-byte aligned for bids)
+    pub bids: [Order; MAX_ORDERS_PER_SIDE], // 72 * 32 = 2304, offset 112
+    pub asks: [Order; MAX_ORDERS_PER_SIDE], // 72 * 32 = 2304, offset 2416
 }
 
 impl OrderBook {

@@ -2,7 +2,9 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 
 use crate::errors::MeridianError;
-use crate::state::{GlobalConfig, MarketOutcome, StrikeMarket};
+use crate::state::{GlobalConfig, MarketOutcome, MarketStatus, StrikeMarket};
+
+const SUPPORTED_TICKERS: [&str; 7] = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"];
 
 #[derive(Accounts)]
 #[instruction(ticker: String, strike_price: u64, date: i64)]
@@ -80,11 +82,18 @@ pub fn handler(
         !ticker.is_empty() && ticker.len() <= StrikeMarket::MAX_TICKER_LEN,
         MeridianError::InvalidTicker
     );
+    require!(
+        SUPPORTED_TICKERS.contains(&ticker.as_str()),
+        MeridianError::UnsupportedTicker
+    );
+    require!(strike_price > 0, MeridianError::InvalidAmount);
+    require!(close_time > date, MeridianError::InvalidCloseTime);
 
     let market = &mut ctx.accounts.market;
     market.ticker = ticker;
     market.strike_price = strike_price;
     market.date = date;
+    market.status = MarketStatus::Created;
     market.outcome = MarketOutcome::Pending;
     market.total_pairs_minted = 0;
     market.yes_mint = ctx.accounts.yes_mint.key();
@@ -93,6 +102,7 @@ pub fn handler(
     market.usdc_mint = ctx.accounts.usdc_mint.key();
     market.admin = ctx.accounts.admin.key();
     market.bump = ctx.bumps.market;
+    market.frozen_at = None;
     market.settled_at = None;
     market.close_time = close_time;
     market.pyth_feed_id = pyth_feed_id;

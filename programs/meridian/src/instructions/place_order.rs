@@ -1,10 +1,9 @@
-use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 use crate::errors::MeridianError;
 use crate::state::{
-    GlobalConfig, StrikeMarket, OrderBook, OrderSide, Order, MarketOutcome,
-    MAX_ORDERS_PER_SIDE, USDC_PER_PAIR,
+    GlobalConfig, Order, OrderBook, OrderSide, StrikeMarket, MAX_ORDERS_PER_SIDE, USDC_PER_PAIR,
 };
+use anchor_lang::prelude::*;
+use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 #[derive(Accounts)]
 pub struct PlaceOrder<'info> {
@@ -88,15 +87,24 @@ pub fn handler<'info>(
     // --- Validation ---
     require!(!ctx.accounts.config.paused, MeridianError::Paused);
     require!(
-        ctx.accounts.market.outcome == MarketOutcome::Pending,
+        !ctx.accounts.market.is_settled(),
         MeridianError::MarketAlreadySettled
     );
-    require!(price > 0 && price < USDC_PER_PAIR, MeridianError::InvalidPrice);
+    require!(
+        ctx.accounts.market.is_trading_active(),
+        MeridianError::MarketFrozen
+    );
+    require!(
+        price > 0 && price < USDC_PER_PAIR,
+        MeridianError::InvalidPrice
+    );
     require!(quantity > 0, MeridianError::InvalidAmount);
 
     // --- Escrow incoming tokens (before any AccountLoader borrow) ---
     let escrow_amount = match side {
-        OrderSide::Bid => quantity.checked_mul(price).ok_or(MeridianError::InvalidAmount)?,
+        OrderSide::Bid => quantity
+            .checked_mul(price)
+            .ok_or(MeridianError::InvalidAmount)?,
         OrderSide::Ask => quantity,
     };
 
@@ -135,8 +143,14 @@ pub fn handler<'info>(
 
         // Validate order_book belongs to this market
         require!(ob.market == market_key, MeridianError::Unauthorized);
-        require!(ob.ob_usdc_vault == ctx.accounts.ob_usdc_vault.key(), MeridianError::VaultInvariantViolation);
-        require!(ob.ob_yes_vault == ctx.accounts.ob_yes_vault.key(), MeridianError::VaultInvariantViolation);
+        require!(
+            ob.ob_usdc_vault == ctx.accounts.ob_usdc_vault.key(),
+            MeridianError::VaultInvariantViolation
+        );
+        require!(
+            ob.ob_yes_vault == ctx.accounts.ob_yes_vault.key(),
+            MeridianError::VaultInvariantViolation
+        );
 
         let mut fills: Vec<Fill> = Vec::new();
         let mut rem_qty = quantity;
@@ -147,14 +161,24 @@ pub fn handler<'info>(
             OrderSide::Bid => {
                 let ask_count = ob.ask_count as usize;
                 for i in 0..ask_count {
-                    if rem_qty == 0 { break; }
-                    if ob.asks[i].is_active == 0 { continue; }
+                    if rem_qty == 0 {
+                        break;
+                    }
+                    if ob.asks[i].is_active == 0 {
+                        continue;
+                    }
                     let ask_price = ob.asks[i].price;
-                    if ask_price > price { break; }
+                    if ask_price > price {
+                        break;
+                    }
 
                     let fill_qty = rem_qty.min(ob.asks[i].quantity);
-                    let fill_cost = fill_qty.checked_mul(ask_price).ok_or(MeridianError::InvalidAmount)?;
-                    total_cost = total_cost.checked_add(fill_cost).ok_or(MeridianError::InvalidAmount)?;
+                    let fill_cost = fill_qty
+                        .checked_mul(ask_price)
+                        .ok_or(MeridianError::InvalidAmount)?;
+                    total_cost = total_cost
+                        .checked_add(fill_cost)
+                        .ok_or(MeridianError::InvalidAmount)?;
 
                     fills.push(Fill {
                         book_index: i,
@@ -164,19 +188,29 @@ pub fn handler<'info>(
                         counterparty_owner: ob.asks[i].owner,
                     });
                     ra_idx += 1;
-                    rem_qty = rem_qty.checked_sub(fill_qty).ok_or(MeridianError::InvalidAmount)?;
+                    rem_qty = rem_qty
+                        .checked_sub(fill_qty)
+                        .ok_or(MeridianError::InvalidAmount)?;
                 }
             }
             OrderSide::Ask => {
                 let bid_count = ob.bid_count as usize;
                 for i in 0..bid_count {
-                    if rem_qty == 0 { break; }
-                    if ob.bids[i].is_active == 0 { continue; }
+                    if rem_qty == 0 {
+                        break;
+                    }
+                    if ob.bids[i].is_active == 0 {
+                        continue;
+                    }
                     let bid_price = ob.bids[i].price;
-                    if bid_price < price { break; }
+                    if bid_price < price {
+                        break;
+                    }
 
                     let fill_qty = rem_qty.min(ob.bids[i].quantity);
-                    let fill_cost = fill_qty.checked_mul(bid_price).ok_or(MeridianError::InvalidAmount)?;
+                    let fill_cost = fill_qty
+                        .checked_mul(bid_price)
+                        .ok_or(MeridianError::InvalidAmount)?;
 
                     fills.push(Fill {
                         book_index: i,
@@ -186,7 +220,9 @@ pub fn handler<'info>(
                         counterparty_owner: ob.bids[i].owner,
                     });
                     ra_idx += 1;
-                    rem_qty = rem_qty.checked_sub(fill_qty).ok_or(MeridianError::InvalidAmount)?;
+                    rem_qty = rem_qty
+                        .checked_sub(fill_qty)
+                        .ok_or(MeridianError::InvalidAmount)?;
                 }
             }
         }
@@ -294,7 +330,9 @@ pub fn handler<'info>(
             .checked_sub(total_fill_cost)
             .ok_or(MeridianError::InvalidAmount)?
             .checked_sub(
-                remaining_qty.checked_mul(price).ok_or(MeridianError::InvalidAmount)?,
+                remaining_qty
+                    .checked_mul(price)
+                    .ok_or(MeridianError::InvalidAmount)?,
             )
             .ok_or(MeridianError::InvalidAmount)?;
 
@@ -339,10 +377,15 @@ pub fn handler<'info>(
                 // Rest remaining quantity as a new bid
                 if remaining_qty > 0 {
                     let bid_count = ob.bid_count as usize;
-                    require!(bid_count < MAX_ORDERS_PER_SIDE, MeridianError::OrderBookFull);
+                    require!(
+                        bid_count < MAX_ORDERS_PER_SIDE,
+                        MeridianError::OrderBookFull
+                    );
 
                     let order_id = ob.next_order_id;
-                    ob.next_order_id = order_id.checked_add(1).ok_or(MeridianError::InvalidAmount)?;
+                    ob.next_order_id = order_id
+                        .checked_add(1)
+                        .ok_or(MeridianError::InvalidAmount)?;
 
                     let insert_pos = find_bid_insert_pos(&ob.bids, bid_count, price, order_id);
                     for j in (insert_pos..bid_count).rev() {
@@ -380,10 +423,15 @@ pub fn handler<'info>(
                 // Rest remaining quantity as a new ask
                 if remaining_qty > 0 {
                     let ask_count = ob.ask_count as usize;
-                    require!(ask_count < MAX_ORDERS_PER_SIDE, MeridianError::OrderBookFull);
+                    require!(
+                        ask_count < MAX_ORDERS_PER_SIDE,
+                        MeridianError::OrderBookFull
+                    );
 
                     let order_id = ob.next_order_id;
-                    ob.next_order_id = order_id.checked_add(1).ok_or(MeridianError::InvalidAmount)?;
+                    ob.next_order_id = order_id
+                        .checked_add(1)
+                        .ok_or(MeridianError::InvalidAmount)?;
 
                     let insert_pos = find_ask_insert_pos(&ob.asks, ask_count, price, order_id);
                     for j in (insert_pos..ask_count).rev() {

@@ -34,17 +34,6 @@ function NavLink({ to, label }: { to: string; label: string }) {
   );
 }
 
-function Chip({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
-      <span className="text-[10px] uppercase tracking-[0.22em] text-stone-500">
-        {label}
-      </span>{" "}
-      <span className="text-xs text-stone-200">{value}</span>
-    </div>
-  );
-}
-
 export default function App() {
   const useDevWallet =
     IS_LOCAL_RPC || import.meta.env.VITE_DEV_WALLET === "true";

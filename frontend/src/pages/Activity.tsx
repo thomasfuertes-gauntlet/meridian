@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useAnchorWallet } from "@solana/wallet-adapter-react";
 import { Link } from "react-router-dom";
+import { DeskSelector } from "../components/DeskSelector";
 import {
   formatActivityNotional,
   formatActivityPrice,
@@ -9,6 +10,7 @@ import {
 } from "../lib/activity";
 import { compact, formatContracts, formatTimestamp, formatUsdcBaseUnits, money } from "../lib/format";
 import type { Ticker } from "../lib/constants";
+import { deskLabelForPubkey, getDeskWallets } from "../lib/dev-wallets";
 
 function shortKey(value: string | null): string {
   if (!value) return "--";
@@ -25,15 +27,20 @@ export function Activity() {
   const wallet = useAnchorWallet();
   const { data, loading, error } = useActivityFeed(120);
   const [tickerFilter, setTickerFilter] = useState<Ticker | "all">("all");
-  const [walletOnly, setWalletOnly] = useState(false);
+  const desks = useMemo(() => getDeskWallets(wallet?.publicKey), [wallet]);
+  const [deskFilter, setDeskFilter] = useState<string>("all");
+
+  const selectedDesk = deskFilter === "all"
+    ? null
+    : desks.find((entry) => entry.id === deskFilter) ?? null;
 
   const filtered = useMemo(() => {
     return data.filter((item) => {
       if (tickerFilter !== "all" && item.ticker !== tickerFilter) return false;
-      if (walletOnly && wallet?.publicKey && item.user !== wallet.publicKey.toBase58()) return false;
+      if (selectedDesk && item.user !== selectedDesk.publicKey.toBase58()) return false;
       return true;
     });
-  }, [data, tickerFilter, walletOnly, wallet]);
+  }, [data, selectedDesk, tickerFilter]);
 
   const stats = useMemo(() => {
     return filtered.reduce(
@@ -56,7 +63,7 @@ export function Activity() {
             <div className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">History</div>
             <h1 className="mt-2 font-display text-4xl text-white">Activity tape</h1>
             <p className="mt-3 max-w-3xl text-sm leading-7 text-zinc-400">
-              Confirmed Meridian transactions decoded from on-chain instructions. Filter by ticker for the market tape or narrow to your connected wallet for the account view.
+              Confirmed Meridian transactions decoded from on-chain instructions. Filter by ticker for the market tape or switch to any deterministic desk wallet for the account view.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-4">
@@ -108,16 +115,24 @@ export function Activity() {
             ))}
           </div>
 
-          <label className="inline-flex items-center gap-3 rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-white"
-              checked={walletOnly}
-              disabled={!wallet}
-              onChange={(event) => setWalletOnly(event.target.checked)}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setDeskFilter("all")}
+              className={`rounded-full px-4 py-2 text-sm transition ${
+                deskFilter === "all"
+                  ? "bg-white text-stone-950"
+                  : "border border-white/10 text-zinc-300 hover:border-white/25 hover:text-white"
+              }`}
+            >
+              All desks
+            </button>
+            <DeskSelector
+              desks={desks}
+              selectedDeskId={selectedDesk?.id ?? desks[0]?.id ?? "all"}
+              onChange={setDeskFilter}
+              label="Wallet"
             />
-            {wallet ? "My wallet only" : "Connect wallet for account view"}
-          </label>
+          </div>
         </div>
       </section>
 
@@ -179,7 +194,10 @@ export function Activity() {
                   <div className="mt-5 grid gap-4 text-sm text-zinc-300 sm:grid-cols-2 xl:grid-cols-6">
                     <div>
                       <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">User</div>
-                      <div className="mt-1 font-mono text-white">{shortKey(item.user)}</div>
+                      <div className="mt-1 text-white">
+                        {deskLabelForPubkey(item.user, desks) ?? shortKey(item.user)}
+                      </div>
+                      <div className="font-mono text-xs text-zinc-500">{shortKey(item.user)}</div>
                     </div>
                     <div>
                       <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Quantity</div>

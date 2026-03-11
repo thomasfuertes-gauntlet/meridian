@@ -5,6 +5,9 @@ import { useMarketUniverse } from "../lib/market-data";
 export function Markets() {
   const { data, error, loading, stats } = useMarketUniverse();
   const snapshots = data?.tickerSnapshots ?? [];
+  const updatedLabel = data?.asOf
+    ? new Date(data.asOf).toLocaleTimeString()
+    : null;
 
   return (
     <div className="space-y-8">
@@ -33,7 +36,7 @@ export function Markets() {
             <h1 className="mt-2 font-display text-3xl text-white">MAG7 market surface</h1>
           </div>
           <div className="text-sm text-zinc-400">
-            {loading ? "Loading..." : `Updated ${new Date(data?.asOf ?? Date.now()).toLocaleTimeString()}`}
+            {loading ? "Loading..." : updatedLabel ? `Updated ${updatedLabel}` : "Awaiting first snapshot"}
           </div>
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">

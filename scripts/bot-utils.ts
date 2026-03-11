@@ -111,7 +111,7 @@ export async function discoverMarkets(program: Program<Meridian>): Promise<Marke
 export function loadUsdcMint(): PublicKey {
   let usdcMintStr = process.env.USDC_MINT;
   if (!usdcMintStr) {
-    const configPath = path.join(import.meta.dirname, "../app/src/lib/local-config.json");
+    const configPath = path.join(import.meta.dirname, "../frontend/src/lib/local-config.json");
     if (!fs.existsSync(configPath)) {
       console.error("USDC mint not found. Set USDC_MINT env var or run `make setup`.");
       process.exit(1);

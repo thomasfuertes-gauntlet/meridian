@@ -16,11 +16,16 @@ if (!mintAddress) {
   }
 }
 
+export function getConfiguredUsdcMint(): PublicKey | null {
+  return mintAddress ? new PublicKey(mintAddress) : null;
+}
+
 export function useUsdcMint(): PublicKey {
-  if (!mintAddress) {
+  const mint = getConfiguredUsdcMint();
+  if (!mint) {
     throw new Error(
       "USDC mint not configured. Run `make setup` or set VITE_USDC_MINT."
     );
   }
-  return new PublicKey(mintAddress);
+  return mint;
 }

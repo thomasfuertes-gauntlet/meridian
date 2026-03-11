@@ -37,10 +37,10 @@ const ACTION_LABELS: Record<TradeAction, string> = {
 };
 
 const ACTION_COLORS: Record<TradeAction, string> = {
-  buyYes: "bg-green-600 hover:bg-green-500",
-  buyNo: "bg-red-600 hover:bg-red-500",
-  sellYes: "bg-red-600 hover:bg-red-500",
-  sellNo: "bg-green-600 hover:bg-green-500",
+  buyYes: "bg-emerald-600 hover:bg-emerald-500",
+  buyNo: "bg-amber-600 hover:bg-amber-500",
+  sellYes: "bg-rose-600 hover:bg-rose-500",
+  sellNo: "bg-sky-600 hover:bg-sky-500",
 };
 
 export function TradePanel({
@@ -162,19 +162,26 @@ export function TradePanel({
   const strikeDollars = (strikePrice / USDC_PER_PAIR).toFixed(2);
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-      <h3 className="text-sm font-bold text-gray-300 mb-3">Trade</h3>
+    <div className="rounded-[1.75rem] border border-white/10 bg-stone-950/85 p-5">
+      <div className="mb-4">
+        <div className="text-[11px] uppercase tracking-[0.24em] text-stone-500">
+          Trade
+        </div>
+        <h3 className="mt-2 text-2xl font-semibold text-white">
+          Order entry
+        </h3>
+      </div>
 
       {/* Action selector */}
-      <div className="grid grid-cols-2 gap-2 mb-4">
+      <div className="mb-4 grid grid-cols-2 gap-2">
         {(Object.keys(ACTION_LABELS) as TradeAction[]).map((a) => (
           <button
             key={a}
             onClick={() => setAction(a)}
-            className={`text-sm py-1.5 rounded font-medium transition-colors ${
+            className={`rounded-xl py-2 text-sm font-medium transition-colors ${
               action === a
                 ? ACTION_COLORS[a] + " text-white"
-                : "bg-gray-800 text-gray-400 hover:text-gray-200"
+                : "bg-white/5 text-stone-400 hover:text-stone-100"
             }`}
           >
             {ACTION_LABELS[a]}
@@ -199,7 +206,7 @@ export function TradePanel({
               ? (effectivePrice / USDC_PER_PAIR).toFixed(2)
               : "0.50"
           }
-          className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+          className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
         />
       </div>
 
@@ -213,13 +220,13 @@ export function TradePanel({
           min="1"
           value={quantity}
           onChange={(e) => setQuantity(e.target.value)}
-          className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+          className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
         />
       </div>
 
       {/* Payoff display */}
       {effectivePrice != null && (
-        <div className="bg-gray-800/50 rounded p-3 mb-4 text-xs text-gray-400">
+        <div className="mb-4 rounded-2xl bg-white/5 p-3 text-xs text-stone-300">
           <p>
             You pay{" "}
             <span className="text-white">
@@ -239,7 +246,7 @@ export function TradePanel({
           {payoff != null && (
             <p>
               Max profit:{" "}
-              <span className="text-green-400">
+              <span className="text-emerald-300">
                 ${((payoff / USDC_PER_PAIR) * parseInt(quantity || "1")).toFixed(2)}
               </span>
             </p>
@@ -249,7 +256,7 @@ export function TradePanel({
 
       {/* Position constraint warning */}
       {conflict && (
-        <div className="bg-yellow-900/30 border border-yellow-700/50 rounded p-3 mb-4 text-xs text-yellow-400">
+        <div className="mb-4 rounded-2xl border border-amber-300/20 bg-amber-300/10 p-3 text-xs text-amber-100">
           {conflict}
         </div>
       )}
@@ -260,7 +267,7 @@ export function TradePanel({
         disabled={!wallet || effectivePrice == null || !!conflict}
         className={`w-full py-2.5 rounded font-medium text-sm transition-colors ${
           !wallet || !!conflict
-            ? "bg-gray-800 text-gray-500 cursor-not-allowed"
+            ? "cursor-not-allowed bg-white/5 text-stone-500"
             : ACTION_COLORS[action] + " text-white"
         }`}
       >
@@ -272,7 +279,7 @@ export function TradePanel({
       </button>
 
       {status && (
-        <p className="mt-2 text-xs text-gray-400 break-all">{status}</p>
+        <p className="mt-3 break-all text-xs text-stone-400">{status}</p>
       )}
     </div>
   );

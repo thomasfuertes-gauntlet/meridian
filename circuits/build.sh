@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 BUILD_DIR="build"
-OUTPUT_DIR="../app/public/zkp"
+OUTPUT_DIR="../frontend/public/zkp"
 
 mkdir -p "$BUILD_DIR" "$OUTPUT_DIR"
 
@@ -38,7 +38,7 @@ echo "meridian-dev-entropy" | npx snarkjs zkey contribute "$BUILD_DIR/brag_0.zke
 echo "Exporting verification key..."
 npx snarkjs zkey export verificationkey "$BUILD_DIR/brag.zkey" "$BUILD_DIR/vkey.json"
 
-# 6. Copy artifacts to app/public/zkp/
+# 6. Copy artifacts to frontend/public/zkp/
 echo "Copying artifacts to $OUTPUT_DIR..."
 cp "$BUILD_DIR/brag.zkey" "$OUTPUT_DIR/"
 cp -r "$BUILD_DIR/brag_js/" "$OUTPUT_DIR/brag_wasm/"

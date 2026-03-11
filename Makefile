@@ -14,7 +14,7 @@ export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.c
 ADMIN_WALLET := .wallets/admin.json
 BOT_A_WALLET := .wallets/bot-a.json
 BOT_B_WALLET := .wallets/bot-b.json
-APP_IDL_PATH := app/src/idl/meridian.json
+APP_IDL_PATH := frontend/src/idl/meridian.json
 
 LOCAL_STATE_DIR ?= .localnet
 LOCAL_RPC_URL ?= http://127.0.0.1:8899

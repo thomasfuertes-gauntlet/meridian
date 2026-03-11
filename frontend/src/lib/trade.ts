@@ -1,8 +1,15 @@
 import { type Program, type BN } from "@coral-xyz/anchor";
-import { type AccountMeta, PublicKey, Transaction } from "@solana/web3.js";
 import {
+  type AccountMeta,
+  PublicKey,
+  SystemProgram,
+  Transaction,
+} from "@solana/web3.js";
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
   getAssociatedTokenAddressSync,
   createAssociatedTokenAccountIdempotentInstruction,
+  TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import { PROGRAM_ID } from "./constants";
 import { type ParsedOrder } from "./orderbook";
@@ -92,7 +99,14 @@ export async function buildBuyYesTx(
 
   const tx = new Transaction();
 
-  // Ensure user has a Yes ATA (might not exist yet)
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      user,
+      userUsdcAta,
+      user,
+      usdcMint
+    )
+  );
   tx.add(
     createAssociatedTokenAccountIdempotentInstruction(
       user,
@@ -103,15 +117,19 @@ export async function buildBuyYesTx(
   );
 
   const ix = await program.methods
-    .placeOrder({ bid: {} }, price, quantity)
+    .buyYes(quantity, price)
     .accountsPartial({
       user,
       market,
-      orderBook,
       userUsdc: userUsdcAta,
+      yesMint,
       userYes: userYesAta,
+      orderBook,
       obUsdcVault,
       obYesVault,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
     })
     .remainingAccounts(remaining)
     .instruction();
@@ -148,16 +166,26 @@ export async function buildSellYesTx(
     )
   );
 
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      user,
+      userYesAta,
+      user,
+      yesMint
+    )
+  );
+
   const ix = await program.methods
-    .placeOrder({ ask: {} }, price, quantity)
+    .sellYes(quantity, price)
     .accountsPartial({
       user,
       market,
-      orderBook,
       userUsdc: userUsdcAta,
       userYes: userYesAta,
+      orderBook,
       obUsdcVault,
       obYesVault,
+      tokenProgram: TOKEN_PROGRAM_ID,
     })
     .remainingAccounts(remaining)
     .instruction();
@@ -217,35 +245,26 @@ export async function buildBuyNoTx(
 
   // Step 1: Mint pairs
   const mintIx = await program.methods
-    .mintPair(quantity)
+    .buyNo(quantity, price)
     .accountsPartial({
       user,
       market,
+      userUsdc: userUsdcAta,
+      vault,
       yesMint,
       noMint,
-      vault,
-      userUsdc: userUsdcAta,
       userYes: userYesAta,
       userNo: userNoAta,
-    })
-    .instruction();
-  tx.add(mintIx);
-
-  // Step 2: Sell the Yes tokens on the order book
-  const placeIx = await program.methods
-    .placeOrder({ ask: {} }, price, quantity)
-    .accountsPartial({
-      user,
-      market,
       orderBook,
-      userUsdc: userUsdcAta,
-      userYes: userYesAta,
       obUsdcVault,
       obYesVault,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
     })
     .remainingAccounts(remaining)
     .instruction();
-  tx.add(placeIx);
+  tx.add(mintIx);
 
   return tx;
 }
@@ -290,37 +309,50 @@ export async function buildSellNoTx(
     )
   );
 
-  // Step 1: Buy Yes tokens from the order book
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      user,
+      userUsdcAta,
+      user,
+      usdcMint
+    )
+  );
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      user,
+      userYesAta,
+      user,
+      yesMint
+    )
+  );
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      user,
+      userNoAta,
+      user,
+      noMint
+    )
+  );
+
   const placeIx = await program.methods
-    .placeOrder({ bid: {} }, price, quantity)
+    .sellNo(quantity, price)
     .accountsPartial({
       user,
       market,
-      orderBook,
       userUsdc: userUsdcAta,
+      vault,
+      yesMint,
+      noMint,
       userYes: userYesAta,
+      userNo: userNoAta,
+      orderBook,
       obUsdcVault,
       obYesVault,
+      tokenProgram: TOKEN_PROGRAM_ID,
     })
     .remainingAccounts(remaining)
     .instruction();
   tx.add(placeIx);
-
-  // Step 2: Burn Yes + No pair for $1.00 USDC
-  const burnIx = await program.methods
-    .burnPair(quantity)
-    .accountsPartial({
-      user,
-      market,
-      yesMint,
-      noMint,
-      vault,
-      userUsdc: userUsdcAta,
-      userYes: userYesAta,
-      userNo: userNoAta,
-    })
-    .instruction();
-  tx.add(burnIx);
 
   return tx;
 }

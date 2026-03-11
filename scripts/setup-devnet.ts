@@ -275,7 +275,7 @@ async function main() {
 
   // Write local-config.json for local testing against devnet
   const fs = await import("fs");
-  const configPath = `${import.meta.dirname}/../app/src/lib/local-config.json`;
+  const configPath = `${import.meta.dirname}/../frontend/src/lib/local-config.json`;
   fs.writeFileSync(
     configPath,
     JSON.stringify({ usdcMint: usdcMint.toString() }, null, 2)

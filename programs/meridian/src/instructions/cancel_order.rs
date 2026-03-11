@@ -55,6 +55,11 @@ enum FoundSide {
 }
 
 pub fn handler(ctx: Context<CancelOrder>, order_id: u64) -> Result<()> {
+    require!(
+        ctx.accounts.market.is_trading_active(),
+        MeridianError::MarketFrozen
+    );
+
     // Capture market key before mutable borrow of order_book
     let market_key = ctx.accounts.market.key();
 
@@ -94,13 +99,10 @@ pub fn handler(ctx: Context<CancelOrder>, order_id: u64) -> Result<()> {
             FoundSide::Ask => &ob.asks[idx],
         };
 
-        // Authorization: pending market requires owner == signer
-        if !ctx.accounts.market.is_settled() {
-            require!(
-                order.owner == ctx.accounts.user.key(),
-                MeridianError::NotOrderOwner
-            );
-        }
+        require!(
+            order.owner == ctx.accounts.user.key(),
+            MeridianError::NotOrderOwner
+        );
 
         // Validate refund destination belongs to the order owner (prevents fund theft)
         require_keys_eq!(ctx.accounts.refund_destination.owner, order.owner);

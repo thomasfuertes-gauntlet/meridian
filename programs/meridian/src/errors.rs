@@ -28,6 +28,8 @@ pub enum MeridianError {
     InvalidMarketState,
     #[msg("Market trading is frozen")]
     MarketFrozen,
+    #[msg("Market is not frozen")]
+    MarketNotFrozen,
     #[msg("Settlement too early: market not closed yet")]
     SettlementTooEarly,
     #[msg("Admin settle too early: must wait 1 hour after close")]

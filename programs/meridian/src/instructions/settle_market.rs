@@ -33,6 +33,10 @@ pub struct SettleMarket<'info> {
 pub fn handler(ctx: Context<SettleMarket>) -> Result<()> {
     let market = &ctx.accounts.market;
     require!(!market.is_settled(), MeridianError::MarketAlreadySettled);
+    require!(
+        market.status == MarketStatus::Frozen,
+        MeridianError::MarketNotFrozen
+    );
 
     let clock = Clock::get()?;
     require!(
@@ -79,14 +83,6 @@ pub fn handler(ctx: Context<SettleMarket>) -> Result<()> {
     };
 
     let market = &mut ctx.accounts.market;
-    if market.status == MarketStatus::Created {
-        market.status = MarketStatus::Frozen;
-        market.frozen_at = Some(clock.unix_timestamp);
-    }
-    require!(
-        market.status == MarketStatus::Frozen,
-        MeridianError::InvalidMarketState
-    );
     market.status = MarketStatus::Settled;
     market.outcome = outcome;
     market.settled_at = Some(clock.unix_timestamp);

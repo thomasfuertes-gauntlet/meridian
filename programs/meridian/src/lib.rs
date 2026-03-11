@@ -40,6 +40,10 @@ pub mod meridian {
         instructions::mint_pair::handler(ctx, amount)
     }
 
+    pub fn freeze_market(ctx: Context<FreezeMarket>) -> Result<()> {
+        instructions::freeze_market::handler(ctx)
+    }
+
     pub fn burn_pair(ctx: Context<BurnPair>, amount: u64) -> Result<()> {
         instructions::burn_pair::handler(ctx, amount)
     }

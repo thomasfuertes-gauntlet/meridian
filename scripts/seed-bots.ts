@@ -9,6 +9,7 @@
  * Uses deterministic bot-a wallet. Admin wallet mints USDC.
  */
 import * as anchor from "@coral-xyz/anchor";
+import BN from "bn.js";
 import { Program } from "@coral-xyz/anchor";
 import { Meridian } from "../target/types/meridian";
 import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
@@ -181,7 +182,7 @@ async function main() {
     const mintQty = Math.max(totalAskQty, 1);
     console.log(`  Minting ${mintQty} pairs...`);
     await program.methods
-      .mintPair(new anchor.BN(mintQty))
+      .mintPair(new BN(mintQty))
       .accountsPartial({
         user: bot.publicKey,
         market: marketPda,
@@ -201,7 +202,7 @@ async function main() {
     console.log("  Placing asks...");
     for (const [price, qty] of askLevels) {
       await program.methods
-        .placeOrder({ ask: {} }, new anchor.BN(price), new anchor.BN(qty))
+        .placeOrder({ ask: {} }, new BN(price), new BN(qty))
         .accountsPartial({
           user: bot.publicKey,
           market: marketPda,
@@ -221,7 +222,7 @@ async function main() {
     console.log("  Placing bids...");
     for (const [price, qty] of bidLevels) {
       await program.methods
-        .placeOrder({ bid: {} }, new anchor.BN(price), new anchor.BN(qty))
+        .placeOrder({ bid: {} }, new BN(price), new BN(qty))
         .accountsPartial({
           user: bot.publicKey,
           market: marketPda,

@@ -1,6 +1,8 @@
 gm.local.md
+scratchpad.local.md
 .claude/
 .env
+frontend/.env.local
 
 # TypeScript build artifacts (tsc -b emits in-place without outDir)
 tsconfig.tsbuildinfo

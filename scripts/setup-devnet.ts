@@ -14,6 +14,7 @@
  */
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
+import BN from "bn.js";
 import { Meridian } from "../target/types/meridian";
 import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import {
@@ -206,8 +207,8 @@ async function main() {
       closeET.setDate(closeET.getDate() + 1);
     }
   }
-  const closeTime = new anchor.BN(Math.floor(closeET.getTime() / 1000));
-  const today = new anchor.BN(Math.floor(Date.now() / 86400000));
+  const closeTime = new BN(Math.floor(closeET.getTime() / 1000));
+  const today = new BN(Math.floor(Date.now() / 86400000));
 
   console.log(`Close time: ${closeET.toISOString()} (Unix: ${closeTime.toString()})`);
 
@@ -222,7 +223,7 @@ async function main() {
 
     for (const strikeDollars of strikes) {
       const strike = strikeDollars * USDC_PER_PAIR;
-      const strikePrice = new anchor.BN(strike);
+      const strikePrice = new BN(strike);
       const [marketPda] = PublicKey.findProgramAddressSync(
         [
           Buffer.from("market"),
@@ -249,24 +250,7 @@ async function main() {
 
       await sleep(DEVNET_DELAY_MS);
 
-      // Initialize order book
-      const [yesMintPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("yes_mint"), marketPda.toBuffer()],
-        program.programId
-      );
-      await withRetry(
-        () => program.methods
-          .initializeOrderBook()
-          .accountsPartial({
-            admin: admin.publicKey,
-            market: marketPda,
-            yesMint: yesMintPda,
-            usdcMint,
-          })
-          .rpc(),
-        `initializeOrderBook ${ticker} > $${strikeDollars}`
-      );
-      console.log(`    Created: ${ticker} > $${strikeDollars} + order book`);
+      console.log(`    Created: ${ticker} > $${strikeDollars}`);
       totalMarkets++;
 
       await sleep(DEVNET_DELAY_MS);

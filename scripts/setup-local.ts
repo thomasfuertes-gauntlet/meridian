@@ -11,8 +11,9 @@
  */
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
+import BN from "bn.js";
 import { Meridian } from "../target/types/meridian";
-import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { PublicKey, LAMPORTS_PER_SOL, SystemProgram, Transaction } from "@solana/web3.js";
 import {
   createMint,
   createAssociatedTokenAccount,
@@ -36,9 +37,10 @@ function generateStrikes(refPrice: number): number[] {
 
 const USDC_DECIMALS = 6;
 const USDC_PER_PAIR = 1_000_000;
-// close_time = 0 so admin_settle works (0 + 3600 < any real clock)
-const pastCloseTime = new anchor.BN(0);
-const today = new anchor.BN(Math.floor(Date.now() / 86400000));
+// Use a recent past unix timestamp so admin_settle works immediately while
+// still satisfying close_time > date.
+const pastCloseTime = new BN(Math.floor(Date.now() / 1000) - 7200);
+const today = new BN(Math.floor(Date.now() / 86400000));
 
 async function accountExists(
   connection: anchor.web3.Connection,
@@ -46,6 +48,29 @@ async function accountExists(
 ): Promise<boolean> {
   const info = await connection.getAccountInfo(pubkey);
   return info !== null;
+}
+
+async function ensureSolBalance(
+  connection: anchor.web3.Connection,
+  payer: anchor.web3.Keypair,
+  recipient: PublicKey,
+  minimumLamports: number,
+  targetLamports: number
+): Promise<void> {
+  const balance = await connection.getBalance(recipient);
+  if (balance >= minimumLamports) return;
+
+  const lamports = Math.max(0, targetLamports - balance);
+  if (lamports === 0) return;
+
+  const tx = new Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey: payer.publicKey,
+      toPubkey: recipient,
+      lamports,
+    })
+  );
+  await anchor.web3.sendAndConfirmTransaction(connection, tx, [payer]);
 }
 
 async function main() {
@@ -62,30 +87,29 @@ async function main() {
   console.log("Program ID:", program.programId.toString());
   console.log("Admin:", admin.publicKey.toString());
 
-  // Fund admin keypair for mint operations (provider.wallet and adminKeypair are the same key,
-  // but the provider wallet is loaded from file by Anchor - we need the Keypair for signing)
-  const adminBal = await connection.getBalance(adminKeypair.publicKey);
-  if (adminBal < 2 * LAMPORTS_PER_SOL) {
-    const sig = await connection.requestAirdrop(adminKeypair.publicKey, 5 * LAMPORTS_PER_SOL);
-    await connection.confirmTransaction(sig);
-  }
-
   // Optional: fund a browser wallet (pass pubkey as CLI arg)
   const browserWallet = process.argv[2] ? new PublicKey(process.argv[2]) : null;
   if (browserWallet) {
     console.log("Browser wallet:", browserWallet.toString());
-    const sig = await connection.requestAirdrop(browserWallet, 5 * LAMPORTS_PER_SOL);
-    await connection.confirmTransaction(sig);
-    console.log("Airdropped 5 SOL to browser wallet");
+    await ensureSolBalance(
+      connection,
+      adminKeypair,
+      browserWallet,
+      2 * LAMPORTS_PER_SOL,
+      5 * LAMPORTS_PER_SOL
+    );
+    console.log("Funded browser wallet with 5 SOL");
   }
 
   // Fund bot-b for frontend auto-sign
-  const botBBal = await connection.getBalance(botB.publicKey);
-  if (botBBal < 2 * LAMPORTS_PER_SOL) {
-    const sig = await connection.requestAirdrop(botB.publicKey, 5 * LAMPORTS_PER_SOL);
-    await connection.confirmTransaction(sig);
-    console.log("Funded bot-b (frontend auto-sign):", botB.publicKey.toString());
-  }
+  await ensureSolBalance(
+    connection,
+    adminKeypair,
+    botB.publicKey,
+    2 * LAMPORTS_PER_SOL,
+    5 * LAMPORTS_PER_SOL
+  );
+  console.log("Funded bot-b (frontend auto-sign):", botB.publicKey.toString());
 
   // 1. Create USDC mint (admin is mint authority)
   const usdcMint = await createMint(
@@ -187,7 +211,7 @@ async function main() {
 
     for (const strikeDollars of strikes) {
       const strike = strikeDollars * USDC_PER_PAIR; // convert to USDC base units
-      const strikePrice = new anchor.BN(strike);
+      const strikePrice = new BN(strike);
       const [marketPda] = PublicKey.findProgramAddressSync(
         [
           Buffer.from("market"),
@@ -210,21 +234,7 @@ async function main() {
         .accountsPartial({ admin: admin.publicKey, usdcMint })
         .rpc();
 
-      // Initialize order book
-      const [yesMintPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("yes_mint"), marketPda.toBuffer()],
-        program.programId
-      );
-      await program.methods
-        .initializeOrderBook()
-        .accountsPartial({
-          admin: admin.publicKey,
-          market: marketPda,
-          yesMint: yesMintPda,
-          usdcMint,
-        })
-        .rpc();
-      console.log(`    Created: ${ticker} > $${strikeDollars} + order book`);
+      console.log(`    Created: ${ticker} > $${strikeDollars}`);
       totalMarkets++;
     }
   }

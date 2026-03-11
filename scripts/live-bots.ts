@@ -14,6 +14,7 @@
  * Run after `make bots`. Uses deterministic bot-a wallet.
  */
 import * as anchor from "@coral-xyz/anchor";
+import BN from "bn.js";
 import { Program } from "@coral-xyz/anchor";
 import { Meridian } from "../target/types/meridian";
 import { PublicKey } from "@solana/web3.js";
@@ -158,7 +159,7 @@ async function main() {
 
       const refundDest = side === "bid" ? botUsdcAta : botYesAta;
       await program.methods
-        .cancelOrder(new anchor.BN(order.orderId))
+        .cancelOrder(new BN(order.orderId))
         .accountsPartial({
           user: bot.publicKey,
           market: mkt.pubkey,
@@ -175,8 +176,8 @@ async function main() {
       await program.methods
         .placeOrder(
           side === "bid" ? { bid: {} } : { ask: {} },
-          new anchor.BN(safePrice),
-          new anchor.BN(order.quantity),
+          new BN(safePrice),
+          new BN(order.quantity),
         )
         .accountsPartial({
           user: bot.publicKey,
@@ -216,7 +217,7 @@ async function main() {
 
       // Mint pairs for token supply
       await program.methods
-        .mintPair(new anchor.BN(qty))
+        .mintPair(new BN(qty))
         .accountsPartial({
           user: bot.publicKey,
           market: mkt.pubkey,
@@ -235,8 +236,8 @@ async function main() {
       await program.methods
         .placeOrder(
           side === "bid" ? { bid: {} } : { ask: {} },
-          new anchor.BN(price),
-          new anchor.BN(qty),
+          new BN(price),
+          new BN(qty),
         )
         .accountsPartial({
           user: bot.publicKey,
@@ -256,7 +257,7 @@ async function main() {
     } else if (book.bids.length > MIN_ORDERS_PER_SIDE && book.asks.length > MIN_ORDERS_PER_SIDE) {
       // 20% - Cross the spread with qty 1 (visible fill)
       await program.methods
-        .mintPair(new anchor.BN(1))
+        .mintPair(new BN(1))
         .accountsPartial({
           user: bot.publicKey,
           market: mkt.pubkey,
@@ -277,7 +278,7 @@ async function main() {
       if (side === "bid") {
         const hitPrice = book.asks[0].price;
         await program.methods
-          .placeOrder({ bid: {} }, new anchor.BN(hitPrice), new anchor.BN(1))
+          .placeOrder({ bid: {} }, new BN(hitPrice), new BN(1))
           .accountsPartial({
             user: bot.publicKey,
             market: mkt.pubkey,
@@ -298,7 +299,7 @@ async function main() {
       } else {
         const hitPrice = book.bids[0].price;
         await program.methods
-          .placeOrder({ ask: {} }, new anchor.BN(hitPrice), new anchor.BN(1))
+          .placeOrder({ ask: {} }, new BN(hitPrice), new BN(1))
           .accountsPartial({
             user: bot.publicKey,
             market: mkt.pubkey,

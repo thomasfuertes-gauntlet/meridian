@@ -11,6 +11,7 @@
  *   bot-f: Time decay exploiter (last 30 min, deep OTM/ITM)
  */
 import * as anchor from "@coral-xyz/anchor";
+import BN from "bn.js";
 import { Program } from "@coral-xyz/anchor";
 import { Meridian } from "../target/types/meridian";
 import { PublicKey } from "@solana/web3.js";
@@ -299,7 +300,7 @@ async function main() {
 
       const counterpartyUsdcAta = getAssociatedTokenAddressSync(usdcMint, mkt.askOwner);
       await program.methods
-        .placeOrder({ bid: {} }, new anchor.BN(mkt.bestAsk), new anchor.BN(signal.qty))
+        .placeOrder({ bid: {} }, new BN(mkt.bestAsk), new BN(signal.qty))
         .accountsPartial({
           user: bot.publicKey,
           market: mkt.pubkey,
@@ -328,7 +329,7 @@ async function main() {
 
       // Mint pairs first
       await program.methods
-        .mintPair(new anchor.BN(signal.qty))
+        .mintPair(new BN(signal.qty))
         .accountsPartial({
           user: bot.publicKey,
           market: mkt.pubkey,
@@ -346,7 +347,7 @@ async function main() {
       // Place ask at bestBid to fill immediately
       const counterpartyYesAta = getAssociatedTokenAddressSync(mkt.yesMint, mkt.bidOwner);
       await program.methods
-        .placeOrder({ ask: {} }, new anchor.BN(mkt.bestBid), new anchor.BN(signal.qty))
+        .placeOrder({ ask: {} }, new BN(mkt.bestBid), new BN(signal.qty))
         .accountsPartial({
           user: bot.publicKey,
           market: mkt.pubkey,

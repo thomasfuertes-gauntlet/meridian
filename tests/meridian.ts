@@ -2986,6 +2986,92 @@ describe("meridian", () => {
   });
 
   // ═══════════════════════════════════════════════════════════════
+  //  MULTI-MARKET ISOLATION INVARIANTS
+  // ═══════════════════════════════════════════════════════════════
+
+  describe("multi-market isolation invariants", () => {
+    const connection = provider.connection;
+    let userB: Keypair;
+    let userBUsdc: PublicKey;
+    let multiMarketIdx = 1800000100;
+
+    function nextMultiMarketDate() {
+      return new anchor.BN(multiMarketIdx++);
+    }
+
+    before(async () => {
+      const funded = await createFundedUser(20_000_000);
+      userB = funded.user;
+      userBUsdc = funded.userUsdc;
+    });
+
+    it("keeps vaults, supplies, and order books isolated across concurrent market activity", async () => {
+      const marketA = await createMarket("AAPL", new anchor.BN(236_000_000), nextMultiMarketDate());
+      const marketB = await createMarket("MSFT", new anchor.BN(237_000_000), nextMultiMarketDate());
+      const marketC = await createMarket("META", new anchor.BN(238_000_000), nextMultiMarketDate());
+
+      await mintPairForAdmin(marketA, 3);
+      const { userYes: userBYesB } = await mintPairForUser(
+        userB.publicKey,
+        userBUsdc,
+        marketB,
+        2,
+        [userB]
+      );
+      const { userYes: adminYesC } = await mintPairForAdmin(marketC, 1);
+
+      await burnPairForUser(admin.publicKey, adminUsdcAta, marketA, 1);
+      await adminSettleMarket(marketB, new anchor.BN(300_000_000));
+      await redeemForUser(
+        marketB,
+        userB.publicKey,
+        userBUsdc,
+        marketB.yesMintPda,
+        userBYesB,
+        1,
+        [userB]
+      );
+      await placeBid(marketC, admin.publicKey, adminUsdcAta, adminYesC, 500_000, 1);
+
+      const marketAState = await program.account.strikeMarket.fetch(marketA.marketPda);
+      const marketBState = await program.account.strikeMarket.fetch(marketB.marketPda);
+      const marketCState = await program.account.strikeMarket.fetch(marketC.marketPda);
+      const marketAVault = await tokenAmount(marketA.vaultPda);
+      const marketBVault = await tokenAmount(marketB.vaultPda);
+      const marketCVault = await tokenAmount(marketC.vaultPda);
+      const marketCBook = await program.account.orderBook.fetch(marketC.orderBookPda);
+      const marketCObUsdc = await tokenAmount(marketC.obUsdcVault);
+      const marketAYesMint = await getMint(connection, marketA.yesMintPda);
+      const marketANoMint = await getMint(connection, marketA.noMintPda);
+      const marketBYesMint = await getMint(connection, marketB.yesMintPda);
+      const marketBNoMint = await getMint(connection, marketB.noMintPda);
+      const marketCYesMint = await getMint(connection, marketC.yesMintPda);
+      const marketCNoMint = await getMint(connection, marketC.noMintPda);
+
+      expect(marketAState.outcome).to.deep.equal({ pending: {} });
+      expect(marketAState.totalPairsMinted.toNumber()).to.equal(2);
+      expect(marketAVault).to.equal(2_000_000);
+      expect(Number(marketAYesMint.supply)).to.equal(2);
+      expect(Number(marketANoMint.supply)).to.equal(2);
+
+      expect(marketBState.outcome).to.deep.equal({ yesWins: {} });
+      expect(marketBState.totalPairsMinted.toNumber()).to.equal(1);
+      expect(marketBVault).to.equal(1_000_000);
+      expect(Number(marketBYesMint.supply)).to.equal(1);
+      expect(Number(marketBNoMint.supply)).to.equal(1);
+
+      expect(marketCState.outcome).to.deep.equal({ pending: {} });
+      expect(marketCState.totalPairsMinted.toNumber()).to.equal(1);
+      expect(marketCVault).to.equal(1_000_000);
+      expect(Number(marketCYesMint.supply)).to.equal(1);
+      expect(Number(marketCNoMint.supply)).to.equal(1);
+      expect(marketCBook.bidCount).to.equal(1);
+      expect(marketCBook.askCount).to.equal(0);
+      expect(marketCObUsdc).to.equal(500_000);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
   //  SETTLEMENT IMMUTABILITY TESTS
   // ═══════════════════════════════════════════════════════════════
 

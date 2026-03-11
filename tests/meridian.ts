@@ -518,6 +518,92 @@ describe("meridian", () => {
     }
   }
 
+  async function buyNo(
+    market: ReturnType<typeof deriveMarketPdas> & {
+      orderBookPda: PublicKey;
+      obUsdcVault: PublicKey;
+      obYesVault: PublicKey;
+    },
+    user: PublicKey,
+    userUsdc: PublicKey,
+    userYes: PublicKey,
+    userNo: PublicKey,
+    maxNetCost: number,
+    amount: number,
+    options?: {
+      signers?: Keypair[];
+      remainingAccounts?: { pubkey: PublicKey; isWritable: boolean; isSigner: boolean }[];
+    }
+  ) {
+    const tx = methods
+      .buyNo(new anchor.BN(amount), new anchor.BN(maxNetCost))
+      .accountsPartial({
+        user,
+        config: configPda,
+        market: market.marketPda,
+        userUsdc,
+        vault: market.vaultPda,
+        yesMint: market.yesMintPda,
+        noMint: market.noMintPda,
+        userYes,
+        userNo,
+        orderBook: market.orderBookPda,
+        obUsdcVault: market.obUsdcVault,
+        obYesVault: market.obYesVault,
+      });
+    if (options?.remainingAccounts) {
+      tx.remainingAccounts(options.remainingAccounts);
+    }
+    if (options?.signers) {
+      await tx.signers(options.signers).rpc();
+    } else {
+      await tx.rpc();
+    }
+  }
+
+  async function sellNo(
+    market: ReturnType<typeof deriveMarketPdas> & {
+      orderBookPda: PublicKey;
+      obUsdcVault: PublicKey;
+      obYesVault: PublicKey;
+    },
+    user: PublicKey,
+    userUsdc: PublicKey,
+    userYes: PublicKey,
+    userNo: PublicKey,
+    minNetPrice: number,
+    amount: number,
+    options?: {
+      signers?: Keypair[];
+      remainingAccounts?: { pubkey: PublicKey; isWritable: boolean; isSigner: boolean }[];
+    }
+  ) {
+    const tx = methods
+      .sellNo(new anchor.BN(amount), new anchor.BN(minNetPrice))
+      .accountsPartial({
+        user,
+        config: configPda,
+        market: market.marketPda,
+        userUsdc,
+        vault: market.vaultPda,
+        yesMint: market.yesMintPda,
+        noMint: market.noMintPda,
+        userYes,
+        userNo,
+        orderBook: market.orderBookPda,
+        obUsdcVault: market.obUsdcVault,
+        obYesVault: market.obYesVault,
+      });
+    if (options?.remainingAccounts) {
+      tx.remainingAccounts(options.remainingAccounts);
+    }
+    if (options?.signers) {
+      await tx.signers(options.signers).rpc();
+    } else {
+      await tx.rpc();
+    }
+  }
+
   async function redeemForUser(
     market: ReturnType<typeof deriveMarketPdas>,
     user: PublicKey,
@@ -1744,27 +1830,19 @@ describe("meridian", () => {
         1
       );
 
-      await methods
-        .buyNo(new anchor.BN(1), new anchor.BN(600_000))
-        .accountsPartial({
-          user: userB.publicKey,
-          config: configPda,
-          market: pdas.marketPda,
-          userUsdc: userBUsdc,
-          vault: pdas.vaultPda,
-          yesMint: pdas.yesMintPda,
-          noMint: pdas.noMintPda,
-          userYes: userBYes,
-          userNo: userBNo,
-          orderBook: obPdas.orderBookPda,
-          obUsdcVault: obPdas.obUsdcVault,
-          obYesVault: obPdas.obYesVault,
-        })
-        .remainingAccounts([
-          { pubkey: adminYes, isWritable: true, isSigner: false },
-        ])
-        .signers([userB])
-        .rpc();
+      await buyNo(
+        { ...pdas, ...obPdas },
+        userB.publicKey,
+        userBUsdc,
+        userBYes,
+        userBNo,
+        600_000,
+        1,
+        {
+          remainingAccounts: [{ pubkey: adminYes, isWritable: true, isSigner: false }],
+          signers: [userB],
+        }
+      );
 
       const adminYesAfter = await tokenAmount(adminYes);
       const userBYesAfter = await tokenAmount(userBYes);
@@ -1796,21 +1874,7 @@ describe("meridian", () => {
       );
 
       await mintPairForAdmin({ ...pdas, ...obPdas }, 2);
-
-      await program.methods
-        .mintPair(new anchor.BN(2))
-        .accountsPartial({
-          user: userB.publicKey,
-          market: pdas.marketPda,
-          userUsdc: userBUsdc,
-          vault: pdas.vaultPda,
-          yesMint: pdas.yesMintPda,
-          noMint: pdas.noMintPda,
-          userYes: userBYes,
-          userNo: userBNo,
-        })
-        .signers([userB])
-        .rpc();
+      await mintPairForUser(userB.publicKey, userBUsdc, pdas, 2, [userB]);
 
       await placeAsk(
         { ...pdas, ...obPdas },
@@ -1824,27 +1888,19 @@ describe("meridian", () => {
       const adminUsdcBefore = await tokenAmount(adminUsdcAta);
       const userBUsdcBefore = await tokenAmount(userBUsdc);
 
-      await methods
-        .sellNo(new anchor.BN(2), new anchor.BN(400_000))
-        .accountsPartial({
-          user: userB.publicKey,
-          config: configPda,
-          market: pdas.marketPda,
-          userUsdc: userBUsdc,
-          vault: pdas.vaultPda,
-          yesMint: pdas.yesMintPda,
-          noMint: pdas.noMintPda,
-          userYes: userBYes,
-          userNo: userBNo,
-          orderBook: obPdas.orderBookPda,
-          obUsdcVault: obPdas.obUsdcVault,
-          obYesVault: obPdas.obYesVault,
-        })
-        .remainingAccounts([
-          { pubkey: adminUsdcAta, isWritable: true, isSigner: false },
-        ])
-        .signers([userB])
-        .rpc();
+      await sellNo(
+        { ...pdas, ...obPdas },
+        userB.publicKey,
+        userBUsdc,
+        userBYes,
+        userBNo,
+        400_000,
+        2,
+        {
+          remainingAccounts: [{ pubkey: adminUsdcAta, isWritable: true, isSigner: false }],
+          signers: [userB],
+        }
+      );
 
       const adminUsdcAfter = await tokenAmount(adminUsdcAta);
       const userBUsdcAfter = await tokenAmount(userBUsdc);

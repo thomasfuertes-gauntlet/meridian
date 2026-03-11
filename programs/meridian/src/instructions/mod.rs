@@ -5,6 +5,7 @@
 
 pub mod admin_settle;
 pub mod burn_pair;
+pub mod buy_no;
 pub mod cancel_order;
 pub mod create_strike_market;
 pub mod freeze_market;
@@ -20,6 +21,7 @@ pub mod unwind_order;
 
 pub use admin_settle::*;
 pub use burn_pair::*;
+pub use buy_no::*;
 pub use cancel_order::*;
 pub use create_strike_market::*;
 pub use freeze_market::*;

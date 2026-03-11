@@ -40,6 +40,14 @@ pub mod meridian {
         instructions::mint_pair::handler(ctx, amount)
     }
 
+    pub fn buy_no<'info>(
+        ctx: Context<'_, '_, 'info, 'info, BuyNo<'info>>,
+        amount: u64,
+        min_price: u64,
+    ) -> Result<()> {
+        instructions::buy_no::handler(ctx, amount, min_price)
+    }
+
     pub fn freeze_market(ctx: Context<FreezeMarket>) -> Result<()> {
         instructions::freeze_market::handler(ctx)
     }

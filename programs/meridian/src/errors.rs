@@ -44,6 +44,8 @@ pub enum MeridianError {
     InvalidPrice,
     #[msg("No matching orders found")]
     NoMatchingOrders,
+    #[msg("Atomic trade could not be fully filled")]
+    AtomicTradeIncomplete,
     #[msg("Order not found")]
     OrderNotFound,
     #[msg("Not the order owner")]

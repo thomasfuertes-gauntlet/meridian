@@ -17,6 +17,7 @@ target/*
 target/types/*.js
 .anchor/
 test-ledger/
+.localnet/
 .wallets/
 node_modules/
 

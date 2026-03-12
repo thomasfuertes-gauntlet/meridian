@@ -334,13 +334,9 @@ describe("meridian", () => {
 
   function settlementProofAccounts(market: {
     orderBookPda: PublicKey;
-    obUsdcVault: PublicKey;
-    obYesVault: PublicKey;
   }) {
     return [
-      { pubkey: market.orderBookPda, isWritable: false, isSigner: false },
-      { pubkey: market.obUsdcVault, isWritable: false, isSigner: false },
-      { pubkey: market.obYesVault, isWritable: false, isSigner: false },
+      { pubkey: market.orderBookPda, isWritable: true, isSigner: false },
     ];
   }
 
@@ -405,7 +401,6 @@ describe("meridian", () => {
     quantity: number,
     options?: {
       signers?: Keypair[];
-      remainingAccounts?: { pubkey: PublicKey; isWritable: boolean; isSigner: boolean }[];
     }
   ) {
     const tx = program.methods
@@ -419,9 +414,6 @@ describe("meridian", () => {
         userUsdc,
         userYes,
       });
-    if (options?.remainingAccounts) {
-      tx.remainingAccounts(options.remainingAccounts);
-    }
     if (options?.signers) {
       await tx.signers(options.signers).rpc();
     } else {
@@ -442,7 +434,6 @@ describe("meridian", () => {
     quantity: number,
     options?: {
       signers?: Keypair[];
-      remainingAccounts?: { pubkey: PublicKey; isWritable: boolean; isSigner: boolean }[];
     }
   ) {
     const tx = program.methods
@@ -456,9 +447,6 @@ describe("meridian", () => {
         userUsdc,
         userYes,
       });
-    if (options?.remainingAccounts) {
-      tx.remainingAccounts(options.remainingAccounts);
-    }
     if (options?.signers) {
       await tx.signers(options.signers).rpc();
     } else {
@@ -479,7 +467,6 @@ describe("meridian", () => {
     amount: number,
     options?: {
       signers?: Keypair[];
-      remainingAccounts?: { pubkey: PublicKey; isWritable: boolean; isSigner: boolean }[];
     }
   ) {
     const tx = methods
@@ -495,9 +482,6 @@ describe("meridian", () => {
         obUsdcVault: market.obUsdcVault,
         obYesVault: market.obYesVault,
       });
-    if (options?.remainingAccounts) {
-      tx.remainingAccounts(options.remainingAccounts);
-    }
     if (options?.signers) {
       await tx.signers(options.signers).rpc();
     } else {
@@ -518,7 +502,6 @@ describe("meridian", () => {
     amount: number,
     options?: {
       signers?: Keypair[];
-      remainingAccounts?: { pubkey: PublicKey; isWritable: boolean; isSigner: boolean }[];
     }
   ) {
     const tx = methods
@@ -533,9 +516,6 @@ describe("meridian", () => {
         obUsdcVault: market.obUsdcVault,
         obYesVault: market.obYesVault,
       });
-    if (options?.remainingAccounts) {
-      tx.remainingAccounts(options.remainingAccounts);
-    }
     if (options?.signers) {
       await tx.signers(options.signers).rpc();
     } else {
@@ -557,7 +537,6 @@ describe("meridian", () => {
     amount: number,
     options?: {
       signers?: Keypair[];
-      remainingAccounts?: { pubkey: PublicKey; isWritable: boolean; isSigner: boolean }[];
     }
   ) {
     const mintIx = await methods
@@ -586,7 +565,6 @@ describe("meridian", () => {
         obUsdcVault: market.obUsdcVault,
         obYesVault: market.obYesVault,
       })
-      .remainingAccounts(options?.remainingAccounts ?? [])
       .instruction();
 
     const tx = new anchor.web3.Transaction().add(mintIx, sellIx);
@@ -607,7 +585,6 @@ describe("meridian", () => {
     amount: number,
     options?: {
       signers?: Keypair[];
-      remainingAccounts?: { pubkey: PublicKey; isWritable: boolean; isSigner: boolean }[];
     }
   ) {
     const buyIx = await methods
@@ -623,7 +600,6 @@ describe("meridian", () => {
         obUsdcVault: market.obUsdcVault,
         obYesVault: market.obYesVault,
       })
-      .remainingAccounts(options?.remainingAccounts ?? [])
       .instruction();
 
     const redeemIx = await methods
@@ -1565,7 +1541,6 @@ describe("meridian", () => {
       try {
         await placeBid(m, userB.publicKey, userBUsdc, userBYes, 500_000, 1, {
           signers: [userB],
-          remainingAccounts: [{ pubkey: userBUsdc, isWritable: true, isSigner: false }],
         });
         expect.fail("Should have thrown");
       } catch (err: any) {
@@ -1917,12 +1892,7 @@ describe("meridian", () => {
         userBYes,
         500_000,
         1,
-        {
-          remainingAccounts: [
-            { pubkey: adminUsdcAta, isWritable: true, isSigner: false },
-          ],
-          signers: [userB],
-        }
+        { signers: [userB] }
       );
 
       const adminUsdcAfter = await tokenAmount(adminUsdcAta);
@@ -1965,12 +1935,7 @@ describe("meridian", () => {
         userBYes,
         500_000,
         1,
-        {
-          remainingAccounts: [
-            { pubkey: adminYes, isWritable: true, isSigner: false },
-          ],
-          signers: [userB],
-        }
+        { signers: [userB] }
       );
 
       const adminYesAfter = await tokenAmount(adminYes);
@@ -2019,10 +1984,7 @@ describe("meridian", () => {
         userBNo,
         600_000,
         1,
-        {
-          remainingAccounts: [{ pubkey: adminYes, isWritable: true, isSigner: false }],
-          signers: [userB],
-        }
+        { signers: [userB] }
       );
 
       const adminYesAfter = await tokenAmount(adminYes);
@@ -2085,13 +2047,7 @@ describe("meridian", () => {
         userBNo,
         600_000,
         2,
-        {
-          remainingAccounts: [
-            { pubkey: adminYes, isWritable: true, isSigner: false },
-            { pubkey: userCYes, isWritable: true, isSigner: false },
-          ],
-          signers: [userB],
-        }
+        { signers: [userB] }
       );
 
       const adminUsdcAfter = await tokenAmount(adminUsdcAta);
@@ -2155,10 +2111,7 @@ describe("meridian", () => {
         userBNo,
         400_000,
         2,
-        {
-          remainingAccounts: [{ pubkey: adminUsdcAta, isWritable: true, isSigner: false }],
-          signers: [userB],
-        }
+        { signers: [userB] }
       );
 
       const adminUsdcAfter = await tokenAmount(adminUsdcAta);
@@ -2223,13 +2176,7 @@ describe("meridian", () => {
         userBNo,
         400_000,
         2,
-        {
-          remainingAccounts: [
-            { pubkey: adminUsdcAta, isWritable: true, isSigner: false },
-            { pubkey: userCUsdc, isWritable: true, isSigner: false },
-          ],
-          signers: [userB],
-        }
+        { signers: [userB] }
       );
 
       const adminUsdcAfter = await tokenAmount(adminUsdcAta);
@@ -2300,10 +2247,7 @@ describe("meridian", () => {
           userBNo,
           600_000,
           2,
-          {
-            remainingAccounts: [{ pubkey: adminYes, isWritable: true, isSigner: false }],
-            signers: [userB],
-          }
+          { signers: [userB] }
         );
         expect.fail("Should have thrown");
       } catch (err: any) {
@@ -2362,10 +2306,7 @@ describe("meridian", () => {
           userBNo,
           400_000,
           2,
-          {
-            remainingAccounts: [{ pubkey: adminUsdcAta, isWritable: true, isSigner: false }],
-            signers: [userB],
-          }
+          { signers: [userB] }
         );
         expect.fail("Should have thrown");
       } catch (err: any) {
@@ -2483,10 +2424,7 @@ describe("meridian", () => {
           userBNo,
           600_000,
           1,
-          {
-            remainingAccounts: [{ pubkey: adminYes, isWritable: true, isSigner: false }],
-            signers: [userB],
-          }
+          { signers: [userB] }
         );
         expect.fail("Should have thrown");
       } catch (err: any) {
@@ -2523,10 +2461,7 @@ describe("meridian", () => {
           userBYes,
           500_000,
           1,
-          {
-            remainingAccounts: [{ pubkey: adminUsdcAta, isWritable: true, isSigner: false }],
-            signers: [userB],
-          }
+          { signers: [userB] }
         );
         expect.fail("Should have thrown");
       } catch (err: any) {
@@ -2726,7 +2661,7 @@ describe("meridian", () => {
       userBUsdc = funded.userUsdc;
     });
 
-    it("rejects admin settlement while frozen market still has resting orders", async () => {
+    it("auto-credits resting orders on settlement", async () => {
       const pdas = await createMarket("UWBL", new anchor.BN(290_000_000), nextUnwindDate());
       const market = pdas;
       const adminYes = await createAssociatedTokenAccount(
@@ -2740,7 +2675,6 @@ describe("meridian", () => {
 
       await freezeMarket(market);
 
-      try {
       await methods
         .adminSettle(new anchor.BN(300_000_000))
         .accountsPartial({
@@ -2750,10 +2684,9 @@ describe("meridian", () => {
         })
         .remainingAccounts(settlementProofAccounts(market))
         .rpc();
-        expect.fail("Should have thrown");
-      } catch (err: any) {
-        expect(err.toString()).to.include("OrderBookNotEmpty");
-      }
+
+      const settled = await program.account.strikeMarket.fetch(pdas.marketPda);
+      expect(settled.outcome).to.not.deep.equal({ none: {} });
     });
 
     it("allows permissionless unwind during freeze while refunding the order owner", async () => {
@@ -3298,10 +3231,7 @@ describe("meridian", () => {
         userBNo,
         600_000,
         1,
-        {
-          remainingAccounts: [{ pubkey: adminYes, isWritable: true, isSigner: false }],
-          signers: [userB],
-        }
+        { signers: [userB] }
       );
 
       const yesMint = await getMint(connection, pdas.yesMintPda);
@@ -3340,10 +3270,7 @@ describe("meridian", () => {
         userBNo,
         400_000,
         2,
-        {
-          remainingAccounts: [{ pubkey: adminUsdcAta, isWritable: true, isSigner: false }],
-          signers: [userB],
-        }
+        { signers: [userB] }
       );
 
       const yesMint = await getMint(connection, pdas.yesMintPda);

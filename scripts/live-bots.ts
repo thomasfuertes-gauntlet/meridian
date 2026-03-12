@@ -35,7 +35,8 @@ const TICK_MS_MAX = 400;
 const PRICE_REFRESH_MS = 30_000;
 const TX_DELAY_MS = Number(process.env.TX_DELAY_MS ?? 1000); // 1s global throttle between RPCs
 const MARKET_REFRESH_TICKS = 100; // re-check which markets are still active every ~100 ticks
-const REPLENISH_THRESHOLD = 500 * USDC_PER_PAIR; // auto-replenish below 500 USDC
+const REPLENISH_THRESHOLD = 2_000 * USDC_PER_PAIR; // keep a larger free-USDC buffer for market making
+const REPLENISH_AMOUNT = 10_000 * USDC_PER_PAIR;
 
 function randInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -87,8 +88,8 @@ async function main() {
       const info = await connection.getTokenAccountBalance(botUsdcAta);
       const balance = Number(info.value.amount);
       if (balance < REPLENISH_THRESHOLD) {
-        await mintTo(connection, admin, usdcMint, botUsdcAta, admin, 5_000 * USDC_PER_PAIR);
-        console.log("  [replenish] Minted 5,000 USDC to bot");
+        await mintTo(connection, admin, usdcMint, botUsdcAta, admin, REPLENISH_AMOUNT);
+        console.log(`  [replenish] Minted ${(REPLENISH_AMOUNT / USDC_PER_PAIR).toLocaleString()} USDC to bot`);
       }
     } catch {
       // ignore - ATA might not exist yet

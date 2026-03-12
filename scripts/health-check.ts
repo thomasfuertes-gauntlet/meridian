@@ -20,6 +20,9 @@ const WARN_SOL = 0.5;
 const CRIT_SOL = 0.1;
 const WARN_USDC = 500;
 const CRIT_USDC = 50;
+const ORDER_BOOK_BATCH_SIZE = Number(process.env.HEALTHCHECK_OB_BATCH_SIZE || 40);
+const ORDER_BOOK_BATCH_DELAY_MS = Number(process.env.HEALTHCHECK_OB_BATCH_DELAY_MS || 250);
+const ORDER_BOOK_BATCH_RETRIES = Number(process.env.HEALTHCHECK_OB_BATCH_RETRIES || 4);
 
 interface WalletStatus {
   name: string;
@@ -40,6 +43,10 @@ function icon(s: "ok" | "warn" | "crit"): string {
   return s === "ok" ? "OK" : s === "warn" ? "WARN" : "CRIT";
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function getUsdcBalance(
   connection: anchor.web3.Connection,
   mint: PublicKey,
@@ -52,6 +59,40 @@ async function getUsdcBalance(
   } catch {
     return 0;
   }
+}
+
+async function getMultipleAccountsInfoBatched(
+  connection: anchor.web3.Connection,
+  pubkeys: PublicKey[],
+  batchSize = ORDER_BOOK_BATCH_SIZE
+) {
+  const results = [];
+  for (let i = 0; i < pubkeys.length; i += batchSize) {
+    const batch = pubkeys.slice(i, i + batchSize);
+    let accounts = null;
+    for (let attempt = 0; attempt <= ORDER_BOOK_BATCH_RETRIES; attempt++) {
+      try {
+        accounts = await connection.getMultipleAccountsInfo(batch);
+        break;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const isRateLimited = msg.includes("429") || msg.toLowerCase().includes("rate limit");
+        if (!isRateLimited || attempt === ORDER_BOOK_BATCH_RETRIES) {
+          throw err;
+        }
+        const delayMs = ORDER_BOOK_BATCH_DELAY_MS * Math.pow(2, attempt);
+        await sleep(delayMs);
+      }
+    }
+    if (!accounts) {
+      throw new Error("Failed to fetch order book batch");
+    }
+    results.push(...accounts);
+    if (i + batchSize < pubkeys.length) {
+      await sleep(ORDER_BOOK_BATCH_DELAY_MS);
+    }
+  }
+  return results;
 }
 
 async function main() {
@@ -154,7 +195,7 @@ async function main() {
       );
       return obPda;
     });
-    const obAccounts = await connection.getMultipleAccountsInfo(obPdas);
+    const obAccounts = await getMultipleAccountsInfoBatched(connection, obPdas);
 
     for (let i = 0; i < pending.length; i++) {
       const m = pending[i];

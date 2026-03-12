@@ -44,7 +44,7 @@ export default function App() {
   );
   const { data } = useMarketUniverse();
   const tickerTapeItems = data?.tickerSnapshots?.length
-    ? [...data.tickerSnapshots, ...data.tickerSnapshots]
+    ? data.tickerSnapshots
     : [
         "AAPL",
         "MSFT",
@@ -68,8 +68,8 @@ export default function App() {
                 <div className="ticker-tape-track text-xs text-stone-400">
                   {[0, 1].map((segment) => (
                     <div key={segment} className="ticker-tape-segment">
-                      {tickerTapeItems.map((item) => (
-                        <div key={`${segment}-${item.ticker}`} className="ticker-pill">
+                      {tickerTapeItems.map((item, index) => (
+                        <div key={`${segment}-${item.ticker}-${index}`} className="ticker-pill">
                           <span className="font-mono text-stone-200">{item.ticker}</span>
                           <span className="text-stone-500">
                             {item.latestPrice != null ? `$${item.latestPrice.toFixed(2)}` : "--"}
@@ -109,7 +109,7 @@ export default function App() {
                 <div className="rounded-[22px] border border-white/8 bg-white/[0.03] p-4">
                   <div className="text-sm text-zinc-200">Runtime notes</div>
                   <p className="mt-3 text-sm leading-6 text-zinc-400">
-                    Use `npm run dev:local` for validator work and `npm run dev:devnet` when the shared remote environment has active markets.
+                    Use `npm run dev` plus `frontend/.env.local` for local validator work. Point `VITE_RPC_URL` at devnet only when you intentionally want the shared remote environment.
                   </p>
                 </div>
                 </div>

@@ -7,7 +7,6 @@ import * as fs from 'fs'
 const ACTIVE_MARKET_FILE = '/tmp/meridian-active-market.txt'
 
 export default defineConfig({
-  envDir: "..",
   plugins: [
     react(),
     tailwindcss(),

@@ -110,7 +110,7 @@ async function main() {
 
     const botUsdcAccount = await getAccount(connection, botUsdcAta);
     const currentBalance = Number(botUsdcAccount.amount);
-    const targetBalance = 20_000 * USDC_PER_PAIR;
+    const targetBalance = 40_000 * USDC_PER_PAIR;
     if (currentBalance < targetBalance) {
       await mintTo(connection, admin, usdcMint, botUsdcAta, admin, targetBalance - currentBalance);
       console.log(

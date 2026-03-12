@@ -265,13 +265,16 @@ async function main() {
   console.log("Stock prices loaded:", priceStrs.length > 0 ? priceStrs.join(", ") : "(none)");
   console.log("Starting strategy loop (Ctrl+C to stop)\n");
 
+  const REPLENISH_THRESHOLD = 2_000 * USDC_PER_PAIR;
+  const REPLENISH_AMOUNT = 10_000 * USDC_PER_PAIR;
+
   async function checkReplenish() {
     try {
       const info = await connection.getTokenAccountBalance(botUsdcAta);
       const balance = Number(info.value.amount);
       if (balance < REPLENISH_THRESHOLD) {
-        await mintTo(connection, admin, usdcMint, botUsdcAta, admin, 5_000 * USDC_PER_PAIR);
-        console.log("  [replenish] Minted 5,000 USDC to bot-b");
+        await mintTo(connection, admin, usdcMint, botUsdcAta, admin, REPLENISH_AMOUNT);
+        console.log(`  [replenish] Minted ${(REPLENISH_AMOUNT / USDC_PER_PAIR).toLocaleString()} USDC to bot-b`);
       }
       // SOL check: airdrop on localhost if low (devnet faucets rate-limit, skip there)
       const solBal = await connection.getBalance(bot.publicKey);

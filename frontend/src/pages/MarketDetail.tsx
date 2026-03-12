@@ -4,7 +4,7 @@ import { OrderBook } from "../components/OrderBook";
 import { TradePanel } from "../components/TradePanel";
 import { compact, formatContracts, formatRelativePublishTime, formatTimestamp, formatUsdcBaseUnits, money } from "../lib/format";
 import { flipToNoPerspective } from "../lib/orderbook";
-import { MAG7, type Ticker } from "../lib/constants";
+import { IS_LOCAL_RPC, MAG7, MARKET_POLL_MS, type Ticker } from "../lib/constants";
 import { useMarketUniverse } from "../lib/market-data";
 import { getConfiguredUsdcMint } from "../lib/usdc-mint";
 
@@ -23,7 +23,7 @@ function statusColor(status: string): string {
 
 export function MarketDetail() {
   const { ticker } = useParams<{ ticker: string }>();
-  const { data, error, loading } = useMarketUniverse(10_000);
+  const { data, error, loading } = useMarketUniverse(IS_LOCAL_RPC ? 10_000 : MARKET_POLL_MS);
   const [selectedMarketAddress, setSelectedMarketAddress] = useState<string | null>(null);
   const routeTicker = useMemo(
     () => MAG7.find((entry) => entry.ticker === ticker)?.ticker ?? null,
@@ -77,13 +77,13 @@ export function MarketDetail() {
 
   return (
     <div className="space-y-6">
-      <section className="terminal-panel p-5">
-        <div className="flex flex-col gap-4 border-b border-white/10 pb-4 xl:flex-row xl:items-end xl:justify-between">
+      <section className="terminal-panel p-4">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <Link to="/markets" className="text-sm text-zinc-400 transition hover:text-white">
               ← Back to markets
             </Link>
-            <div className="mt-4 text-[11px] uppercase tracking-[0.28em] text-zinc-500">
+            <div className="mt-3 text-[11px] uppercase tracking-[0.28em] text-zinc-500">
               {snapshot?.company ?? ticker}
             </div>
             <h1 className="mt-1 font-display text-4xl text-white">{ticker}</h1>
@@ -109,60 +109,59 @@ export function MarketDetail() {
             </div>
           </div>
         </div>
-
-        {error && (
-          <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
-            {error}
-          </div>
-        )}
-
-        <div className="mt-4">
-          <div className="mb-3 text-[11px] uppercase tracking-[0.22em] text-zinc-500">Strike selection</div>
-          <div className="flex gap-3 overflow-x-auto pb-1">
-          {markets.map((market) => (
-            <button
-              key={market.address}
-              type="button"
-              onClick={() => setSelectedMarketAddress(market.address)}
-              className={`min-w-[168px] shrink-0 rounded-[20px] border px-4 py-3 text-left transition ${
-                featured?.address === market.address
-                  ? "border-sky-400/20 bg-sky-400/10"
-                  : "border-white/8 bg-white/[0.03] hover:border-white/15 hover:bg-white/[0.05]"
-              }`}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="font-data text-base text-white">
-                  {formatUsdcBaseUnits(market.strikePrice)}
-                </div>
-                <div className={`text-xs uppercase tracking-[0.2em] ${statusColor(market.status)}`}>
-                  {market.status}
-                </div>
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm text-zinc-300">
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Yes mid</div>
-                  <div className="mt-1 font-mono text-white">{formatUsdcBaseUnits(market.yesMid)}</div>
-                </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Depth</div>
-                  <div className="mt-1 text-white">{formatContracts(market.totalDepth)}</div>
-                </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Close</div>
-                  <div className="mt-1 text-white">{formatTimestamp(market.closeTime)}</div>
-                </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Pairs minted</div>
-                  <div className="mt-1 text-white">{formatContracts(market.totalPairsMinted)}</div>
-                </div>
-              </div>
-            </button>
-          ))}
-          </div>
-        </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+      {error && (
+        <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+          {error}
+        </div>
+      )}
+
+      <section className="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)_360px]">
+        <div className="terminal-panel p-3">
+          <div className="mb-3 text-[11px] uppercase tracking-[0.22em] text-zinc-500">Strikes</div>
+          <div className="flex gap-3 overflow-x-auto pb-1 xl:max-h-[520px] xl:flex-col xl:overflow-y-auto xl:overflow-x-hidden">
+            {markets.map((market) => {
+              const noMid = market.yesMid != null ? 1_000_000 - market.yesMid : null;
+              return (
+                <button
+                  key={market.address}
+                  type="button"
+                  onClick={() => setSelectedMarketAddress(market.address)}
+                  className={`min-w-[176px] shrink-0 rounded-[18px] border px-3 py-3 text-left transition xl:min-w-0 ${
+                    featured?.address === market.address
+                      ? "border-sky-400/20 bg-sky-400/10"
+                      : "border-white/8 bg-white/[0.03] hover:border-white/15 hover:bg-white/[0.05]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-data text-base text-white">
+                      {formatUsdcBaseUnits(market.strikePrice)}
+                    </div>
+                    <div className={`text-[10px] uppercase tracking-[0.18em] ${statusColor(market.status)}`}>
+                      {market.status}
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-2 text-sm text-zinc-300">
+                    <div className="grid grid-cols-[24px_1fr] gap-2">
+                      <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Yes</div>
+                      <div className="font-mono text-white">{formatUsdcBaseUnits(market.yesMid)}</div>
+                    </div>
+                    <div className="grid grid-cols-[24px_1fr] gap-2">
+                      <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">No</div>
+                      <div className="font-mono text-white">{formatUsdcBaseUnits(noMid)}</div>
+                    </div>
+                    <div className="grid grid-cols-[88px_1fr] gap-2 pt-1">
+                      <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Liquidity</div>
+                      <div className="text-white">{formatContracts(market.totalDepth)}</div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div>
           {featured?.orderBook && noBook ? (
             <OrderBook
@@ -179,7 +178,7 @@ export function MarketDetail() {
           )}
         </div>
 
-        <div className="space-y-6 xl:sticky xl:top-4 xl:self-start">
+        <div className="xl:sticky xl:top-4 xl:self-start">
           {featured && usdcMint && featured.bestBid != null && featured.bestAsk != null ? (
             <TradePanel
               market={featured.publicKey}
@@ -249,6 +248,14 @@ export function MarketDetail() {
             <div>
               <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Close time</div>
               <div className="mt-1 text-sm text-white">{formatTimestamp(featured.closeTime)}</div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Book liquidity</div>
+              <div className="mt-1 text-sm text-white">{formatContracts(featured.totalDepth)}</div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Pairs minted</div>
+              <div className="mt-1 text-sm text-white">{formatContracts(featured.totalPairsMinted)}</div>
             </div>
             <div className="md:col-span-2 xl:col-span-2">
               <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Notes</div>

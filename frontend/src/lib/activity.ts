@@ -54,6 +54,7 @@ export interface ActivityRecord {
 interface MarketLookupEntry {
   address: string;
   ticker: Ticker;
+  date: number;
   strikePrice: number;
   yesMint: string;
   noMint: string;
@@ -249,15 +250,31 @@ export async function fetchActivityFeed(limit = ACTIVITY_LIMIT): Promise<Activit
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rawMarkets = await (program.account as any).strikeMarket.all();
 
+  const latestDates = new Map<Ticker, number>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const item of rawMarkets as any[]) {
+    const ticker = item.account.ticker as Ticker;
+    const date = item.account.date.toNumber() as number;
+    const current = latestDates.get(ticker);
+    if (current == null || date > current) {
+      latestDates.set(ticker, date);
+    }
+  }
+
   const marketLookup = new Map<string, MarketLookupEntry>();
   const marketAddresses: PublicKey[] = [];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const item of rawMarkets as any[]) {
+    const ticker = item.account.ticker as Ticker;
+    const date = item.account.date.toNumber() as number;
+    if (latestDates.get(ticker) !== date) continue;
+
     const address = (item.publicKey as PublicKey).toBase58();
     marketLookup.set(address, {
       address,
-      ticker: item.account.ticker as Ticker,
+      ticker,
+      date,
       strikePrice: item.account.strikePrice.toNumber() as number,
       yesMint: (item.account.yesMint as PublicKey).toBase58(),
       noMint: (item.account.noMint as PublicKey).toBase58(),

@@ -152,6 +152,20 @@ async function main() {
   console.log("Minted 1000 USDC to admin");
   await sleep(DEVNET_DELAY_MS);
 
+  // Fund bot-a with USDC for market making
+  const botAUsdcAta = getAssociatedTokenAddressSync(usdcMint, botA.publicKey);
+  const createBotAAtaIx = createAssociatedTokenAccountIdempotentInstruction(
+    adminKeypair.publicKey,
+    botAUsdcAta,
+    botA.publicKey,
+    usdcMint
+  );
+  const botAAtaTx = new anchor.web3.Transaction().add(createBotAAtaIx);
+  await anchor.web3.sendAndConfirmTransaction(connection, botAAtaTx, [adminKeypair]);
+  await mintTo(connection, adminKeypair, usdcMint, botAUsdcAta, adminKeypair, 20_000 * USDC_PER_PAIR);
+  console.log("Minted 20,000 USDC to bot-a");
+  await sleep(DEVNET_DELAY_MS);
+
   // Fund bot-b with USDC for frontend trading
   const botBUsdcAta = getAssociatedTokenAddressSync(usdcMint, botB.publicKey);
   const createBotBAtaIx = createAssociatedTokenAccountIdempotentInstruction(
@@ -162,8 +176,8 @@ async function main() {
   );
   const botBAtaTx = new anchor.web3.Transaction().add(createBotBAtaIx);
   await anchor.web3.sendAndConfirmTransaction(connection, botBAtaTx, [adminKeypair]);
-  await mintTo(connection, adminKeypair, usdcMint, botBUsdcAta, adminKeypair, 10_000 * USDC_PER_PAIR);
-  console.log("Minted 10,000 USDC to bot-b");
+  await mintTo(connection, adminKeypair, usdcMint, botBUsdcAta, adminKeypair, 20_000 * USDC_PER_PAIR);
+  console.log("Minted 20,000 USDC to bot-b");
   await sleep(DEVNET_DELAY_MS);
 
   // Initialize config

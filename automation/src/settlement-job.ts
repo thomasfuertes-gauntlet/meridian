@@ -28,6 +28,9 @@ const idl = JSON.parse(
 
 const RETRY_INTERVAL_MS = 30_000; // 30 seconds
 const MAX_RETRY_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+const MARKET_SETTLE_DELAY_MS = Number(process.env.MARKET_SETTLE_DELAY_MS || "1500");
+const RPC_429_BASE_DELAY_MS = Number(process.env.RPC_429_BASE_DELAY_MS || "1000");
+const MAX_RPC_429_RETRIES = Number(process.env.MAX_RPC_429_RETRIES || "4");
 
 interface SettlementResult {
   market: string; // pubkey base58
@@ -82,6 +85,24 @@ function dollarToUsdcBaseUnits(dollars: number): BN {
   return new BN(Math.round(dollars * 1_000_000));
 }
 
+function marketCloseTimeSeconds(marketAccount: any): number | null {
+  const raw = marketAccount.closeTime;
+  if (raw == null) return null;
+  if (typeof raw === "number") return raw;
+  if (typeof raw?.toNumber === "function") return raw.toNumber();
+  return null;
+}
+
+function adminSettleEligible(marketAccount: any, nowSeconds: number): boolean {
+  const closeTime = marketCloseTimeSeconds(marketAccount);
+  if (closeTime == null) return true;
+  return nowSeconds >= closeTime + 3600;
+}
+
+function isRpc429(errMsg: string): boolean {
+  return errMsg.includes("429") || errMsg.toLowerCase().includes("rate limited");
+}
+
 /**
  * Attempt to settle a single market. Tries settle_market first, then admin_settle.
  * Retries on confidence-related failures for up to MAX_RETRY_DURATION_MS.
@@ -103,6 +124,20 @@ async function settleMarketWithRetry(
   // Retry loop for confidence-related failures
   while (true) {
     const elapsed = Date.now() - startTime;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+
+    if (!adminSettleEligible(marketAccount, nowSeconds)) {
+      console.warn(
+        `[skip] ${ticker} @ $${strikeDollars} - too early for admin_settle (1hr delay not met)`
+      );
+      return {
+        market: marketKey,
+        ticker,
+        strikePrice: strikeDollars,
+        success: false,
+        error: "Too early for admin_settle - 1hr delay not met",
+      };
+    }
 
     // --- Attempt 1: settle_market (permissionless, on-chain Pyth) ---
     // This is unlikely to work on devnet for equities since PriceUpdateV2
@@ -141,14 +176,34 @@ async function settleMarketWithRetry(
         `[settle] ${ticker} @ $${strikeDollars} - Pyth price: $${dollarPrice.toFixed(2)} (${priceBaseUnits.toString()} base units)`
       );
 
-      const sig = await program.methods
-        .adminSettle(priceBaseUnits)
-        .accountsPartial({
-          admin: admin.publicKey,
-          market: marketPubkey,
-        })
-        .signers([admin])
-        .rpc();
+      let sig: string | null = null;
+      for (let attempt = 0; attempt <= MAX_RPC_429_RETRIES; attempt++) {
+        try {
+          sig = await program.methods
+            .adminSettle(priceBaseUnits)
+            .accountsPartial({
+              admin: admin.publicKey,
+              market: marketPubkey,
+            })
+            .signers([admin])
+            .rpc();
+          break;
+        } catch (rpcErr: any) {
+          const rpcErrMsg = rpcErr?.message || String(rpcErr);
+          if (!isRpc429(rpcErrMsg) || attempt === MAX_RPC_429_RETRIES) {
+            throw rpcErr;
+          }
+          const delayMs = RPC_429_BASE_DELAY_MS * Math.pow(2, attempt);
+          console.warn(
+            `[retry] ${ticker} @ $${strikeDollars} - RPC rate limited, retrying admin_settle in ${delayMs}ms...`
+          );
+          await sleep(delayMs);
+        }
+      }
+
+      if (!sig) {
+        throw new Error("admin_settle did not produce a transaction signature");
+      }
 
       const outcome = dollarPrice >= strikeDollars ? "YesWins" : "NoWins";
       console.log(
@@ -316,6 +371,7 @@ export async function runSettlementJob(): Promise<void> {
         hermesUrl
       );
       results.push(result);
+      await sleep(MARKET_SETTLE_DELAY_MS);
     }
 
     // Step 4: Unpause

@@ -247,17 +247,21 @@ railway-env-check:
 	@echo "  USDC mint: $(DEVNET_USDC_MINT)"
 
 railway-sync: railway-env-check
-	railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)" "ANCHOR_PROVIDER_URL=$(DEVNET_URL)"
-	railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)" "USDC_MINT=$(DEVNET_USDC_MINT)"
-	railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)" "VITE_RPC_URL=$(DEVNET_URL)"
-	railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)" "VITE_USDC_MINT=$(DEVNET_USDC_MINT)"
-	railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)" "VITE_DEV_WALLET=$(VITE_DEV_WALLET)"
-	railway variable set -s "$(RAILWAY_BOTS_SERVICE)" "ANCHOR_PROVIDER_URL=$(DEVNET_URL)"
-	railway variable set -s "$(RAILWAY_BOTS_SERVICE)" "USDC_MINT=$(DEVNET_USDC_MINT)"
-	railway variable set -s "$(RAILWAY_BOTS_SERVICE)" "DEMO_TICKER=$(DEMO_TICKER)"
+	@printf '%s\n' \
+		"ANCHOR_PROVIDER_URL=$(DEVNET_URL)" \
+		"USDC_MINT=$(DEVNET_USDC_MINT)" \
+		"VITE_RPC_URL=$(DEVNET_URL)" \
+		"VITE_USDC_MINT=$(DEVNET_USDC_MINT)" \
+		"VITE_DEV_WALLET=$(VITE_DEV_WALLET)" \
+	| xargs railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)"
+	@printf '%s\n' \
+		"ANCHOR_PROVIDER_URL=$(DEVNET_URL)" \
+		"USDC_MINT=$(DEVNET_USDC_MINT)" \
+		"DEMO_TICKER=$(DEMO_TICKER)" \
+	| xargs railway variable set -s "$(RAILWAY_BOTS_SERVICE)"
 
 railway-deploy-frontend: railway-env-check
-	railway up app --path-as-root -s "$(RAILWAY_FRONTEND_SERVICE)" -d
+	railway up frontend --path-as-root -s "$(RAILWAY_FRONTEND_SERVICE)" -d
 
 railway-deploy-bots: railway-env-check
 	railway up -s "$(RAILWAY_BOTS_SERVICE)" -d

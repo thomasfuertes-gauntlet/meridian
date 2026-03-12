@@ -17,7 +17,7 @@ export const PROGRAM_ID = new PublicKey(
 // Vite exposes env vars prefixed with VITE_
 // Default to localhost for local dev, override with VITE_RPC_URL for devnet
 export const RPC_URL =
-  isLocalBrowser ? "http://127.0.0.1:8899" : viteEnv.VITE_RPC_URL || "http://localhost:8899";
+  viteEnv.VITE_RPC_URL || (isLocalBrowser ? "http://127.0.0.1:8899" : "http://localhost:8899");
 
 export const IS_LOCAL_RPC =
   RPC_URL.includes("localhost") || RPC_URL.includes("127.0.0.1");
@@ -25,12 +25,12 @@ export const IS_REMOTE_RPC = !IS_LOCAL_RPC;
 
 export const RPC_MODE_LABEL = IS_LOCAL_RPC ? "Local validator" : "Remote RPC";
 export const MARKET_POLL_MS = IS_LOCAL_RPC ? 15_000 : 120_000;
-export const ACTIVITY_POLL_MS = IS_LOCAL_RPC ? 20_000 : 300_000;
-export const ACTIVITY_LIMIT = IS_LOCAL_RPC ? 120 : 20;
-export const ACTIVITY_SIGNATURES_PER_MARKET = IS_LOCAL_RPC ? 8 : 3;
-export const PORTFOLIO_SIGNATURE_LIMIT = IS_LOCAL_RPC ? 120 : 20;
-export const TRADE_PRICE_POLL_MS = IS_LOCAL_RPC ? 15_000 : 60_000;
-export const TRADE_BOOK_POLL_MS = IS_LOCAL_RPC ? 10_000 : 60_000;
+export const ACTIVITY_POLL_MS = IS_LOCAL_RPC ? 20_000 : 480_000;
+export const ACTIVITY_LIMIT = IS_LOCAL_RPC ? 120 : 12;
+export const ACTIVITY_SIGNATURES_PER_MARKET = IS_LOCAL_RPC ? 8 : 1;
+export const PORTFOLIO_SIGNATURE_LIMIT = IS_LOCAL_RPC ? 120 : 12;
+export const TRADE_PRICE_POLL_MS = IS_LOCAL_RPC ? 15_000 : 120_000;
+export const TRADE_BOOK_POLL_MS = IS_LOCAL_RPC ? 10_000 : 120_000;
 
 // MAG7 tickers and their Pyth Hermes price feed IDs (equity feeds)
 export const MAG7 = [

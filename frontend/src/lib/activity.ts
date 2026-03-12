@@ -13,8 +13,10 @@ import {
   ACTIVITY_LIMIT,
   ACTIVITY_POLL_MS,
   ACTIVITY_SIGNATURES_PER_MARKET,
+  IS_REMOTE_RPC,
   MAG7,
   PROGRAM_ID,
+  READ_API_URL,
   USDC_PER_PAIR,
   type Ticker,
 } from "./constants";
@@ -245,6 +247,20 @@ export async function fetchActivityFeed(limit = ACTIVITY_LIMIT): Promise<Activit
   if (inflight) return inflight;
 
   const request = (async () => {
+  if (IS_REMOTE_RPC && READ_API_URL) {
+    try {
+      const response = await fetch(`${READ_API_URL}/activity?limit=${limit}`);
+      if (!response.ok) {
+        throw new Error(`Read API returned ${response.status} for /activity`);
+      }
+      const next = await response.json() as ActivityRecord[];
+      activityCache.set(limit, { records: next, at: Date.now() });
+      return next;
+    } catch (error) {
+      console.warn("Read API /activity failed, falling back to direct RPC:", error);
+    }
+  }
+
   const program = getReadOnlyProgram();
   const coder = new BorshInstructionCoder(idl as Idl);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

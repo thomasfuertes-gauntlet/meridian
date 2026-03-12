@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { connection, getReadOnlyProgram } from "./anchor";
-import { MAG7, MARKET_POLL_MS, PROGRAM_ID, USDC_PER_PAIR, type Ticker } from "./constants";
+import { IS_REMOTE_RPC, MAG7, MARKET_POLL_MS, PROGRAM_ID, READ_API_URL, USDC_PER_PAIR, type Ticker } from "./constants";
 import { parseOrderBook, type ParsedOrderBook } from "./orderbook";
 import { fetchPrices } from "./pyth";
 
@@ -124,6 +124,84 @@ function latestDateByTicker(records: Array<{ ticker: Ticker; date: number }>): M
   return dates;
 }
 
+function deserializeOrderBook(book: {
+  market: string;
+  obUsdcVault: string;
+  obYesVault: string;
+  nextOrderId: number;
+  bidCount: number;
+  askCount: number;
+  bump: number;
+  bids: Array<{ owner: string; price: number; quantity: number; timestamp: number; orderId: number; isActive: boolean }>;
+  asks: Array<{ owner: string; price: number; quantity: number; timestamp: number; orderId: number; isActive: boolean }>;
+} | null): ParsedOrderBook | null {
+  if (!book) return null;
+  return {
+    market: new PublicKey(book.market),
+    obUsdcVault: new PublicKey(book.obUsdcVault),
+    obYesVault: new PublicKey(book.obYesVault),
+    nextOrderId: book.nextOrderId,
+    bidCount: book.bidCount,
+    askCount: book.askCount,
+    bump: book.bump,
+    bids: book.bids.map((order) => ({
+      owner: new PublicKey(order.owner),
+      price: order.price,
+      quantity: order.quantity,
+      timestamp: order.timestamp,
+      orderId: order.orderId,
+      isActive: order.isActive,
+    })),
+    asks: book.asks.map((order) => ({
+      owner: new PublicKey(order.owner),
+      price: order.price,
+      quantity: order.quantity,
+      timestamp: order.timestamp,
+      orderId: order.orderId,
+      isActive: order.isActive,
+    })),
+  };
+}
+
+async function fetchRemoteMarketUniverse(): Promise<MarketUniverse> {
+  const response = await fetch(`${READ_API_URL}/markets`);
+  if (!response.ok) {
+    throw new Error(`Read API returned ${response.status} for /markets`);
+  }
+
+  const data = await response.json() as {
+    asOf: number;
+    tickerSnapshots: TickerSnapshot[];
+    marketsByTicker: Record<Ticker, Array<Omit<MarketRecord, "publicKey" | "yesMint" | "noMint" | "vault" | "orderBook"> & {
+      publicKey: string;
+      yesMint: string;
+      noMint: string;
+      vault: string;
+      orderBook: Parameters<typeof deserializeOrderBook>[0];
+    }>>;
+  };
+
+  const marketsByTicker = Object.fromEntries(
+    Object.entries(data.marketsByTicker).map(([ticker, markets]) => [
+      ticker,
+      markets.map((market) => ({
+        ...market,
+        publicKey: new PublicKey(market.publicKey),
+        yesMint: new PublicKey(market.yesMint),
+        noMint: new PublicKey(market.noMint),
+        vault: new PublicKey(market.vault),
+        orderBook: deserializeOrderBook(market.orderBook),
+      })),
+    ])
+  ) as Record<Ticker, MarketRecord[]>;
+
+  return {
+    asOf: data.asOf,
+    tickerSnapshots: data.tickerSnapshots,
+    marketsByTicker,
+  };
+}
+
 export async function fetchMarketUniverse(): Promise<MarketUniverse> {
   const now = Date.now();
   if (marketUniverseCache && now - marketUniverseCacheAt < Math.max(5_000, MARKET_POLL_MS / 2)) {
@@ -132,6 +210,14 @@ export async function fetchMarketUniverse(): Promise<MarketUniverse> {
   if (marketUniverseInflight) return marketUniverseInflight;
 
   marketUniverseInflight = (async () => {
+  if (IS_REMOTE_RPC && READ_API_URL) {
+    try {
+      return await fetchRemoteMarketUniverse();
+    } catch (error) {
+      console.warn("Read API /markets failed, falling back to direct RPC:", error);
+    }
+  }
+
   const program = getReadOnlyProgram();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rawMarkets = await (program.account as any).strikeMarket.all();

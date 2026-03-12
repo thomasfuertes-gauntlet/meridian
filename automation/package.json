@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/index.ts",
+    "read-api": "tsx src/read-api.ts",
     "morning-job": "tsx src/morning-job.ts",
     "settle": "tsx src/settlement-job.ts",
     "test": "tsx --test src/strikes.test.ts"

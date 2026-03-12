@@ -5,7 +5,7 @@
 	local-deploy local-setup local-bots local-live local-strategy local-ui-ready local-ui \
 	local-test-rust local-test-anchor local-test-smoke local-test-grep local-check \
 	devnet-env-check railway-env-check railway-sync \
-	railway-deploy-frontend railway-deploy-bots railway-deploy railway-release \
+	railway-deploy-frontend railway-deploy-bots railway-deploy-read-api railway-deploy railway-release \
 	devnet-deploy devnet-setup devnet-health devnet-settle devnet-morning devnet-reset \
 	wallet-pubkeys circuit tree clean \
 	dev dev-validator deploy setup bots live strategy-bots test check \
@@ -34,8 +34,10 @@ TSX ?= node --import tsx
 DEVNET_URL ?= $(DEVNET_RPC_URL)
 RAILWAY_FRONTEND_SERVICE ?= frontend
 RAILWAY_BOTS_SERVICE ?= bots
+RAILWAY_READ_API_SERVICE ?= read-api
 VITE_DEV_WALLET ?= true
 DEMO_TICKER ?= NVDA
+READ_API_URL ?=
 
 ADMIN_PUBKEY = $$(solana-keygen pubkey $(ADMIN_WALLET))
 LOCAL_TS_ENV = ANCHOR_PROVIDER_URL="$(LOCAL_RPC_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" OFFLINE="$(OFFLINE)"
@@ -240,9 +242,11 @@ railway-env-check:
 	$(call require_var,DEVNET_USDC_MINT)
 	$(call require_var,RAILWAY_FRONTEND_SERVICE)
 	$(call require_var,RAILWAY_BOTS_SERVICE)
+	$(call require_var,RAILWAY_READ_API_SERVICE)
 	@echo "Railway config"
 	@echo "  Frontend service: $(RAILWAY_FRONTEND_SERVICE)"
 	@echo "  Bots service: $(RAILWAY_BOTS_SERVICE)"
+	@echo "  Read API service: $(RAILWAY_READ_API_SERVICE)"
 	@echo "  RPC: $(DEVNET_URL)"
 	@echo "  USDC mint: $(DEVNET_USDC_MINT)"
 
@@ -254,11 +258,18 @@ railway-sync: railway-env-check
 		"VITE_USDC_MINT=$(DEVNET_USDC_MINT)" \
 		"VITE_DEV_WALLET=$(VITE_DEV_WALLET)" \
 	| xargs railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)"
+	@if [ -n "$(READ_API_URL)" ]; then \
+		railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)" "VITE_READ_API_URL=$(READ_API_URL)"; \
+	fi
 	@printf '%s\n' \
 		"ANCHOR_PROVIDER_URL=$(DEVNET_URL)" \
 		"USDC_MINT=$(DEVNET_USDC_MINT)" \
 		"DEMO_TICKER=$(DEMO_TICKER)" \
 	| xargs railway variable set -s "$(RAILWAY_BOTS_SERVICE)"
+	@printf '%s\n' \
+		"ANCHOR_PROVIDER_URL=$(DEVNET_URL)" \
+		"RPC_URL=$(DEVNET_URL)" \
+	| xargs railway variable set -s "$(RAILWAY_READ_API_SERVICE)"
 
 railway-deploy-frontend: railway-env-check
 	railway up frontend --path-as-root -s "$(RAILWAY_FRONTEND_SERVICE)" -d
@@ -266,7 +277,10 @@ railway-deploy-frontend: railway-env-check
 railway-deploy-bots: railway-env-check
 	railway up -s "$(RAILWAY_BOTS_SERVICE)" -d
 
-railway-deploy: railway-env-check railway-deploy-frontend railway-deploy-bots
+railway-deploy-read-api: railway-env-check
+	cd automation && railway up -s "$(RAILWAY_READ_API_SERVICE)" -d
+
+railway-deploy: railway-env-check railway-deploy-frontend railway-deploy-bots railway-deploy-read-api
 
 railway-release: railway-sync railway-deploy
 

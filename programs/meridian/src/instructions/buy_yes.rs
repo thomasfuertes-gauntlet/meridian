@@ -1,13 +1,13 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
-    token::{Mint, Token, TokenAccount},
+    token::{self, Mint, Token, TokenAccount, Transfer},
 };
 
 use crate::errors::MeridianError;
 use crate::instructions::shared::{
-    apply_fills_to_orders, buy_yes_from_asks, escrow_usdc, plan_ask_fills, refund_ob_usdc_to_user,
-    total_fill_cost, compute_refund, validate_order_book_for_market,
+    apply_fills_to_orders, compute_refund, escrow_usdc, plan_ask_fills,
+    refund_ob_usdc_to_user, total_fill_cost, validate_order_book_for_market,
 };
 use crate::state::{GlobalConfig, OrderBook, StrikeMarket, USDC_PER_PAIR};
 
@@ -80,11 +80,7 @@ pub struct BuyYes<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler<'info>(
-    ctx: Context<'_, '_, 'info, 'info, BuyYes<'info>>,
-    amount: u64,
-    max_price: u64,
-) -> Result<()> {
+pub fn handler(ctx: Context<BuyYes>, amount: u64, max_price: u64) -> Result<()> {
     require!(amount > 0, MeridianError::InvalidAmount);
     require!(!ctx.accounts.config.paused, MeridianError::Paused);
     ctx.accounts.market.assert_trading_active()?;
@@ -96,6 +92,7 @@ pub fn handler<'info>(
     let market_key = ctx.accounts.market.key();
     let order_book_ai = ctx.accounts.order_book.to_account_info();
 
+    // Phase 1: Escrow max possible USDC from user
     let escrow_amount = amount
         .checked_mul(max_price)
         .ok_or(MeridianError::InvalidAmount)?;
@@ -107,7 +104,8 @@ pub fn handler<'info>(
         escrow_amount,
     )?;
 
-    let (fills, total_fill_cost, ob_bump) = {
+    // Phase 2: Read book, plan fills
+    let (fills, total_cost, ob_bump) = {
         let ob = ctx.accounts.order_book.load()?;
 
         validate_order_book_for_market(
@@ -118,26 +116,31 @@ pub fn handler<'info>(
         )?;
 
         let fills = plan_ask_fills(&ob.asks, ob.ask_count as usize, amount, max_price)?;
-        let total_fill_cost = total_fill_cost(&fills)?;
+        let cost = total_fill_cost(&fills)?;
 
-        (fills, total_fill_cost, ob.bump)
+        (fills, cost, ob.bump)
     };
 
+    // Phase 3: CPI transfers (taker only - no counterparty accounts needed)
     let ob_seeds: &[&[u8]] = &[OrderBook::SEED, market_key.as_ref(), &[ob_bump]];
     let ob_signer = &[ob_seeds];
 
-    buy_yes_from_asks(
-        ctx.accounts.token_program.to_account_info(),
-        order_book_ai.clone(),
-        ctx.accounts.user_yes.to_account_info(),
-        &ctx.accounts.ob_usdc_vault,
-        &ctx.accounts.ob_yes_vault,
-        ob_signer,
-        &fills,
-        ctx.remaining_accounts,
+    // Transfer Yes tokens from vault to taker
+    token::transfer(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.ob_yes_vault.to_account_info(),
+                to: ctx.accounts.user_yes.to_account_info(),
+                authority: order_book_ai.clone(),
+            },
+            ob_signer,
+        ),
+        amount,
     )?;
 
-    let refund = compute_refund(escrow_amount, total_fill_cost)?;
+    // Refund excess USDC to taker
+    let refund = compute_refund(escrow_amount, total_cost)?;
     refund_ob_usdc_to_user(
         ctx.accounts.token_program.to_account_info(),
         order_book_ai,
@@ -147,8 +150,12 @@ pub fn handler<'info>(
         refund,
     )?;
 
+    // Phase 4: Write credits to makers + apply fills
     {
         let mut ob = ctx.accounts.order_book.load_mut()?;
+        for fill in &fills {
+            ob.add_usdc_credit(fill.counterparty_owner, fill.fill_cost)?;
+        }
         let ask_count = ob.ask_count;
         ob.ask_count = apply_fills_to_orders(&mut ob.asks, ask_count, &fills)?;
     }

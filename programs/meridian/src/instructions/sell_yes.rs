@@ -1,9 +1,9 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Token, TokenAccount};
+use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 use crate::errors::MeridianError;
 use crate::instructions::shared::{
-    apply_fills_to_orders, escrow_yes, plan_bid_fills, sell_yes_into_bids,
+    apply_fills_to_orders, escrow_yes, plan_bid_fills, total_fill_cost,
     validate_order_book_for_market,
 };
 use crate::state::{GlobalConfig, OrderBook, StrikeMarket, USDC_PER_PAIR};
@@ -67,11 +67,7 @@ pub struct SellYes<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-pub fn handler<'info>(
-    ctx: Context<'_, '_, 'info, 'info, SellYes<'info>>,
-    amount: u64,
-    min_price: u64,
-) -> Result<()> {
+pub fn handler(ctx: Context<SellYes>, amount: u64, min_price: u64) -> Result<()> {
     require!(amount > 0, MeridianError::InvalidAmount);
     require!(!ctx.accounts.config.paused, MeridianError::Paused);
     ctx.accounts.market.assert_trading_active()?;
@@ -82,6 +78,7 @@ pub fn handler<'info>(
 
     let market_key = ctx.accounts.market.key();
 
+    // Phase 1: Escrow Yes tokens from user
     escrow_yes(
         ctx.accounts.token_program.to_account_info(),
         ctx.accounts.user.to_account_info(),
@@ -90,7 +87,8 @@ pub fn handler<'info>(
         amount,
     )?;
 
-    let (fills, ob_bump) = {
+    // Phase 2: Read book, plan fills
+    let (fills, total_cost, ob_bump) = {
         let ob = ctx.accounts.order_book.load()?;
 
         validate_order_book_for_market(
@@ -101,27 +99,35 @@ pub fn handler<'info>(
         )?;
 
         let fills = plan_bid_fills(&ob.bids, ob.bid_count as usize, amount, min_price)?;
+        let cost = total_fill_cost(&fills)?;
 
-        (fills, ob.bump)
+        (fills, cost, ob.bump)
     };
 
+    // Phase 3: CPI transfer USDC to taker (no counterparty accounts needed)
     let order_book_ai = ctx.accounts.order_book.to_account_info();
     let ob_seeds: &[&[u8]] = &[OrderBook::SEED, market_key.as_ref(), &[ob_bump]];
     let ob_signer = &[ob_seeds];
 
-    sell_yes_into_bids(
-        ctx.accounts.token_program.to_account_info(),
-        order_book_ai,
-        ctx.accounts.user_usdc.to_account_info(),
-        &ctx.accounts.ob_usdc_vault,
-        &ctx.accounts.ob_yes_vault,
-        ob_signer,
-        &fills,
-        ctx.remaining_accounts,
+    token::transfer(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.ob_usdc_vault.to_account_info(),
+                to: ctx.accounts.user_usdc.to_account_info(),
+                authority: order_book_ai,
+            },
+            ob_signer,
+        ),
+        total_cost,
     )?;
 
+    // Phase 4: Write credits to makers + apply fills
     {
         let mut ob = ctx.accounts.order_book.load_mut()?;
+        for fill in &fills {
+            ob.add_yes_credit(fill.counterparty_owner, fill.fill_qty)?;
+        }
         let bid_count = ob.bid_count;
         ob.bid_count = apply_fills_to_orders(&mut ob.bids, bid_count, &fills)?;
     }

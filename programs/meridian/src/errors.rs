@@ -72,4 +72,8 @@ pub enum MeridianError {
     InvalidSettlementWindow,
     #[msg("Settlement price is invalid")]
     InvalidSettlementPrice,
+    #[msg("Credit ledger is full")]
+    CreditLedgerFull,
+    #[msg("Nothing to claim")]
+    NothingToClaim,
 }

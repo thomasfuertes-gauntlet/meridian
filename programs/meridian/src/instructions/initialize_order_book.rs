@@ -86,6 +86,7 @@ pub fn handler(ctx: Context<InitializeOrderBook>) -> Result<()> {
     order_book.next_order_id = 1;
     order_book.bid_count = 0;
     order_book.ask_count = 0;
+    order_book.credit_count = 0;
     order_book.bump = ctx.bumps.order_book;
 
     let market = &mut ctx.accounts.market;

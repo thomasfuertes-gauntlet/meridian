@@ -42,11 +42,7 @@ pub mod meridian {
         instructions::mint_pair::handler(ctx, amount)
     }
 
-    pub fn buy_yes<'info>(
-        ctx: Context<'_, '_, 'info, 'info, BuyYes<'info>>,
-        amount: u64,
-        max_price: u64,
-    ) -> Result<()> {
+    pub fn buy_yes(ctx: Context<BuyYes>, amount: u64, max_price: u64) -> Result<()> {
         instructions::buy_yes::handler(ctx, amount, max_price)
     }
 
@@ -61,12 +57,12 @@ pub mod meridian {
         instructions::redeem::handler(ctx, amount)
     }
 
-    pub fn sell_yes<'info>(
-        ctx: Context<'_, '_, 'info, 'info, SellYes<'info>>,
-        amount: u64,
-        min_price: u64,
-    ) -> Result<()> {
+    pub fn sell_yes(ctx: Context<SellYes>, amount: u64, min_price: u64) -> Result<()> {
         instructions::sell_yes::handler(ctx, amount, min_price)
+    }
+
+    pub fn claim_fills(ctx: Context<ClaimFills>) -> Result<()> {
+        instructions::claim_fills::handler(ctx)
     }
 
     pub fn settle_market<'info>(

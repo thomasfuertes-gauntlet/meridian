@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Burn, MintTo, TokenAccount, Transfer};
+use anchor_spl::token::{self, Burn, MintTo, Transfer};
 
 use crate::errors::MeridianError;
 use crate::state::{Order, OrderBook, StrikeMarket, MAX_ORDERS_PER_SIDE};
@@ -9,19 +9,18 @@ pub struct AtomicFill {
     pub book_index: usize,
     pub fill_qty: u64,
     pub fill_cost: u64,
-    pub remaining_acct_idx: usize,
     pub counterparty_owner: Pubkey,
 }
 
 // User-facing trade path mapping:
-// - buy_yes = escrow_usdc + buy_yes_from_asks + refund_ob_usdc_to_user
-// - sell_yes = escrow_yes + sell_yes_into_bids
+// - buy_yes = escrow_usdc + taker Yes transfer + refund excess USDC + credit makers
+// - sell_yes = escrow_yes + taker USDC transfer + credit makers
 // Higher-level UX composition:
 // - buy_no = mint_complete_set + sell_yes_into_bids
 // - sell_no = buy_yes_from_asks + burn_complete_set_for_usdc
 //
-// The helpers below intentionally model the economic steps directly rather than
-// collapsing them into a single mode-flagged trade engine.
+// Taker fills credit maker balances in the OrderBook (zero_copy write).
+// Makers withdraw via claim_fills (separate instruction, permissionless).
 
 pub fn plan_bid_fills(
     bids: &[Order; MAX_ORDERS_PER_SIDE],
@@ -31,7 +30,6 @@ pub fn plan_bid_fills(
 ) -> Result<Vec<AtomicFill>> {
     let mut fills: Vec<AtomicFill> = Vec::new();
     let mut rem_qty = amount;
-    let mut ra_idx = 0usize;
 
     for (i, bid) in bids.iter().enumerate().take(bid_count) {
         if rem_qty == 0 {
@@ -53,10 +51,8 @@ pub fn plan_bid_fills(
             book_index: i,
             fill_qty,
             fill_cost,
-            remaining_acct_idx: ra_idx,
             counterparty_owner: bid.owner,
         });
-        ra_idx += 1;
         rem_qty = rem_qty
             .checked_sub(fill_qty)
             .ok_or(MeridianError::InvalidAmount)?;
@@ -76,7 +72,6 @@ pub fn plan_ask_fills(
 ) -> Result<Vec<AtomicFill>> {
     let mut fills: Vec<AtomicFill> = Vec::new();
     let mut rem_qty = amount;
-    let mut ra_idx = 0usize;
 
     for (i, ask) in asks.iter().enumerate().take(ask_count) {
         if rem_qty == 0 {
@@ -98,10 +93,8 @@ pub fn plan_ask_fills(
             book_index: i,
             fill_qty,
             fill_cost,
-            remaining_acct_idx: ra_idx,
             counterparty_owner: ask.owner,
         });
-        ra_idx += 1;
         rem_qty = rem_qty
             .checked_sub(fill_qty)
             .ok_or(MeridianError::InvalidAmount)?;
@@ -318,84 +311,6 @@ pub fn compact_orders(orders: &mut [Order; MAX_ORDERS_PER_SIDE], count: u16) -> 
     write as u16
 }
 
-pub fn validate_order_book_drained<'info>(
-    market: &StrikeMarket,
-    market_key: &Pubkey,
-    remaining_accounts: &'info [AccountInfo<'info>],
-) -> Result<()> {
-    if !market.has_order_book() {
-        return Ok(());
-    }
-
-    require!(
-        remaining_accounts.len() >= 3,
-        MeridianError::MissingOrderBookAccounts
-    );
-
-    let order_book_ai = &remaining_accounts[0];
-    let ob_usdc_vault_ai = &remaining_accounts[1];
-    let ob_yes_vault_ai = &remaining_accounts[2];
-
-    require_keys_eq!(
-        *order_book_ai.key,
-        market.order_book,
-        MeridianError::InvalidOrderBookAccount
-    );
-    require_keys_eq!(
-        *ob_usdc_vault_ai.key,
-        market.ob_usdc_vault,
-        MeridianError::InvalidOrderBookAccount
-    );
-    require_keys_eq!(
-        *ob_yes_vault_ai.key,
-        market.ob_yes_vault,
-        MeridianError::InvalidOrderBookAccount
-    );
-
-    let order_book = AccountLoader::<OrderBook>::try_from(order_book_ai)
-        .map_err(|_| error!(MeridianError::InvalidOrderBookAccount))?;
-    let ob = order_book
-        .load()
-        .map_err(|_| error!(MeridianError::InvalidOrderBookAccount))?;
-    require_keys_eq!(
-        ob.market,
-        *market_key,
-        MeridianError::InvalidOrderBookAccount
-    );
-    require!(!ob.has_active_orders(), MeridianError::OrderBookNotEmpty);
-
-    let ob_usdc_vault = Account::<TokenAccount>::try_from(ob_usdc_vault_ai)
-        .map_err(|_| error!(MeridianError::InvalidOrderBookAccount))?;
-    let ob_yes_vault = Account::<TokenAccount>::try_from(ob_yes_vault_ai)
-        .map_err(|_| error!(MeridianError::InvalidOrderBookAccount))?;
-
-    validate_order_book_snapshot(
-        true,
-        ob.has_active_orders(),
-        ob_usdc_vault.amount,
-        ob_yes_vault.amount,
-    )
-}
-
-pub fn validate_order_book_snapshot(
-    has_order_book: bool,
-    has_active_orders: bool,
-    ob_usdc_amount: u64,
-    ob_yes_amount: u64,
-) -> Result<()> {
-    if !has_order_book {
-        return Ok(());
-    }
-
-    require!(!has_active_orders, MeridianError::OrderBookNotEmpty);
-    require!(
-        ob_usdc_amount == 0 && ob_yes_amount == 0,
-        MeridianError::OrderBookEscrowNotEmpty
-    );
-
-    Ok(())
-}
-
 pub fn validate_order_book_for_market(
     order_book: &OrderBook,
     market_key: &Pubkey,
@@ -412,38 +327,6 @@ pub fn validate_order_book_for_market(
         order_book.ob_yes_vault,
         ob_yes_vault,
         MeridianError::VaultInvariantViolation
-    );
-    Ok(())
-}
-
-pub fn validate_counterparty_token_account(
-    token_account: &TokenAccount,
-    expected_owner: Pubkey,
-    expected_mint: Pubkey,
-) -> Result<()> {
-    validate_counterparty_owner_and_mint(
-        token_account.owner,
-        token_account.mint,
-        expected_owner,
-        expected_mint,
-    )
-}
-
-fn validate_counterparty_owner_and_mint(
-    actual_owner: Pubkey,
-    actual_mint: Pubkey,
-    expected_owner: Pubkey,
-    expected_mint: Pubkey,
-) -> Result<()> {
-    require_keys_eq!(
-        actual_owner,
-        expected_owner,
-        MeridianError::InvalidCounterpartyAccount
-    );
-    require_keys_eq!(
-        actual_mint,
-        expected_mint,
-        MeridianError::InvalidCounterpartyAccount
     );
     Ok(())
 }
@@ -465,112 +348,36 @@ pub fn apply_fills_to_orders(
     Ok(compact_orders(orders, count))
 }
 
-pub fn buy_yes_from_asks<'info>(
-    token_program: AccountInfo<'info>,
-    order_book_authority: AccountInfo<'info>,
-    user_yes: AccountInfo<'info>,
-    ob_usdc_vault: &Account<'info, TokenAccount>,
-    ob_yes_vault: &Account<'info, TokenAccount>,
-    ob_signer: &[&[&[u8]]],
-    fills: &[AtomicFill],
+/// Auto-credit all resting orders during settlement.
+/// Called from settle_market and admin_settle when the market has an order book.
+/// The order_book account must be passed as remaining_accounts[0] (writable).
+pub fn auto_credit_resting_orders<'info>(
+    market: &StrikeMarket,
     remaining_accounts: &'info [AccountInfo<'info>],
 ) -> Result<()> {
-    for fill in fills {
-        require!(
-            fill.remaining_acct_idx < remaining_accounts.len(),
-            MeridianError::MissingCounterpartyAccount
-        );
-        let counterparty_ata = &remaining_accounts[fill.remaining_acct_idx];
-        let counterparty_token_account = Account::<TokenAccount>::try_from(counterparty_ata)
-            .map_err(|_| MeridianError::InvalidCounterpartyAccount)?;
-
-        validate_counterparty_token_account(
-            &counterparty_token_account,
-            fill.counterparty_owner,
-            ob_usdc_vault.mint,
-        )?;
-
-        token::transfer(
-            CpiContext::new_with_signer(
-                token_program.clone(),
-                Transfer {
-                    from: ob_yes_vault.to_account_info(),
-                    to: user_yes.clone(),
-                    authority: order_book_authority.clone(),
-                },
-                ob_signer,
-            ),
-            fill.fill_qty,
-        )?;
-
-        token::transfer(
-            CpiContext::new_with_signer(
-                token_program.clone(),
-                Transfer {
-                    from: ob_usdc_vault.to_account_info(),
-                    to: counterparty_ata.to_account_info(),
-                    authority: order_book_authority.clone(),
-                },
-                ob_signer,
-            ),
-            fill.fill_cost,
-        )?;
+    if !market.has_order_book() {
+        return Ok(());
     }
 
-    Ok(())
-}
+    require!(
+        !remaining_accounts.is_empty(),
+        MeridianError::MissingOrderBookAccounts
+    );
 
-pub fn sell_yes_into_bids<'info>(
-    token_program: AccountInfo<'info>,
-    order_book_authority: AccountInfo<'info>,
-    user_usdc: AccountInfo<'info>,
-    ob_usdc_vault: &Account<'info, TokenAccount>,
-    ob_yes_vault: &Account<'info, TokenAccount>,
-    ob_signer: &[&[&[u8]]],
-    fills: &[AtomicFill],
-    remaining_accounts: &'info [AccountInfo<'info>],
-) -> Result<()> {
-    for fill in fills {
-        require!(
-            fill.remaining_acct_idx < remaining_accounts.len(),
-            MeridianError::MissingCounterpartyAccount
-        );
-        let counterparty_ata = &remaining_accounts[fill.remaining_acct_idx];
-        let counterparty_token_account = Account::<TokenAccount>::try_from(counterparty_ata)
-            .map_err(|_| MeridianError::InvalidCounterpartyAccount)?;
+    let order_book_ai = &remaining_accounts[0];
+    require_keys_eq!(
+        *order_book_ai.key,
+        market.order_book,
+        MeridianError::InvalidOrderBookAccount
+    );
 
-        validate_counterparty_token_account(
-            &counterparty_token_account,
-            fill.counterparty_owner,
-            ob_yes_vault.mint,
-        )?;
+    let order_book_loader = AccountLoader::<OrderBook>::try_from(order_book_ai)
+        .map_err(|_| error!(MeridianError::InvalidOrderBookAccount))?;
+    let mut ob = order_book_loader
+        .load_mut()
+        .map_err(|_| error!(MeridianError::InvalidOrderBookAccount))?;
 
-        token::transfer(
-            CpiContext::new_with_signer(
-                token_program.clone(),
-                Transfer {
-                    from: ob_usdc_vault.to_account_info(),
-                    to: user_usdc.clone(),
-                    authority: order_book_authority.clone(),
-                },
-                ob_signer,
-            ),
-            fill.fill_cost,
-        )?;
-
-        token::transfer(
-            CpiContext::new_with_signer(
-                token_program.clone(),
-                Transfer {
-                    from: ob_yes_vault.to_account_info(),
-                    to: counterparty_ata.to_account_info(),
-                    authority: order_book_authority.clone(),
-                },
-                ob_signer,
-            ),
-            fill.fill_qty,
-        )?;
-    }
+    ob.credit_all_resting_orders()?;
 
     Ok(())
 }
@@ -631,6 +438,7 @@ mod tests {
     }
 
     fn sample_order_book(market: Pubkey, ob_usdc_vault: Pubkey, ob_yes_vault: Pubkey) -> OrderBook {
+        use crate::state::{CreditEntry, MAX_CREDIT_ENTRIES};
         OrderBook {
             market,
             ob_usdc_vault,
@@ -639,14 +447,16 @@ mod tests {
             bid_count: 0,
             ask_count: 0,
             bump: 255,
-            _padding: [0; 3],
+            credit_count: 0,
+            _padding: [0; 2],
             bids: [Order::default(); MAX_ORDERS_PER_SIDE],
             asks: [Order::default(); MAX_ORDERS_PER_SIDE],
+            credits: [CreditEntry::default(); MAX_CREDIT_ENTRIES],
         }
     }
 
     #[test]
-    fn plan_bid_fills_skips_inactive_orders_and_keeps_remaining_account_index_dense() {
+    fn plan_bid_fills_skips_inactive_orders() {
         let owner_a = Pubkey::new_unique();
         let owner_b = Pubkey::new_unique();
         let mut bids = [Order::default(); MAX_ORDERS_PER_SIDE];
@@ -656,12 +466,11 @@ mod tests {
         let fills = plan_bid_fills(&bids, 2, 2, 600_000).unwrap();
         assert_eq!(fills.len(), 1);
         assert_eq!(fills[0].book_index, 1);
-        assert_eq!(fills[0].remaining_acct_idx, 0);
         assert_eq!(fills[0].counterparty_owner, owner_b);
     }
 
     #[test]
-    fn plan_ask_fills_skips_inactive_orders_and_keeps_remaining_account_index_dense() {
+    fn plan_ask_fills_skips_inactive_orders() {
         let owner_a = Pubkey::new_unique();
         let owner_b = Pubkey::new_unique();
         let mut asks = [Order::default(); MAX_ORDERS_PER_SIDE];
@@ -671,7 +480,6 @@ mod tests {
         let fills = plan_ask_fills(&asks, 2, 2, 400_000).unwrap();
         assert_eq!(fills.len(), 1);
         assert_eq!(fills[0].book_index, 1);
-        assert_eq!(fills[0].remaining_acct_idx, 0);
         assert_eq!(fills[0].counterparty_owner, owner_b);
     }
 
@@ -699,14 +507,12 @@ mod tests {
                 book_index: 0,
                 fill_qty: 1,
                 fill_cost: u64::MAX,
-                remaining_acct_idx: 0,
                 counterparty_owner: Pubkey::new_unique(),
             },
             AtomicFill {
                 book_index: 1,
                 fill_qty: 1,
                 fill_cost: 1,
-                remaining_acct_idx: 1,
                 counterparty_owner: Pubkey::new_unique(),
             },
         ];
@@ -746,21 +552,18 @@ mod tests {
                 book_index: 0,
                 fill_qty: 2,
                 fill_cost: 1_300_000,
-                remaining_acct_idx: 0,
                 counterparty_owner: owner_a,
             },
             AtomicFill {
                 book_index: 1,
                 fill_qty: 1,
                 fill_cost: 640_000,
-                remaining_acct_idx: 1,
                 counterparty_owner: owner_b,
             },
             AtomicFill {
                 book_index: 2,
                 fill_qty: 1,
                 fill_cost: 630_000,
-                remaining_acct_idx: 2,
                 counterparty_owner: owner_c,
             },
         ];
@@ -784,7 +587,6 @@ mod tests {
             book_index: 0,
             fill_qty: 2,
             fill_cost: 1_300_000,
-            remaining_acct_idx: 0,
             counterparty_owner: owner,
         }];
 
@@ -803,28 +605,6 @@ mod tests {
         let market = sample_market(3);
         let err = assert_market_vault_invariant(&market, 2_999_999, 1_000_000).unwrap_err();
         assert!(err.to_string().contains("VaultInvariantViolation"));
-    }
-
-    #[test]
-    fn validate_order_book_snapshot_allows_absent_order_book_even_with_nonzero_amounts() {
-        validate_order_book_snapshot(false, true, 123, 456).unwrap();
-    }
-
-    #[test]
-    fn validate_order_book_snapshot_allows_present_empty_book_with_zero_escrow() {
-        validate_order_book_snapshot(true, false, 0, 0).unwrap();
-    }
-
-    #[test]
-    fn validate_order_book_snapshot_rejects_present_book_with_active_orders() {
-        let err = validate_order_book_snapshot(true, true, 0, 0).unwrap_err();
-        assert!(err.to_string().contains("OrderBookNotEmpty"));
-    }
-
-    #[test]
-    fn validate_order_book_snapshot_rejects_present_book_with_residual_yes_escrow() {
-        let err = validate_order_book_snapshot(true, false, 0, 1).unwrap_err();
-        assert!(err.to_string().contains("OrderBookEscrowNotEmpty"));
     }
 
     #[test]
@@ -873,39 +653,6 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("VaultInvariantViolation"));
-    }
-
-    #[test]
-    fn validate_counterparty_token_account_accepts_matching_owner_and_mint() {
-        let owner = Pubkey::new_unique();
-        let mint = Pubkey::new_unique();
-        validate_counterparty_owner_and_mint(owner, mint, owner, mint).unwrap();
-    }
-
-    #[test]
-    fn validate_counterparty_token_account_rejects_owner_mismatch() {
-        let mint = Pubkey::new_unique();
-        let err = validate_counterparty_owner_and_mint(
-            Pubkey::new_unique(),
-            mint,
-            Pubkey::new_unique(),
-            mint,
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("InvalidCounterpartyAccount"));
-    }
-
-    #[test]
-    fn validate_counterparty_token_account_rejects_mint_mismatch() {
-        let owner = Pubkey::new_unique();
-        let err = validate_counterparty_owner_and_mint(
-            owner,
-            Pubkey::new_unique(),
-            owner,
-            Pubkey::new_unique(),
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("InvalidCounterpartyAccount"));
     }
 
     #[test]

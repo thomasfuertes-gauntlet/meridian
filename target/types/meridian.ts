@@ -808,6 +808,163 @@ export type Meridian = {
       ]
     },
     {
+      "name": "claimFills",
+      "discriminator": [
+        167,
+        244,
+        211,
+        249,
+        74,
+        110,
+        41,
+        32
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Payer/signer. Permissionless - anyone can crank claims for any owner."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.ticker",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.strike_price",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.date",
+                "account": "strikeMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "orderBook",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  98,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obUsdcVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "obYesVault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  121,
+                  101,
+                  115,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner"
+        },
+        {
+          "name": "ownerUsdc",
+          "writable": true
+        },
+        {
+          "name": "ownerYes",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "createStrikeMarket",
       "discriminator": [
         21,
@@ -2729,9 +2886,43 @@ export type Meridian = {
       "code": 6034,
       "name": "invalidSettlementPrice",
       "msg": "Settlement price is invalid"
+    },
+    {
+      "code": 6035,
+      "name": "creditLedgerFull",
+      "msg": "Credit ledger is full"
+    },
+    {
+      "code": 6036,
+      "name": "nothingToClaim",
+      "msg": "Nothing to claim"
     }
   ],
   "types": [
+    {
+      "name": "creditEntry",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdcClaimable",
+            "type": "u64"
+          },
+          {
+            "name": "yesClaimable",
+            "type": "u64"
+          }
+        ]
+      }
+    },
     {
       "name": "globalConfig",
       "type": {
@@ -2912,11 +3103,15 @@ export type Meridian = {
             "type": "u8"
           },
           {
+            "name": "creditCount",
+            "type": "u8"
+          },
+          {
             "name": "padding",
             "type": {
               "array": [
                 "u8",
-                3
+                2
               ]
             }
           },
@@ -2943,6 +3138,19 @@ export type Meridian = {
                   }
                 },
                 32
+              ]
+            }
+          },
+          {
+            "name": "credits",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "creditEntry"
+                  }
+                },
+                64
               ]
             }
           }

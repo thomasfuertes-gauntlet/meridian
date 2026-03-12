@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
 use crate::errors::MeridianError;
-use crate::instructions::shared::validate_order_book_drained;
+use crate::instructions::shared::auto_credit_resting_orders;
 use crate::state::{GlobalConfig, StrikeMarket};
 
 #[derive(Accounts)]
@@ -34,7 +34,6 @@ pub fn handler<'info>(
     price: u64,
 ) -> Result<()> {
     let clock = Clock::get()?;
-    let market_key = ctx.accounts.market.key();
     {
         let market = &mut ctx.accounts.market;
         market.prepare_for_settlement(clock.unix_timestamp)?;
@@ -48,7 +47,10 @@ pub fn handler<'info>(
         clock.unix_timestamp,
     )?;
     validate_admin_settlement_price(price)?;
-    validate_order_book_drained(market, &market_key, ctx.remaining_accounts)?;
+
+    // Auto-credit resting orders (replaces drain check).
+    // If market has an OB, remaining_accounts[0] must be the writable OrderBook.
+    auto_credit_resting_orders(market, ctx.remaining_accounts)?;
 
     let outcome = market.outcome_for_price(price);
 

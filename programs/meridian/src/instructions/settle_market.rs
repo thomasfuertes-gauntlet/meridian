@@ -2,11 +2,8 @@ use anchor_lang::prelude::*;
 use pyth_solana_receiver_sdk::price_update::{Price, PriceUpdateV2, VerificationLevel};
 
 use crate::errors::MeridianError;
-use crate::instructions::shared::validate_order_book_drained;
+use crate::instructions::shared::auto_credit_resting_orders;
 use crate::state::{GlobalConfig, StrikeMarket};
-
-#[cfg(test)]
-use crate::instructions::shared::validate_order_book_snapshot;
 
 #[derive(Accounts)]
 pub struct SettleMarket<'info> {
@@ -36,7 +33,6 @@ pub struct SettleMarket<'info> {
 
 pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleMarket<'info>>) -> Result<()> {
     let clock = Clock::get()?;
-    let market_key = ctx.accounts.market.key();
 
     {
         let market = &mut ctx.accounts.market;
@@ -45,7 +41,10 @@ pub fn handler<'info>(ctx: Context<'_, '_, 'info, 'info, SettleMarket<'info>>) -
 
     let market = &ctx.accounts.market;
     let oracle_policy = ctx.accounts.config.oracle_policy_for_ticker(&market.ticker)?;
-    validate_order_book_drained(market, &market_key, ctx.remaining_accounts)?;
+
+    // Auto-credit resting orders (replaces drain check).
+    // If market has an OB, remaining_accounts[0] must be the writable OrderBook.
+    auto_credit_resting_orders(market, ctx.remaining_accounts)?;
 
     // Read a fully verified price update for this feed, then enforce that it was
     // published in the market's intended settlement window.
@@ -202,22 +201,5 @@ mod tests {
     fn rejects_negative_conversion_inputs() {
         let err = oracle_price_to_usdc_micro(&sample_price(-1, -6, 1_000)).unwrap_err();
         assert!(err.to_string().contains("InvalidOraclePrice"));
-    }
-
-    #[test]
-    fn allows_settlement_when_no_order_book_exists() {
-        validate_order_book_snapshot(false, false, 10, 10).unwrap();
-    }
-
-    #[test]
-    fn rejects_settlement_with_active_orders() {
-        let err = validate_order_book_snapshot(true, true, 0, 0).unwrap_err();
-        assert!(err.to_string().contains("OrderBookNotEmpty"));
-    }
-
-    #[test]
-    fn rejects_settlement_with_residual_escrow() {
-        let err = validate_order_book_snapshot(true, false, 1, 0).unwrap_err();
-        assert!(err.to_string().contains("OrderBookEscrowNotEmpty"));
     }
 }

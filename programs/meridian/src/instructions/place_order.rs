@@ -287,6 +287,7 @@ mod tests {
     }
 
     fn empty_book() -> OrderBook {
+        use crate::state::{CreditEntry, MAX_CREDIT_ENTRIES};
         OrderBook {
             market: Pubkey::new_unique(),
             ob_usdc_vault: Pubkey::new_unique(),
@@ -295,9 +296,11 @@ mod tests {
             bid_count: 0,
             ask_count: 0,
             bump: 255,
-            _padding: [0; 3],
+            credit_count: 0,
+            _padding: [0; 2],
             bids: [Order::default(); MAX_ORDERS_PER_SIDE],
             asks: [Order::default(); MAX_ORDERS_PER_SIDE],
+            credits: [CreditEntry::default(); MAX_CREDIT_ENTRIES],
         }
     }
 

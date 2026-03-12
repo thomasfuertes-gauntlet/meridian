@@ -802,6 +802,163 @@
       ]
     },
     {
+      "name": "claim_fills",
+      "discriminator": [
+        167,
+        244,
+        211,
+        249,
+        74,
+        110,
+        41,
+        32
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Payer/signer. Permissionless - anyone can crank claims for any owner."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.ticker",
+                "account": "StrikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.strike_price",
+                "account": "StrikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.date",
+                "account": "StrikeMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "order_book",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  98,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ob_usdc_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ob_yes_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  98,
+                  95,
+                  121,
+                  101,
+                  115,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner"
+        },
+        {
+          "name": "owner_usdc",
+          "writable": true
+        },
+        {
+          "name": "owner_yes",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "create_strike_market",
       "discriminator": [
         21,
@@ -2723,9 +2880,43 @@
       "code": 6034,
       "name": "InvalidSettlementPrice",
       "msg": "Settlement price is invalid"
+    },
+    {
+      "code": 6035,
+      "name": "CreditLedgerFull",
+      "msg": "Credit ledger is full"
+    },
+    {
+      "code": 6036,
+      "name": "NothingToClaim",
+      "msg": "Nothing to claim"
     }
   ],
   "types": [
+    {
+      "name": "CreditEntry",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_claimable",
+            "type": "u64"
+          },
+          {
+            "name": "yes_claimable",
+            "type": "u64"
+          }
+        ]
+      }
+    },
     {
       "name": "GlobalConfig",
       "type": {
@@ -2906,11 +3097,15 @@
             "type": "u8"
           },
           {
+            "name": "credit_count",
+            "type": "u8"
+          },
+          {
             "name": "_padding",
             "type": {
               "array": [
                 "u8",
-                3
+                2
               ]
             }
           },
@@ -2937,6 +3132,19 @@
                   }
                 },
                 32
+              ]
+            }
+          },
+          {
+            "name": "credits",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "CreditEntry"
+                  }
+                },
+                64
               ]
             }
           }

@@ -22,7 +22,7 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
-import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveTicker, getBotTickerFilter } from "./bot-utils";
+import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveTicker, getBotTickerFilter, buildFillAccounts, type Order } from "./bot-utils";
 
 const TICK_MS = 45_000;
 const TX_DELAY_MS = Number(process.env.TX_DELAY_MS ?? 1000); // 1s global throttle
@@ -42,6 +42,9 @@ interface MarketInfo {
   bestAsk: number | null;
   bidOwner: PublicKey | null;
   askOwner: PublicKey | null;
+  // Full sorted book sides (self-trade filtered) for multi-fill remaining_accounts
+  otherBids: Order[];
+  otherAsks: Order[];
   // Internal refs for TX building
   yesMint: PublicKey;
   noMint: PublicKey;
@@ -300,12 +303,20 @@ async function main() {
     const botYesAta = getAssociatedTokenAddressSync(mkt.yesMint, bot.publicKey);
 
     if (signal.direction === "yes") {
-      // Buy Yes taker flow must use the dedicated instruction, not maker-only placeOrder.
+      // Buy Yes taker flow: crosses resting asks on the book.
       if (mkt.bestAsk === null || mkt.askOwner === null) return false;
       // Self-trade guard
       if (mkt.askOwner.equals(bot.publicKey)) return false;
 
-      const counterpartyUsdcAta = getAssociatedTokenAddressSync(usdcMint, mkt.askOwner);
+      // Walk all asks that would fill at this price to build counterparty USDC ATAs.
+      const remainingAccounts = buildFillAccounts(
+        "bid",
+        mkt.bestAsk,
+        signal.qty,
+        mkt.otherAsks,
+        usdcMint,
+      );
+
       await program.methods
         .buyYes(new BN(signal.qty), new BN(mkt.bestAsk))
         .accountsPartial({
@@ -318,9 +329,7 @@ async function main() {
           userUsdc: botUsdcAta,
           userYes: botYesAta,
         })
-        .remainingAccounts([
-          { pubkey: counterpartyUsdcAta, isWritable: true, isSigner: false },
-        ])
+        .remainingAccounts(remainingAccounts)
         .signers([bot])
         .rpc();
 
@@ -328,15 +337,24 @@ async function main() {
       return true;
 
     } else {
-      // Buy No: mint pairs (need Yes tokens as escrow), then place ask at bestBid.
+      // Buy No: mint_pair + sell_yes sent atomically in one transaction.
+      // If mintPair succeeds but sellYes fails separately, bot holds stranded tokens.
       if (mkt.bestBid === null || mkt.bidOwner === null) return false;
       // Self-trade guard
       if (mkt.bidOwner.equals(bot.publicKey)) return false;
 
       const botNoAta = getAssociatedTokenAddressSync(mkt.noMint, bot.publicKey);
 
-      // Mint pairs first
-      await program.methods
+      // Walk all bids that would fill at this price to build counterparty Yes ATAs.
+      const remainingAccounts = buildFillAccounts(
+        "ask",
+        mkt.bestBid,
+        signal.qty,
+        mkt.otherBids,
+        mkt.yesMint,
+      );
+
+      const mintIx = await program.methods
         .mintPair(new BN(signal.qty))
         .accountsPartial({
           user: bot.publicKey,
@@ -348,13 +366,9 @@ async function main() {
           userYes: botYesAta,
           userNo: botNoAta,
         })
-        .signers([bot])
-        .rpc();
-      await sleep(TX_DELAY_MS);
+        .instruction();
 
-      // Sell the freshly minted Yes through the dedicated taker path.
-      const counterpartyYesAta = getAssociatedTokenAddressSync(mkt.yesMint, mkt.bidOwner);
-      await program.methods
+      const sellIx = await program.methods
         .sellYes(new BN(signal.qty), new BN(mkt.bestBid))
         .accountsPartial({
           user: bot.publicKey,
@@ -365,11 +379,11 @@ async function main() {
           userUsdc: botUsdcAta,
           userYes: botYesAta,
         })
-        .remainingAccounts([
-          { pubkey: counterpartyYesAta, isWritable: true, isSigner: false },
-        ])
-        .signers([bot])
-        .rpc();
+        .remainingAccounts(remainingAccounts)
+        .instruction();
+
+      const tx = new anchor.web3.Transaction().add(mintIx, sellIx);
+      await anchor.web3.sendAndConfirmTransaction(connection, tx, [bot]);
 
       console.log(`  [${stratName}] BUY NO  ${mkt.ticker}>$${mkt.strikeDollars} @ $${((USDC_PER_PAIR - mkt.bestBid) / USDC_PER_PAIR).toFixed(2)} x${signal.qty} (${signal.reason})`);
       return true;
@@ -453,6 +467,8 @@ async function main() {
         bestAsk: otherAsks[0]?.price ?? null,
         bidOwner: otherBids[0]?.owner ?? null,
         askOwner: otherAsks[0]?.owner ?? null,
+        otherBids,
+        otherAsks,
         yesMint: mkt.yesMint,
         noMint: mkt.noMint,
         vault: mkt.vault,

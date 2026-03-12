@@ -16,6 +16,11 @@ export function formatUsdcBaseUnits(value: number | null): string {
   return money.format(value / USDC_PER_PAIR);
 }
 
+export function formatUsdcCents(value: number | null): string {
+  if (value == null) return "--";
+  return `${Math.round((value / USDC_PER_PAIR) * 100)}c`;
+}
+
 export function formatContracts(value: number): string {
   return new Intl.NumberFormat("en-US").format(value);
 }

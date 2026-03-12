@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ParsedOrder } from "../lib/orderbook";
-import { formatUsdcBaseUnits } from "../lib/format";
+import { formatContracts, formatUsdcBaseUnits, formatUsdcCents } from "../lib/format";
 
 interface OrderBookProps {
   bids: ParsedOrder[];
@@ -15,18 +15,18 @@ interface PriceLevel {
   quantity: number;
 }
 
-function OrderRow({
-  order,
+function PriceLevelRow({
+  level,
   side,
 }: {
-  order: PriceLevel;
+  level: PriceLevel;
   side: "bid" | "ask";
 }) {
-  const color = side === "bid" ? "text-emerald-300" : "text-rose-300";
+  const priceColor = side === "bid" ? "text-emerald-300" : "text-rose-300";
   return (
-    <div className="flex justify-between py-1 text-sm font-mono">
-      <span className={color}>{formatUsdcBaseUnits(order.price)}</span>
-      <span className="text-stone-400">{order.quantity}</span>
+    <div className="grid grid-cols-[auto_1fr] items-baseline gap-3 py-1.5 text-sm font-mono">
+      <span className={priceColor}>{formatUsdcCents(level.price)}</span>
+      <span className="justify-self-end text-stone-300">{formatContracts(level.quantity)}</span>
     </div>
   );
 }
@@ -38,7 +38,8 @@ function depthForOrders(orders: ParsedOrder[]): number {
 function aggregateByPrice(orders: ParsedOrder[], side: "bid" | "ask"): PriceLevel[] {
   const levels = new Map<number, number>();
   for (const order of orders) {
-    levels.set(order.price, (levels.get(order.price) ?? 0) + order.quantity);
+    const displayPrice = Math.round(order.price / 10_000) * 10_000;
+    levels.set(displayPrice, (levels.get(displayPrice) ?? 0) + order.quantity);
   }
 
   const aggregated = [...levels.entries()].map(([price, quantity]) => ({
@@ -56,13 +57,11 @@ export function OrderBook({
   noAsks,
   title = "Order Book",
 }: OrderBookProps) {
-  const [perspective, setPerspective] = useState<"yes" | "no">("yes");
-
-  const displayBids = perspective === "yes" ? bids : noBids;
-  const displayAsks = perspective === "yes" ? asks : noAsks;
-  const label = perspective === "yes" ? "Yes" : "No";
-  const displayBidLevels = aggregateByPrice(displayBids, "bid");
-  const displayAskLevels = aggregateByPrice(displayAsks, "ask");
+  const [focus, setFocus] = useState<"yes" | "no">("yes");
+  const yesBidLevels = aggregateByPrice(bids, "bid");
+  const yesAskLevels = aggregateByPrice(asks, "ask");
+  const noBidLevels = aggregateByPrice(noBids, "bid");
+  const noAskLevels = aggregateByPrice(noAsks, "ask");
   const yesBestBid = bids[0]?.price ?? null;
   const yesBestAsk = asks[0]?.price ?? null;
   const noBestBid = noBids[0]?.price ?? null;
@@ -74,92 +73,111 @@ export function OrderBook({
   const yesDepth = depthForOrders(bids) + depthForOrders(asks);
   const noDepth = depthForOrders(noBids) + depthForOrders(noAsks);
 
-  return (
-    <div className="rounded-[1.5rem] border border-white/10 bg-stone-950/85 p-4">
-      <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-stone-400">
-          {title} ({label})
-        </h3>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2">
-              <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Yes market</div>
-              <div className="mt-1 grid grid-cols-4 gap-2 text-[10px] uppercase tracking-[0.14em] text-stone-500">
-                <span>Bid</span>
-                <span>Ask</span>
-                <span>Spread</span>
-                <span>Depth</span>
-              </div>
-              <div className="mt-1 grid grid-cols-4 gap-2 font-mono text-xs text-stone-200">
-                <span>{formatUsdcBaseUnits(yesBestBid)}</span>
-                <span>{formatUsdcBaseUnits(yesBestAsk)}</span>
-                <span>{formatUsdcBaseUnits(yesSpread)}</span>
-                <span>{yesDepth}</span>
-              </div>
-            </div>
-            <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2">
-              <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">No market</div>
-              <div className="mt-1 grid grid-cols-4 gap-2 text-[10px] uppercase tracking-[0.14em] text-stone-500">
-                <span>Bid</span>
-                <span>Ask</span>
-                <span>Spread</span>
-                <span>Depth</span>
-              </div>
-              <div className="mt-1 grid grid-cols-4 gap-2 font-mono text-xs text-stone-200">
-                <span>{formatUsdcBaseUnits(noBestBid)}</span>
-                <span>{formatUsdcBaseUnits(noBestAsk)}</span>
-                <span>{formatUsdcBaseUnits(noSpread)}</span>
-                <span>{noDepth}</span>
-              </div>
-            </div>
+  function renderSidePanel(
+    label: "Yes" | "No",
+    bidLevels: PriceLevel[],
+    askLevels: PriceLevel[],
+    bestBid: number | null,
+    bestAsk: number | null,
+    spread: number | null,
+    depth: number
+  ) {
+    const active = focus === label.toLowerCase();
+    return (
+      <section
+        className={`rounded-[1.35rem] border p-3 transition ${
+          active ? "border-sky-400/30 bg-sky-400/8" : "border-white/8 bg-white/[0.03]"
+        }`}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-white/8 pb-3">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.22em] text-stone-500">{label} side</div>
+            <div className="mt-1 text-lg font-semibold text-white">{formatUsdcBaseUnits(bestAsk)}</div>
           </div>
           <button
-            onClick={() =>
-              setPerspective((p) => (p === "yes" ? "no" : "yes"))
-            }
-            className="rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-stone-300 transition hover:border-amber-200/40 hover:text-white"
+            type="button"
+            onClick={() => setFocus(label.toLowerCase() as "yes" | "no")}
+            className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.22em] transition ${
+              active
+                ? "border-sky-300/30 bg-sky-300/12 text-sky-100"
+                : "border-white/10 text-stone-400 hover:border-white/20 hover:text-white"
+            }`}
           >
-            Flip to {perspective === "yes" ? "No" : "Yes"}
+            Focus
           </button>
         </div>
-      </div>
 
-      <div className="mb-1 flex justify-between px-1 text-xs uppercase tracking-[0.2em] text-stone-600">
-        <span>Price</span>
-        <span>Qty</span>
-      </div>
-
-      {/* Asks (lowest first, displayed top to bottom) */}
-      <div className="mb-2 border-b border-white/10 pb-2">
-        {displayAskLevels.length === 0 ? (
-          <div className="py-2 text-center text-xs text-stone-600">
-            No asks
-          </div>
-        ) : (
-          [...displayAskLevels].reverse().map((level) => (
-            <OrderRow key={`ask-${level.price}`} order={level} side="ask" />
-          ))
-        )}
-      </div>
-
-      {/* Spread indicator */}
-      {displayBids.length > 0 && displayAsks.length > 0 && (
-        <div className="py-1 text-center text-xs text-stone-500">
-          Spread {formatUsdcBaseUnits(displayAsks[0].price - displayBids[0].price)}
+        <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] uppercase tracking-[0.18em] text-stone-500">
+          <div>Bid</div>
+          <div>Ask</div>
+          <div>Depth</div>
         </div>
-      )}
+        <div className="mt-1 grid grid-cols-3 gap-2 font-mono text-xs text-stone-200">
+          <div>{formatUsdcCents(bestBid)}</div>
+          <div>{formatUsdcCents(bestAsk)}</div>
+          <div>{formatContracts(depth)}</div>
+        </div>
+        <div className="mt-1 grid grid-cols-3 gap-2 text-[10px] uppercase tracking-[0.18em] text-stone-500">
+          <div>Spread</div>
+          <div className="col-span-2">Quoted</div>
+        </div>
+        <div className="mt-1 grid grid-cols-3 gap-2 font-mono text-xs text-stone-200">
+          <div>{formatUsdcCents(spread)}</div>
+          <div className="col-span-2">{bidLevels.length + askLevels.length} levels</div>
+        </div>
 
-      {/* Bids (highest first, displayed top to bottom) */}
-      <div className="pt-2">
-        {displayBidLevels.length === 0 ? (
-          <div className="py-2 text-center text-xs text-stone-600">
-            No bids
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          <div>
+            <div className="flex items-center justify-between border-b border-white/8 pb-2 text-[10px] uppercase tracking-[0.2em] text-rose-300">
+              <span>Ask cents</span>
+              <span>Qty</span>
+            </div>
+            <div className="mt-2 space-y-0.5">
+              {askLevels.length === 0 ? (
+                <div className="py-3 text-center text-xs text-stone-600">No asks</div>
+              ) : (
+                askLevels.map((level) => (
+                  <PriceLevelRow key={`${label}-ask-${level.price}`} level={level} side="ask" />
+                ))
+              )}
+            </div>
           </div>
-        ) : (
-          displayBidLevels.map((level) => (
-            <OrderRow key={`bid-${level.price}`} order={level} side="bid" />
-          ))
-        )}
+
+          <div>
+            <div className="flex items-center justify-between border-b border-white/8 pb-2 text-[10px] uppercase tracking-[0.2em] text-emerald-300">
+              <span>Bid cents</span>
+              <span>Qty</span>
+            </div>
+            <div className="mt-2 space-y-0.5">
+              {bidLevels.length === 0 ? (
+                <div className="py-3 text-center text-xs text-stone-600">No bids</div>
+              ) : (
+                bidLevels.map((level) => (
+                  <PriceLevelRow key={`${label}-bid-${level.price}`} level={level} side="bid" />
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <div className="rounded-[1.5rem] border border-white/10 bg-stone-950/85 p-4">
+      <div className="mb-4 flex flex-col gap-2 border-b border-white/8 pb-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-stone-400">{title}</h3>
+          <p className="mt-1 text-sm text-stone-500">Aggregated book by price level, shown in cents and contracts.</p>
+        </div>
+        <div className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[11px] uppercase tracking-[0.22em] text-stone-400">
+          Focus {focus}
+        </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        {renderSidePanel("Yes", yesBidLevels, yesAskLevels, yesBestBid, yesBestAsk, yesSpread, yesDepth)}
+        {renderSidePanel("No", noBidLevels, noAskLevels, noBestBid, noBestAsk, noSpread, noDepth)}
       </div>
     </div>
   );

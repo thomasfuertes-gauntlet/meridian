@@ -65,7 +65,7 @@ export default function App() {
           <div className="min-h-screen bg-[#090b12] text-stone-100">
             <div className="border-b border-white/6 bg-[#06080d]">
               <div className="ticker-tape-viewport">
-                <div className="ticker-tape-track text-xs text-stone-400">
+                <div className="ticker-tape-track text-[11px] text-stone-400">
                   {[0, 1].map((segment) => (
                     <div key={segment} className="ticker-tape-segment">
                       {tickerTapeItems.map((item, index) => (
@@ -82,7 +82,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="mx-auto flex min-h-[calc(100vh-44px)] max-w-[1800px] gap-4 px-3 py-4 sm:px-6 lg:px-8">
+            <div className="mx-auto flex min-h-[calc(100vh-38px)] max-w-[1800px] gap-3 px-3 py-3 sm:px-5 lg:px-8">
               <aside className="terminal-panel sticky top-4 hidden h-fit w-[252px] shrink-0 p-4 lg:block">
                 <div className="space-y-6">
                   <div className="space-y-3">
@@ -116,30 +116,27 @@ export default function App() {
               </aside>
 
               <div className="flex min-w-0 flex-1 flex-col gap-4">
-                <header className="terminal-panel terminal-panel--header flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
-                  <div className="space-y-1">
-                    <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">Session overview</p>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <h2 className="font-display text-3xl text-zinc-50">MAG7 close markets</h2>
+                <header className="terminal-panel terminal-panel--header flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-[11px] uppercase tracking-[0.3em] text-zinc-500">Session</p>
+                      <span className="text-zinc-700">/</span>
+                      <h2 className="font-display text-[1.85rem] leading-none text-zinc-50">MAG7 close markets</h2>
                       <span className="rounded-full border border-emerald-400/15 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">
                         {IS_LOCAL_RPC ? "Local validator" : "Remote market feed"}
                       </span>
                     </div>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
-                    <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
+                  <div className="grid gap-2 sm:grid-cols-[repeat(2,minmax(0,1fr))_auto]">
+                    <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2.5">
                       <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">RPC mode</p>
                       <p className="font-data text-sm text-zinc-200">{RPC_MODE_LABEL}</p>
                     </div>
-                    <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
+                    <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2.5">
                       <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">Program</p>
                       <p className="font-data text-sm text-zinc-200">{PROGRAM_ID.toBase58().slice(0, 8)}</p>
                     </div>
-                    {/* <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
-                      <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">Endpoint</p>
-                      <p className="font-data text-sm text-zinc-200">{RPC_URL.slice(0, 18)}{RPC_URL.length > 18 ? "..." : ""}</p>
-                    </div> */}
                     <div className="wallet-toolbar flex flex-wrap items-center gap-2">
                       <SettlementCountdown />
                       <WalletButton />

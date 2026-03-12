@@ -120,9 +120,9 @@ export interface MarketCtx {
   obYesVault: PublicKey;
 }
 
-export function getBotTickerFilter(): string | null {
+export function getBotTickerFilter(): string {
   const ticker = process.env.DEMO_TICKER?.trim().toUpperCase();
-  return ticker ? ticker : null;
+  return ticker || "NVDA";
 }
 
 /** Discover all active (pending) markets and derive their PDAs. */

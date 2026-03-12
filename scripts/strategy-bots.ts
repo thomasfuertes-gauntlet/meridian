@@ -29,7 +29,6 @@ const TX_DELAY_MS = Number(process.env.TX_DELAY_MS ?? 1000); // 1s global thrott
 const MAX_TRADES_PER_TICK = 2;
 const COOLDOWN_TICKS = 5;
 const MARKET_REFRESH_TICKS = 50;
-const REPLENISH_THRESHOLD = 500 * USDC_PER_PAIR;
 
 // --- Types ---
 

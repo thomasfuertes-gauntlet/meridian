@@ -15,12 +15,12 @@ export function Landing() {
             On-chain binary equity markets
           </div>
           <h1 className="max-w-3xl text-5xl font-semibold leading-tight text-white sm:text-6xl">
-            Rebuilding the terminal around live state, not prototype glue.
+            Trade MAG7 close-above markets from a live on-chain book.
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-stone-300">
-            Meridian prices MAG7 close-above strikes directly from Solana accounts,
-            the built-in order book, and Pyth price context. This first pass is intentionally
-            read-first so the new frontend foundation matches the Rust program before trade flows return.
+            Each strike is a Yes or No market on whether a stock closes at or above the target price.
+            Meridian pulls prices, books, open interest, and settlement state straight from Solana and
+            Pyth so the screen reflects the actual market, not a mock demo layer.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link

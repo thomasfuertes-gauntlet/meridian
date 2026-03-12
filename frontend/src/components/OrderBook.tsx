@@ -26,6 +26,10 @@ function OrderRow({
   );
 }
 
+function depthForOrders(orders: ParsedOrder[]): number {
+  return orders.reduce((sum, order) => sum + order.quantity, 0);
+}
+
 export function OrderBook({
   bids,
   asks,
@@ -38,21 +42,65 @@ export function OrderBook({
   const displayBids = perspective === "yes" ? bids : noBids;
   const displayAsks = perspective === "yes" ? asks : noAsks;
   const label = perspective === "yes" ? "Yes" : "No";
+  const yesBestBid = bids[0]?.price ?? null;
+  const yesBestAsk = asks[0]?.price ?? null;
+  const noBestBid = noBids[0]?.price ?? null;
+  const noBestAsk = noAsks[0]?.price ?? null;
+  const yesSpread =
+    yesBestBid != null && yesBestAsk != null ? yesBestAsk - yesBestBid : null;
+  const noSpread =
+    noBestBid != null && noBestAsk != null ? noBestAsk - noBestBid : null;
+  const yesDepth = depthForOrders(bids) + depthForOrders(asks);
+  const noDepth = depthForOrders(noBids) + depthForOrders(noAsks);
 
   return (
-    <div className="rounded-[1.5rem] border border-white/10 bg-stone-950/85 p-5">
-      <div className="mb-4 flex items-center justify-between gap-4">
+    <div className="rounded-[1.5rem] border border-white/10 bg-stone-950/85 p-4">
+      <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
         <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-stone-400">
           {title} ({label})
         </h3>
-        <button
-          onClick={() =>
-            setPerspective((p) => (p === "yes" ? "no" : "yes"))
-          }
-          className="rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-stone-300 transition hover:border-amber-200/40 hover:text-white"
-        >
-          Flip to {perspective === "yes" ? "No" : "Yes"}
-        </button>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2">
+              <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Yes market</div>
+              <div className="mt-1 grid grid-cols-4 gap-2 text-[10px] uppercase tracking-[0.14em] text-stone-500">
+                <span>Bid</span>
+                <span>Ask</span>
+                <span>Spread</span>
+                <span>Depth</span>
+              </div>
+              <div className="mt-1 grid grid-cols-4 gap-2 font-mono text-xs text-stone-200">
+                <span>{formatUsdcBaseUnits(yesBestBid)}</span>
+                <span>{formatUsdcBaseUnits(yesBestAsk)}</span>
+                <span>{formatUsdcBaseUnits(yesSpread)}</span>
+                <span>{yesDepth}</span>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2">
+              <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">No market</div>
+              <div className="mt-1 grid grid-cols-4 gap-2 text-[10px] uppercase tracking-[0.14em] text-stone-500">
+                <span>Bid</span>
+                <span>Ask</span>
+                <span>Spread</span>
+                <span>Depth</span>
+              </div>
+              <div className="mt-1 grid grid-cols-4 gap-2 font-mono text-xs text-stone-200">
+                <span>{formatUsdcBaseUnits(noBestBid)}</span>
+                <span>{formatUsdcBaseUnits(noBestAsk)}</span>
+                <span>{formatUsdcBaseUnits(noSpread)}</span>
+                <span>{noDepth}</span>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() =>
+              setPerspective((p) => (p === "yes" ? "no" : "yes"))
+            }
+            className="rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-[0.2em] text-stone-300 transition hover:border-amber-200/40 hover:text-white"
+          >
+            Flip to {perspective === "yes" ? "No" : "Yes"}
+          </button>
+        </div>
       </div>
 
       <div className="mb-1 flex justify-between px-1 text-xs uppercase tracking-[0.2em] text-stone-600">

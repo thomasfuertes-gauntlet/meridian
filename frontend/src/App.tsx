@@ -15,6 +15,7 @@ import { Markets } from "./pages/Markets";
 import { MarketDetail } from "./pages/MarketDetail";
 import { Portfolio } from "./pages/Portfolio";
 import { Activity } from "./pages/Activity";
+import { useMarketUniverse } from "./lib/market-data";
 
 function NavLink({ to, label }: { to: string; label: string }) {
   const { pathname } = useLocation();
@@ -41,6 +42,21 @@ export default function App() {
     () => (useDevWallet ? [new LocalDevWalletAdapter()] : []),
     [useDevWallet]
   );
+  const { data } = useMarketUniverse();
+  const tickerTapeItems = data?.tickerSnapshots?.length
+    ? [...data.tickerSnapshots, ...data.tickerSnapshots]
+    : [
+        "AAPL",
+        "MSFT",
+        "GOOGL",
+        "AMZN",
+        "NVDA",
+        "META",
+        "TSLA",
+      ].map((ticker) => ({
+        ticker,
+        latestPrice: null,
+      }));
 
   return (
     <ConnectionProvider endpoint={RPC_URL}>
@@ -48,30 +64,38 @@ export default function App() {
         <WalletModalProvider>
           <div className="min-h-screen bg-[#090b12] text-stone-100">
             <div className="border-b border-white/6 bg-[#06080d]">
-              <div className="ticker-tape-track text-xs text-stone-400">
-                {["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"].map((ticker) => (
-                  <div key={ticker} className="ticker-pill">
-                    <span className="font-mono text-stone-200">{ticker}</span>
-                    <span className="text-stone-500">{RPC_MODE_LABEL}</span>
-                  </div>
-                ))}
+              <div className="ticker-tape-viewport">
+                <div className="ticker-tape-track text-xs text-stone-400">
+                  {[0, 1].map((segment) => (
+                    <div key={segment} className="ticker-tape-segment">
+                      {tickerTapeItems.map((item) => (
+                        <div key={`${segment}-${item.ticker}`} className="ticker-pill">
+                          <span className="font-mono text-stone-200">{item.ticker}</span>
+                          <span className="text-stone-500">
+                            {item.latestPrice != null ? `$${item.latestPrice.toFixed(2)}` : "--"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
             <div className="mx-auto flex min-h-[calc(100vh-44px)] max-w-[1800px] gap-4 px-3 py-4 sm:px-6 lg:px-8">
-              <aside className="terminal-panel hidden w-[252px] shrink-0 flex-col justify-between p-4 lg:flex">
+              <aside className="terminal-panel sticky top-4 hidden h-fit w-[252px] shrink-0 p-4 lg:block">
                 <div className="space-y-6">
                   <div className="space-y-3">
                     <div className="inline-flex items-center rounded-full border border-sky-400/15 bg-sky-400/10 px-3 py-1 text-[11px] uppercase tracking-[0.28em] text-sky-200">
                       Desk Mode
                     </div>
                     <div>
-                      <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">Binary close terminal</p>
+                      <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">Tom Fuertes</p>
                       <h1 className="font-display text-3xl text-white">Meridian</h1>
                       <p className="mt-1 text-xs text-zinc-500">{RPC_MODE_LABEL}</p>
                     </div>
                     <p className="text-sm leading-6 text-zinc-400">
-                      Market-first terminal over live Solana state, with the frontend rebuilt around read models and dedicated trade instructions.
+                      Trade live MAG7 close-above markets with on-chain books, oracle pricing, and direct wallet flow.
                     </p>
                   </div>
 
@@ -81,7 +105,6 @@ export default function App() {
                     <NavLink to="/activity" label="Activity" />
                     <NavLink to="/portfolio" label="Portfolio" />
                   </nav>
-                </div>
 
                 <div className="rounded-[22px] border border-white/8 bg-white/[0.03] p-4">
                   <div className="text-sm text-zinc-200">Runtime notes</div>
@@ -89,10 +112,11 @@ export default function App() {
                     Use `npm run dev:local` for validator work and `npm run dev:devnet` when the shared remote environment has active markets.
                   </p>
                 </div>
+                </div>
               </aside>
 
               <div className="flex min-w-0 flex-1 flex-col gap-4">
-                <header className="terminal-panel flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
+                <header className="terminal-panel terminal-panel--header flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
                   <div className="space-y-1">
                     <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">Session overview</p>
                     <div className="flex flex-wrap items-center gap-3">
@@ -112,11 +136,11 @@ export default function App() {
                       <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">Program</p>
                       <p className="font-data text-sm text-zinc-200">{PROGRAM_ID.toBase58().slice(0, 8)}</p>
                     </div>
-                    <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
+                    {/* <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
                       <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-500">Endpoint</p>
                       <p className="font-data text-sm text-zinc-200">{RPC_URL.slice(0, 18)}{RPC_URL.length > 18 ? "..." : ""}</p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    </div> */}
+                    <div className="wallet-toolbar flex flex-wrap items-center gap-2">
                       <SettlementCountdown />
                       <WalletButton />
                     </div>

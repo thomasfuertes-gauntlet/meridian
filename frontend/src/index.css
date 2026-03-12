@@ -100,12 +100,25 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
+.terminal-panel--header {
+  overflow: visible;
+}
+
+.ticker-tape-viewport {
+  overflow: hidden;
+}
+
 .ticker-tape-track {
   display: flex;
   width: max-content;
-  gap: 0.75rem;
-  padding: 0.65rem 1rem;
   animation: ticker-marquee 36s linear infinite;
+}
+
+.ticker-tape-segment {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.75rem;
+  padding: 0.65rem 0.375rem 0.65rem 1rem;
 }
 
 .ticker-pill {
@@ -134,7 +147,7 @@
   }
 
   to {
-    transform: translateX(-50%);
+    transform: translateX(calc(-50% - 0.375rem));
   }
 }
 
@@ -158,4 +171,24 @@
 }
 .wallet-adapter-button:hover {
   background-color: rgb(22 163 74) !important;
+}
+
+.wallet-toolbar {
+  position: relative;
+  z-index: 20;
+}
+
+.wallet-adapter-dropdown {
+  position: relative;
+  z-index: 30;
+}
+
+.wallet-adapter-dropdown-list {
+  z-index: 40;
+}
+
+.wallet-adapter-modal,
+.wallet-adapter-modal-overlay,
+.wallet-adapter-modal-wrapper {
+  z-index: 50;
 }

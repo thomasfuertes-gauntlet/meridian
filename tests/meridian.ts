@@ -840,6 +840,17 @@ describe("meridian", () => {
     }
   });
 
+  it("keeps legacy lifecycle instructions out of the generated IDL and client methods", async () => {
+    const instructionNames = program.idl.instructions.map((ix) => ix.name);
+
+    expect(instructionNames).to.not.include("buyNo");
+    expect(instructionNames).to.not.include("sellNo");
+    expect(instructionNames).to.not.include("burnPair");
+    expect((methods as Record<string, unknown>).buyNo).to.equal(undefined);
+    expect((methods as Record<string, unknown>).sellNo).to.equal(undefined);
+    expect((methods as Record<string, unknown>).burnPair).to.equal(undefined);
+  });
+
   it("add_strike creates another admin-only market with full trading accounts", async () => {
     const ticker = "AAPL";
     const strikePrice = new anchor.BN(520_000_000);
@@ -3154,6 +3165,59 @@ describe("meridian", () => {
 
       const market = await program.account.strikeMarket.fetch(pdas.marketPda);
       expect(market.totalPairsMinted.toNumber()).to.equal(0);
+    });
+
+    it("repeated partial winner claims decrease vault, supply, and open interest in lockstep", async () => {
+      const pdas = await createMarket("IVPM", new anchor.BN(226_000_000), new anchor.BN(1800000014));
+      const { userYes, userNo } = userTokenAccounts(pdas);
+
+      await mintPairForAdmin(pdas, 5);
+      await adminSettleMarket(pdas, new anchor.BN(226_000_000));
+
+      const winnerRedeems = [1, 2, 2];
+      let redeemedWinners = 0;
+
+      for (const amount of winnerRedeems) {
+        await redeemForUser(
+          pdas,
+          admin.publicKey,
+          adminUsdcAta,
+          pdas.yesMintPda,
+          userYes,
+          amount
+        );
+        redeemedWinners += amount;
+
+        const vault = await getAccount(connection, pdas.vaultPda);
+        const yesMint = await getMint(connection, pdas.yesMintPda);
+        const noMint = await getMint(connection, pdas.noMintPda);
+        const market = await program.account.strikeMarket.fetch(pdas.marketPda);
+        const remainingClaims = 5 - redeemedWinners;
+
+        expect(Number(vault.amount)).to.equal(remainingClaims * 1_000_000);
+        expect(Number(yesMint.supply)).to.equal(remainingClaims);
+        expect(Number(noMint.supply)).to.equal(5);
+        expect(market.totalPairsMinted.toNumber()).to.equal(remainingClaims);
+      }
+
+      await redeemForUser(
+        pdas,
+        admin.publicKey,
+        adminUsdcAta,
+        pdas.noMintPda,
+        userNo,
+        5
+      );
+
+      const finalVault = await getAccount(connection, pdas.vaultPda);
+      const finalYesMint = await getMint(connection, pdas.yesMintPda);
+      const finalNoMint = await getMint(connection, pdas.noMintPda);
+      const finalMarket = await program.account.strikeMarket.fetch(pdas.marketPda);
+
+      expect(Number(finalVault.amount)).to.equal(0);
+      expect(Number(finalYesMint.supply)).to.equal(0);
+      expect(Number(finalNoMint.supply)).to.equal(0);
+      expect(finalMarket.totalPairsMinted.toNumber()).to.equal(0);
     });
   });
 

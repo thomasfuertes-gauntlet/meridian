@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { OrderBook } from "../components/OrderBook";
 import { TradePanel } from "../components/TradePanel";
@@ -24,6 +24,7 @@ function statusColor(status: string): string {
 export function MarketDetail() {
   const { ticker } = useParams<{ ticker: string }>();
   const { data, error, loading } = useMarketUniverse(10_000);
+  const [selectedMarketAddress, setSelectedMarketAddress] = useState<string | null>(null);
   const routeTicker = useMemo(
     () => MAG7.find((entry) => entry.ticker === ticker)?.ticker ?? null,
     [ticker]
@@ -39,10 +40,25 @@ export function MarketDetail() {
     [data, routeTicker]
   );
 
-  const featured = markets.find((market) => market.status === "created")
+  const defaultFeatured = markets.find((market) => market.status === "created")
     ?? markets.find((market) => market.status === "frozen")
     ?? markets[0]
     ?? null;
+  const featured = markets.find((market) => market.address === selectedMarketAddress)
+    ?? defaultFeatured;
+
+  useEffect(() => {
+    if (!markets.length) {
+      setSelectedMarketAddress(null);
+      return;
+    }
+
+    if (selectedMarketAddress && markets.some((market) => market.address === selectedMarketAddress)) {
+      return;
+    }
+
+    setSelectedMarketAddress(defaultFeatured?.address ?? markets[0]?.address ?? null);
+  }, [defaultFeatured?.address, markets, selectedMarketAddress]);
 
   const noBook = featured?.orderBook ? flipToNoPerspective(featured.orderBook) : null;
   const usdcMint = getConfiguredUsdcMint();
@@ -60,9 +76,9 @@ export function MarketDetail() {
   }
 
   return (
-    <div className="space-y-8">
-      <section className="terminal-panel p-6">
-        <div className="flex flex-col gap-4 border-b border-white/10 pb-6 lg:flex-row lg:items-end lg:justify-between">
+    <div className="space-y-6">
+      <section className="terminal-panel p-5">
+        <div className="flex flex-col gap-4 border-b border-white/10 pb-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <Link to="/markets" className="text-sm text-zinc-400 transition hover:text-white">
               ← Back to markets
@@ -70,8 +86,8 @@ export function MarketDetail() {
             <div className="mt-4 text-[11px] uppercase tracking-[0.28em] text-zinc-500">
               {snapshot?.company ?? ticker}
             </div>
-            <h1 className="mt-2 font-display text-5xl text-white">{ticker}</h1>
-            <div className="mt-3 flex flex-wrap gap-3 text-sm text-zinc-300">
+            <h1 className="mt-1 font-display text-4xl text-white">{ticker}</h1>
+            <div className="mt-2 flex flex-wrap gap-3 text-sm text-zinc-300">
               <span>Oracle spot {snapshot?.latestPrice != null ? money.format(snapshot.latestPrice) : "--"}</span>
               <span>•</span>
               <span>{snapshot?.publishTime ? `Published ${formatRelativePublishTime(snapshot.publishTime)}` : "Oracle unavailable"}</span>
@@ -81,18 +97,15 @@ export function MarketDetail() {
               </span>
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
-              <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Strikes</div>
-              <div className="mt-2 font-display text-2xl text-white">{markets.length}</div>
+          <div className="flex flex-wrap gap-2 text-xs uppercase tracking-[0.22em] text-zinc-500">
+            <div className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-2">
+              Strikes <span className="ml-2 font-mono text-zinc-200">{markets.length}</span>
             </div>
-            <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
-              <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Open interest</div>
-              <div className="mt-2 font-display text-2xl text-white">{compact.format(snapshot?.totalOpenInterest ?? 0)}</div>
+            <div className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-2">
+              Open interest <span className="ml-2 font-mono text-zinc-200">{compact.format(snapshot?.totalOpenInterest ?? 0)}</span>
             </div>
-            <div className="rounded-[1.25rem] border border-white/8 bg-white/[0.03] p-4">
-              <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Best yes mid</div>
-              <div className="mt-2 font-data text-2xl text-sky-200">{formatUsdcBaseUnits(snapshot?.topYesMid ?? null)}</div>
+            <div className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-2">
+              Best yes mid <span className="ml-2 font-mono text-sky-200">{formatUsdcBaseUnits(snapshot?.topYesMid ?? null)}</span>
             </div>
           </div>
         </div>
@@ -103,25 +116,29 @@ export function MarketDetail() {
           </div>
         )}
 
-        <div className="mt-6 grid gap-3 lg:grid-cols-3">
+        <div className="mt-4">
+          <div className="mb-3 text-[11px] uppercase tracking-[0.22em] text-zinc-500">Strike selection</div>
+          <div className="flex gap-3 overflow-x-auto pb-1">
           {markets.map((market) => (
-            <div
+            <button
               key={market.address}
-              className={`rounded-[22px] border px-4 py-4 transition ${
+              type="button"
+              onClick={() => setSelectedMarketAddress(market.address)}
+              className={`min-w-[168px] shrink-0 rounded-[20px] border px-4 py-3 text-left transition ${
                 featured?.address === market.address
                   ? "border-sky-400/20 bg-sky-400/10"
-                  : "border-white/8 bg-white/[0.03]"
+                  : "border-white/8 bg-white/[0.03] hover:border-white/15 hover:bg-white/[0.05]"
               }`}
             >
               <div className="flex items-center justify-between gap-3">
-                <div className="font-data text-lg text-white">
+                <div className="font-data text-base text-white">
                   {formatUsdcBaseUnits(market.strikePrice)}
                 </div>
                 <div className={`text-xs uppercase tracking-[0.2em] ${statusColor(market.status)}`}>
                   {market.status}
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-zinc-300">
+              <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm text-zinc-300">
                 <div>
                   <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Yes mid</div>
                   <div className="mt-1 font-mono text-white">{formatUsdcBaseUnits(market.yesMid)}</div>
@@ -139,69 +156,31 @@ export function MarketDetail() {
                   <div className="mt-1 text-white">{formatContracts(market.totalPairsMinted)}</div>
                 </div>
               </div>
-            </div>
+            </button>
           ))}
+          </div>
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-        <div className="space-y-6">
-          <div className="terminal-panel p-5">
-            <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Featured market</div>
-            {featured ? (
-              <div className="mt-4 space-y-4">
-                <div className="flex items-end justify-between gap-4">
-                  <div>
-                    <div className="font-data text-3xl text-white">{formatUsdcBaseUnits(featured.strikePrice)}</div>
-                    <div className="mt-1 text-sm text-zinc-400">
-                      Outcome {featured.outcome} • source {featured.settlementSource ?? "pending"}
-                    </div>
-                  </div>
-                  <div className={`text-sm uppercase tracking-[0.24em] ${statusColor(featured.status)}`}>
-                    {featured.status}
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4 text-sm text-zinc-300">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Best yes bid</div>
-                    <div className="mt-1 font-mono text-white">{formatUsdcBaseUnits(featured.bestBid)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Best yes ask</div>
-                    <div className="mt-1 font-mono text-white">{formatUsdcBaseUnits(featured.bestAsk)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Best no bid</div>
-                    <div className="mt-1 font-mono text-white">{formatUsdcBaseUnits(featured.bestNoBid)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Best no ask</div>
-                    <div className="mt-1 font-mono text-white">{formatUsdcBaseUnits(featured.bestNoAsk)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Settlement price</div>
-                    <div className="mt-1 font-mono text-white">{formatUsdcBaseUnits(featured.settlementPrice)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Close time</div>
-                    <div className="mt-1 text-white">{formatTimestamp(featured.closeTime)}</div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-4 text-sm text-zinc-400">No current market accounts for this ticker.</div>
-            )}
-          </div>
-
-          <div className="terminal-panel p-5">
-            <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Read-path notes</div>
-            <div className="mt-4 space-y-3 text-sm leading-7 text-zinc-300">
-              <p>This page is derived from Anchor account fetches, zero-copy order-book parsing, and Pyth Hermes price context.</p>
-              <p>Trading is now reintroduced through the contract's dedicated trade instructions, rather than reviving the older client-side composition flow.</p>
+      <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <div>
+          {featured?.orderBook && noBook ? (
+            <OrderBook
+              title={`${ticker} depth`}
+              bids={featured.orderBook.bids}
+              asks={featured.orderBook.asks}
+              noBids={noBook.bids}
+              noAsks={noBook.asks}
+            />
+          ) : (
+            <div className="terminal-panel p-6 text-sm text-zinc-400">
+              No order book account was available for the selected market.
             </div>
-          </div>
+          )}
+        </div>
 
-          {featured && usdcMint && featured.bestBid != null && featured.bestAsk != null && (
+        <div className="space-y-6 xl:sticky xl:top-4 xl:self-start">
+          {featured && usdcMint && featured.bestBid != null && featured.bestAsk != null ? (
             <TradePanel
               market={featured.publicKey}
               yesMint={featured.yesMint}
@@ -214,24 +193,73 @@ export function MarketDetail() {
               bids={featured.orderBook?.bids ?? []}
               asks={featured.orderBook?.asks ?? []}
             />
-          )}
-        </div>
-
-        <div>
-          {featured?.orderBook && noBook ? (
-            <OrderBook
-              title={`${ticker} depth`}
-              bids={featured.orderBook.bids}
-              asks={featured.orderBook.asks}
-              noBids={noBook.bids}
-              noAsks={noBook.asks}
-            />
           ) : (
             <div className="terminal-panel p-6 text-sm text-zinc-400">
-              No order book account was available for the featured market.
+              Entry is unavailable until the selected market has a visible top of book.
             </div>
           )}
         </div>
+      </section>
+
+      <section className="terminal-panel p-4">
+        <div className="flex flex-col gap-3 border-b border-white/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Selected market</div>
+            <h2 className="mt-1 font-data text-2xl text-white">
+              {featured ? formatUsdcBaseUnits(featured.strikePrice) : "--"}
+            </h2>
+          </div>
+          {featured && (
+            <div className={`text-sm uppercase tracking-[0.24em] ${statusColor(featured.status)}`}>
+              {featured.status}
+            </div>
+          )}
+        </div>
+
+        {featured ? (
+          <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-8">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Outcome</div>
+              <div className="mt-1 text-sm text-white">{featured.outcome}</div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Source</div>
+              <div className="mt-1 text-sm text-white">{featured.settlementSource ?? "pending"}</div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Yes bid</div>
+              <div className="mt-1 font-mono text-white">{formatUsdcBaseUnits(featured.bestBid)}</div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Yes ask</div>
+              <div className="mt-1 font-mono text-white">{formatUsdcBaseUnits(featured.bestAsk)}</div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">No bid</div>
+              <div className="mt-1 font-mono text-white">{formatUsdcBaseUnits(featured.bestNoBid)}</div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">No ask</div>
+              <div className="mt-1 font-mono text-white">{formatUsdcBaseUnits(featured.bestNoAsk)}</div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Settlement price</div>
+              <div className="mt-1 font-mono text-white">{formatUsdcBaseUnits(featured.settlementPrice)}</div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Close time</div>
+              <div className="mt-1 text-sm text-white">{formatTimestamp(featured.closeTime)}</div>
+            </div>
+            <div className="md:col-span-2 xl:col-span-2">
+              <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Notes</div>
+              <div className="mt-1 text-sm text-zinc-400">
+                Live state comes from Anchor account reads, zero-copy order-book parsing, and Pyth price context. The selected strike drives both the entry panel and the depth view above.
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 text-sm text-zinc-400">No current market accounts for this ticker.</div>
+        )}
       </section>
     </div>
   );

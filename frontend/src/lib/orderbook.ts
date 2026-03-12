@@ -1,12 +1,14 @@
 import { type AccountInfo, PublicKey } from "@solana/web3.js";
 
 // Mirrors programs/meridian/src/state/orderbook.rs repr(C) layout
-// Total size: 8 (discriminator) + 4720 = 4728 bytes
+// Total size: 8 (discriminator) + 7792 = 7800 bytes
 
 const DISCRIMINATOR_SIZE = 8;
-const HEADER_SIZE = 112; // market(32) + ob_usdc_vault(32) + ob_yes_vault(32) + next_order_id(8) + bid_count(2) + ask_count(2) + bump(1) + padding(3)
+const HEADER_SIZE = 112; // market(32) + ob_usdc_vault(32) + ob_yes_vault(32) + next_order_id(8) + bid_count(2) + ask_count(2) + bump(1) + credit_count(1) + padding(2)
 const ORDER_SIZE = 72; // owner(32) + price(8) + quantity(8) + timestamp(8) + order_id(8) + is_active(1) + padding(7)
 const MAX_ORDERS_PER_SIDE = 32;
+const CREDIT_ENTRY_SIZE = 48; // owner(32) + usdc_claimable(8) + yes_claimable(8)
+export const MAX_CREDIT_ENTRIES = 64;
 
 export interface ParsedOrder {
   owner: PublicKey;
@@ -17,6 +19,12 @@ export interface ParsedOrder {
   isActive: boolean;
 }
 
+export interface ParsedCreditEntry {
+  owner: PublicKey;
+  usdcClaimable: number;
+  yesClaimable: number;
+}
+
 export interface ParsedOrderBook {
   market: PublicKey;
   obUsdcVault: PublicKey;
@@ -25,8 +33,10 @@ export interface ParsedOrderBook {
   bidCount: number;
   askCount: number;
   bump: number;
+  creditCount: number;
   bids: ParsedOrder[];
   asks: ParsedOrder[];
+  credits: ParsedCreditEntry[];
 }
 
 function parseOrder(buf: Buffer, offset: number): ParsedOrder {
@@ -37,6 +47,13 @@ function parseOrder(buf: Buffer, offset: number): ParsedOrder {
   const orderId = Number(buf.readBigUInt64LE(offset + 56));
   const isActive = buf[offset + 64] === 1;
   return { owner, price, quantity, timestamp, orderId, isActive };
+}
+
+function parseCreditEntry(buf: Buffer, offset: number): ParsedCreditEntry {
+  const owner = new PublicKey(buf.subarray(offset, offset + 32));
+  const usdcClaimable = Number(buf.readBigUInt64LE(offset + 32));
+  const yesClaimable = Number(buf.readBigUInt64LE(offset + 40));
+  return { owner, usdcClaimable, yesClaimable };
 }
 
 export function parseOrderBook(
@@ -52,9 +69,11 @@ export function parseOrderBook(
   const bidCount = buf.readUInt16LE(base + 104);
   const askCount = buf.readUInt16LE(base + 106);
   const bump = buf[base + 108];
+  const creditCount = buf[base + 109];
 
   const bidsOffset = base + HEADER_SIZE;
   const asksOffset = bidsOffset + MAX_ORDERS_PER_SIDE * ORDER_SIZE;
+  const creditsOffset = asksOffset + MAX_ORDERS_PER_SIDE * ORDER_SIZE;
 
   const bids: ParsedOrder[] = [];
   for (let i = 0; i < MAX_ORDERS_PER_SIDE; i++) {
@@ -66,6 +85,14 @@ export function parseOrderBook(
   for (let i = 0; i < MAX_ORDERS_PER_SIDE; i++) {
     const order = parseOrder(buf, asksOffset + i * ORDER_SIZE);
     if (order.isActive) asks.push(order);
+  }
+
+  const credits: ParsedCreditEntry[] = [];
+  for (let i = 0; i < creditCount; i++) {
+    const entry = parseCreditEntry(buf, creditsOffset + i * CREDIT_ENTRY_SIZE);
+    if (entry.usdcClaimable > 0 || entry.yesClaimable > 0) {
+      credits.push(entry);
+    }
   }
 
   // Sort: bids highest first, asks lowest first
@@ -80,8 +107,10 @@ export function parseOrderBook(
     bidCount,
     askCount,
     bump,
+    creditCount,
     bids,
     asks,
+    credits,
   };
 }
 

@@ -328,9 +328,6 @@ async function main() {
             userUsdc: botUsdcAta,
             userYes: botYesAta,
           })
-          .remainingAccounts([
-            { pubkey: getAssociatedTokenAddressSync(usdcMint, bestAsk.owner), isWritable: true, isSigner: false },
-          ])
           .signers([bot])
           .rpc();
         txCount++;
@@ -351,9 +348,6 @@ async function main() {
             userUsdc: botUsdcAta,
             userYes: botYesAta,
           })
-          .remainingAccounts([
-            { pubkey: getAssociatedTokenAddressSync(mkt.yesMint, bestBid.owner), isWritable: true, isSigner: false },
-          ])
           .signers([bot])
           .rpc();
         txCount++;

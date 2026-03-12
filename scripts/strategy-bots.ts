@@ -22,7 +22,7 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
-import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveTicker, getBotTickerFilter, buildFillAccounts, type Order } from "./bot-utils";
+import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveTicker, getBotTickerFilter, type Order } from "./bot-utils";
 
 const TICK_MS = 45_000;
 const TX_DELAY_MS = Number(process.env.TX_DELAY_MS ?? 1000); // 1s global throttle
@@ -307,15 +307,6 @@ async function main() {
       // Self-trade guard
       if (mkt.askOwner.equals(bot.publicKey)) return false;
 
-      // Walk all asks that would fill at this price to build counterparty USDC ATAs.
-      const remainingAccounts = buildFillAccounts(
-        "bid",
-        mkt.bestAsk,
-        signal.qty,
-        mkt.otherAsks,
-        usdcMint,
-      );
-
       await program.methods
         .buyYes(new BN(signal.qty), new BN(mkt.bestAsk))
         .accountsPartial({
@@ -328,7 +319,6 @@ async function main() {
           userUsdc: botUsdcAta,
           userYes: botYesAta,
         })
-        .remainingAccounts(remainingAccounts)
         .signers([bot])
         .rpc();
 
@@ -343,15 +333,6 @@ async function main() {
       if (mkt.bidOwner.equals(bot.publicKey)) return false;
 
       const botNoAta = getAssociatedTokenAddressSync(mkt.noMint, bot.publicKey);
-
-      // Walk all bids that would fill at this price to build counterparty Yes ATAs.
-      const remainingAccounts = buildFillAccounts(
-        "ask",
-        mkt.bestBid,
-        signal.qty,
-        mkt.otherBids,
-        mkt.yesMint,
-      );
 
       const mintIx = await program.methods
         .mintPair(new BN(signal.qty))
@@ -378,7 +359,6 @@ async function main() {
           userUsdc: botUsdcAta,
           userYes: botYesAta,
         })
-        .remainingAccounts(remainingAccounts)
         .instruction();
 
       const tx = new anchor.web3.Transaction().add(mintIx, sellIx);

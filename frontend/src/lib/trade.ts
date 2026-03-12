@@ -1,6 +1,5 @@
 import { type Program, type BN } from "@coral-xyz/anchor";
 import {
-  type AccountMeta,
   PublicKey,
   SystemProgram,
   Transaction,
@@ -12,7 +11,6 @@ import {
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import { PROGRAM_ID } from "./constants";
-import { type ParsedOrder } from "./orderbook";
 
 function findOrderBookPda(market: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
@@ -40,51 +38,13 @@ interface TradeParams {
   usdcMint: PublicKey;
   price: BN;
   quantity: BN;
-  /** Active orders on the opposite side of the book (asks for bids, bids for asks). */
-  oppositeOrders?: ParsedOrder[];
-}
-
-/**
- * Simulate fills against sorted opposite-side orders and return
- * counterparty ATAs as remainingAccounts.
- *
- * For bids filling asks: counterparty needs USDC (seller receives USDC)
- * For asks filling bids: counterparty needs Yes tokens (buyer receives Yes)
- */
-function buildRemainingAccounts(
-  side: "bid" | "ask",
-  price: number,
-  quantity: number,
-  oppositeOrders: ParsedOrder[],
-  usdcMint: PublicKey,
-  yesMint: PublicKey,
-): AccountMeta[] {
-  const accounts: AccountMeta[] = [];
-  let remaining = quantity;
-
-  for (const order of oppositeOrders) {
-    if (remaining <= 0) break;
-    // Bids match asks priced <= bid price; asks match bids priced >= ask price
-    if (side === "bid" && order.price > price) break;
-    if (side === "ask" && order.price < price) break;
-
-    // Bid fills ask -> counterparty (seller) gets USDC back
-    // Ask fills bid -> counterparty (buyer) gets Yes tokens
-    const mint = side === "bid" ? usdcMint : yesMint;
-    const counterpartyAta = getAssociatedTokenAddressSync(mint, order.owner);
-    accounts.push({ pubkey: counterpartyAta, isWritable: true, isSigner: false });
-
-    remaining -= Math.min(remaining, order.quantity);
-  }
-
-  return accounts;
 }
 
 // Buy Yes = place a bid on the order book (USDC -> Yes tokens)
 export async function buildBuyYesTx(
   params: TradeParams
 ): Promise<Transaction> {
-  const { program, user, market, yesMint, usdcMint, price, quantity, oppositeOrders } =
+  const { program, user, market, yesMint, usdcMint, price, quantity } =
     params;
 
   const [orderBook] = findOrderBookPda(market);
@@ -92,10 +52,6 @@ export async function buildBuyYesTx(
   const userYesAta = getAssociatedTokenAddressSync(yesMint, user);
   const [obUsdcVault] = findVaultPda("ob_usdc_vault", market);
   const [obYesVault] = findVaultPda("ob_yes_vault", market);
-
-  const remaining = oppositeOrders
-    ? buildRemainingAccounts("bid", price.toNumber(), quantity.toNumber(), oppositeOrders, usdcMint, yesMint)
-    : [];
 
   const tx = new Transaction();
 
@@ -131,7 +87,6 @@ export async function buildBuyYesTx(
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
-    .remainingAccounts(remaining)
     .instruction();
 
   tx.add(ix);
@@ -142,7 +97,7 @@ export async function buildBuyYesTx(
 export async function buildSellYesTx(
   params: TradeParams
 ): Promise<Transaction> {
-  const { program, user, market, yesMint, usdcMint, price, quantity, oppositeOrders } =
+  const { program, user, market, yesMint, usdcMint, price, quantity } =
     params;
 
   const [orderBook] = findOrderBookPda(market);
@@ -150,10 +105,6 @@ export async function buildSellYesTx(
   const userYesAta = getAssociatedTokenAddressSync(yesMint, user);
   const [obUsdcVault] = findVaultPda("ob_usdc_vault", market);
   const [obYesVault] = findVaultPda("ob_yes_vault", market);
-
-  const remaining = oppositeOrders
-    ? buildRemainingAccounts("ask", price.toNumber(), quantity.toNumber(), oppositeOrders, usdcMint, yesMint)
-    : [];
 
   const tx = new Transaction();
 
@@ -187,7 +138,6 @@ export async function buildSellYesTx(
       obYesVault,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
-    .remainingAccounts(remaining)
     .instruction();
 
   tx.add(ix);
@@ -207,7 +157,6 @@ export async function buildBuyNoTx(
     usdcMint,
     price,
     quantity,
-    oppositeOrders,
   } = params;
 
   const [orderBook] = findOrderBookPda(market);
@@ -217,11 +166,6 @@ export async function buildBuyNoTx(
   const [vault] = findVaultPda("vault", market);
   const [obUsdcVault] = findVaultPda("ob_usdc_vault", market);
   const [obYesVault] = findVaultPda("ob_yes_vault", market);
-
-  // Buy No places an ask, so opposite side is bids
-  const remaining = oppositeOrders
-    ? buildRemainingAccounts("ask", price.toNumber(), quantity.toNumber(), oppositeOrders, usdcMint, yesMint)
-    : [];
 
   const tx = new Transaction();
 
@@ -283,7 +227,6 @@ export async function buildBuyNoTx(
       obYesVault,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
-    .remainingAccounts(remaining)
     .instruction();
   tx.add(sellIx);
 
@@ -304,7 +247,6 @@ export async function buildSellNoTx(
     usdcMint,
     price,
     quantity,
-    oppositeOrders,
   } = params;
 
   const [orderBook] = findOrderBookPda(market);
@@ -313,10 +255,6 @@ export async function buildSellNoTx(
   const userNoAta = getAssociatedTokenAddressSync(noMint, user);
   const [obUsdcVault] = findVaultPda("ob_usdc_vault", market);
   const [obYesVault] = findVaultPda("ob_yes_vault", market);
-
-  const remaining = oppositeOrders
-    ? buildRemainingAccounts("bid", price.toNumber(), quantity.toNumber(), oppositeOrders, usdcMint, yesMint)
-    : [];
 
   const tx = new Transaction();
 
@@ -360,10 +298,10 @@ export async function buildSellNoTx(
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
-    .remainingAccounts(remaining)
     .instruction();
   tx.add(buyIx);
 
+  // redeem still uses remainingAccounts for noMint/noAta - intentional
   const redeemIx = await program.methods
     .redeem(quantity)
     .accountsPartial({
@@ -379,6 +317,50 @@ export async function buildSellNoTx(
     ])
     .instruction();
   tx.add(redeemIx);
+
+  return tx;
+}
+
+// Claim credited fills from the order book (permissionless - anyone can crank)
+export async function buildClaimFillsTx(
+  program: Program,
+  payer: PublicKey,
+  market: PublicKey,
+  yesMint: PublicKey,
+  usdcMint: PublicKey,
+  owner: PublicKey,
+): Promise<Transaction> {
+  const [orderBook] = findOrderBookPda(market);
+  const [obUsdcVault] = findVaultPda("ob_usdc_vault", market);
+  const [obYesVault] = findVaultPda("ob_yes_vault", market);
+  const ownerUsdc = getAssociatedTokenAddressSync(usdcMint, owner);
+  const ownerYes = getAssociatedTokenAddressSync(yesMint, owner);
+
+  const tx = new Transaction();
+
+  // Ensure owner ATAs exist (payer creates if needed)
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(payer, ownerUsdc, owner, usdcMint)
+  );
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(payer, ownerYes, owner, yesMint)
+  );
+
+  const ix = await program.methods
+    .claimFills()
+    .accountsPartial({
+      payer,
+      market,
+      orderBook,
+      obUsdcVault,
+      obYesVault,
+      owner,
+      ownerUsdc,
+      ownerYes,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    })
+    .instruction();
+  tx.add(ix);
 
   return tx;
 }

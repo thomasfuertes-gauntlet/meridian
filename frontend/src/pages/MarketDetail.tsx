@@ -229,8 +229,6 @@ export function MarketDetail() {
               ticker={featured.ticker}
               bestBid={featured.bestBid}
               bestAsk={featured.bestAsk}
-              bids={featured.orderBook?.bids ?? []}
-              asks={featured.orderBook?.asks ?? []}
             />
           ) : (
             <div className="terminal-panel p-6 text-sm text-zinc-400">

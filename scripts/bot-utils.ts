@@ -4,8 +4,7 @@
  */
 import { Program } from "@coral-xyz/anchor";
 import { Meridian } from "../target/types/meridian";
-import { PublicKey, type AccountMeta } from "@solana/web3.js";
-import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { PublicKey } from "@solana/web3.js";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -31,8 +30,11 @@ export interface Book {
   asks: Order[];
 }
 
+const CREDIT_ENTRY_SZ = 48;
+const MAX_CREDIT_ENTRIES = 64;
+
 export function parseBook(data: Buffer): Book {
-  const expectedSize = DISC + HEADER + 2 * MAX_PER_SIDE * ORDER_SZ;
+  const expectedSize = DISC + HEADER + 2 * MAX_PER_SIDE * ORDER_SZ + MAX_CREDIT_ENTRIES * CREDIT_ENTRY_SZ;
   if (data.length < expectedSize) {
     return { bidCount: 0, askCount: 0, bids: [], asks: [] };
   }
@@ -67,43 +69,6 @@ export function parseBook(data: Buffer): Book {
 
 // ParsedOrder is an alias for Order - same shape, used where frontend calls ParsedOrder
 export type ParsedOrder = Order;
-
-/**
- * Build remaining_accounts for taker fills against sorted opposite-side orders.
- *
- * For buy_yes (bid filling asks): counterparty receives USDC back -> use usdcMint
- * For sell_yes (ask filling bids): counterparty receives Yes tokens -> use yesMint
- *
- * @param side - "bid" for buy_yes (filling asks), "ask" for sell_yes (filling bids)
- * @param priceLimit - taker price limit in USDC base units
- * @param quantity - number of tokens to fill
- * @param oppositeOrders - asks (for bid) or bids (for ask), sorted price-priority order
- * @param mint - usdcMint for bid fills, yesMint for ask fills
- */
-export function buildFillAccounts(
-  side: "bid" | "ask",
-  priceLimit: number,
-  quantity: number,
-  oppositeOrders: Order[],
-  mint: PublicKey,
-): AccountMeta[] {
-  const accounts: AccountMeta[] = [];
-  let remaining = quantity;
-
-  for (const order of oppositeOrders) {
-    if (remaining <= 0) break;
-    // bid fills asks priced <= priceLimit; ask fills bids priced >= priceLimit
-    if (side === "bid" && order.price > priceLimit) break;
-    if (side === "ask" && order.price < priceLimit) break;
-
-    const counterpartyAta = getAssociatedTokenAddressSync(mint, order.owner);
-    accounts.push({ pubkey: counterpartyAta, isWritable: true, isSigner: false });
-
-    remaining -= Math.min(remaining, order.quantity);
-  }
-
-  return accounts;
-}
 
 // --- Market context ---
 

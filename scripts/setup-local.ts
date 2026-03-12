@@ -201,6 +201,7 @@ async function main() {
     const strikes = calculateStrikes(refPrice);
     console.log(`  ${ticker} ref=$${refPrice.toFixed(2)} -> strikes: ${strikes.map((s) => `$${s}`).join(", ")}`);
 
+    const pending: Promise<void>[] = [];
     for (const strikeDollars of strikes) {
       const strike = strikeDollars * USDC_PER_PAIR; // convert to USDC base units
       const strikePrice = new BN(strike);
@@ -221,13 +222,25 @@ async function main() {
         continue;
       }
 
-      await program.methods
-        .createStrikeMarket(ticker, strikePrice, today, pastCloseTime)
-        .accountsPartial({ admin: admin.publicKey, usdcMint })
-        .rpc();
+      const t = ticker; // capture for closure
+      const sd = strikeDollars;
+      pending.push(
+        program.methods
+          .createStrikeMarket(t, strikePrice, today, pastCloseTime)
+          .accountsPartial({ admin: admin.publicKey, usdcMint })
+          .rpc()
+          .then(() => { console.log(`    Created: ${t} > $${sd}`); totalMarkets++; })
+      );
 
-      console.log(`    Created: ${ticker} > $${strikeDollars}`);
-      totalMarkets++;
+      // Cap concurrency: flush every 10 to avoid overwhelming the validator
+      if (pending.length >= 10) {
+        await Promise.all(pending);
+        pending.length = 0;
+      }
+    }
+    if (pending.length > 0) {
+      await Promise.all(pending);
+      pending.length = 0;
     }
   }
 

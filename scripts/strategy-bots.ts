@@ -300,17 +300,18 @@ async function main() {
     const botYesAta = getAssociatedTokenAddressSync(mkt.yesMint, bot.publicKey);
 
     if (signal.direction === "yes") {
-      // Buy Yes: place bid at bestAsk price. Fill delivers Yes tokens.
+      // Buy Yes taker flow must use the dedicated instruction, not maker-only placeOrder.
       if (mkt.bestAsk === null || mkt.askOwner === null) return false;
       // Self-trade guard
       if (mkt.askOwner.equals(bot.publicKey)) return false;
 
       const counterpartyUsdcAta = getAssociatedTokenAddressSync(usdcMint, mkt.askOwner);
       await program.methods
-        .placeOrder({ bid: {} }, new BN(mkt.bestAsk), new BN(signal.qty))
+        .buyYes(new BN(signal.qty), new BN(mkt.bestAsk))
         .accountsPartial({
           user: bot.publicKey,
           market: mkt.pubkey,
+          yesMint: mkt.yesMint,
           orderBook: mkt.orderBook,
           obUsdcVault: mkt.obUsdcVault,
           obYesVault: mkt.obYesVault,
@@ -351,10 +352,10 @@ async function main() {
         .rpc();
       await sleep(TX_DELAY_MS);
 
-      // Place ask at bestBid to fill immediately
+      // Sell the freshly minted Yes through the dedicated taker path.
       const counterpartyYesAta = getAssociatedTokenAddressSync(mkt.yesMint, mkt.bidOwner);
       await program.methods
-        .placeOrder({ ask: {} }, new BN(mkt.bestBid), new BN(signal.qty))
+        .sellYes(new BN(signal.qty), new BN(mkt.bestBid))
         .accountsPartial({
           user: bot.publicKey,
           market: mkt.pubkey,
@@ -511,7 +512,7 @@ async function main() {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         // Match on Anchor error names/full hex codes, not broad substrings
-        const transient = ["blockhash", "OrderBookFull", "NotOrderOwner", "NoMatchingOrders", "OrderNotFound"];
+        const transient = ["blockhash", "OrderBookFull", "NotOrderOwner", "NoMatchingOrders", "OrderNotFound", "CrossingOrdersUseDedicatedPath"];
         if (transient.some((t) => msg.includes(t))) {
           // Expected during normal operation - suppress
         } else if (msg.includes("insufficient") || msg.includes("debit")) {

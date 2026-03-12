@@ -269,6 +269,7 @@ railway-sync: railway-env-check
 	@printf '%s\n' \
 		"ANCHOR_PROVIDER_URL=$(DEVNET_URL)" \
 		"RPC_URL=$(DEVNET_URL)" \
+		"USDC_MINT=$(DEVNET_USDC_MINT)" \
 	| xargs railway variable set -s "$(RAILWAY_READ_API_SERVICE)"
 
 railway-deploy-frontend: railway-env-check

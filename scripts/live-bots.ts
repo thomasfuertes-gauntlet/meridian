@@ -317,10 +317,11 @@ async function main() {
         if (!bestAsk) return;
         const hitPrice = bestAsk.price;
         await program.methods
-          .placeOrder({ bid: {} }, new BN(hitPrice), new BN(1))
+          .buyYes(new BN(1), new BN(hitPrice))
           .accountsPartial({
             user: bot.publicKey,
             market: mkt.pubkey,
+            yesMint: mkt.yesMint,
             orderBook: mkt.orderBook,
             obUsdcVault: mkt.obUsdcVault,
             obYesVault: mkt.obYesVault,
@@ -340,7 +341,7 @@ async function main() {
         if (!bestBid) return;
         const hitPrice = bestBid.price;
         await program.methods
-          .placeOrder({ ask: {} }, new BN(hitPrice), new BN(1))
+          .sellYes(new BN(1), new BN(hitPrice))
           .accountsPartial({
             user: bot.publicKey,
             market: mkt.pubkey,
@@ -408,7 +409,7 @@ async function main() {
         await tradeOnMarket(mkt);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        const transient = ["0x1", "0x0", "blockhash", "OrderBookFull", "NotOrderOwner", "debit"];
+        const transient = ["0x1", "0x0", "blockhash", "OrderBookFull", "NotOrderOwner", "debit", "CrossingOrdersUseDedicatedPath"];
         if (!transient.some((t) => msg.includes(t))) {
           console.log(`  [err] ${msg.slice(0, 120)}`);
         }

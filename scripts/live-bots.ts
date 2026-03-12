@@ -50,6 +50,12 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+async function loadBook(connection: anchor.web3.Connection, mkt: MarketCtx) {
+  const obInfo = await connection.getAccountInfo(mkt.orderBook);
+  if (!obInfo) return null;
+  return parseBook(obInfo.data as Buffer);
+}
+
 async function main() {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
@@ -125,9 +131,8 @@ async function main() {
     const fair = getFairForMarket(mkt);
     const fairPrice = Math.round(fair * USDC_PER_PAIR);
 
-    const obInfo = await connection.getAccountInfo(mkt.orderBook);
-    if (!obInfo) return;
-    const book = parseBook(obInfo.data as Buffer);
+    const book = await loadBook(connection, mkt);
+    if (!book) return;
 
     const botBids = book.bids.filter((o) => o.owner.equals(bot.publicKey));
     const botAsks = book.asks.filter((o) => o.owner.equals(bot.publicKey));
@@ -178,10 +183,22 @@ async function main() {
       txCount++;
       await sleep(TX_DELAY_MS);
 
+      const refreshedBook = await loadBook(connection, mkt);
+      if (!refreshedBook) return;
+      const refreshedBestAsk = refreshedBook.asks[0]?.price ?? MAX_PRICE;
+      const refreshedBestBid = refreshedBook.bids[0]?.price ?? MIN_PRICE;
+      const refreshedSafePrice = side === "bid"
+        ? Math.min(safePrice, refreshedBestAsk - 1)
+        : Math.max(safePrice, refreshedBestBid + 1);
+
+      if (side === "bid" && refreshedSafePrice >= refreshedBestAsk) return;
+      if (side === "ask" && refreshedSafePrice <= refreshedBestBid) return;
+      if (refreshedSafePrice <= MIN_PRICE || refreshedSafePrice >= MAX_PRICE) return;
+
       await program.methods
         .placeOrder(
           side === "bid" ? { bid: {} } : { ask: {} },
-          new BN(safePrice),
+          new BN(refreshedSafePrice),
           new BN(order.quantity),
         )
         .accountsPartial({
@@ -198,7 +215,7 @@ async function main() {
       txCount++;
 
       const arrow = drift > 0 ? "↑" : "↓";
-      console.log(`[${mkt.ticker}] ${arrow} ${side} $${(order.price / USDC_PER_PAIR).toFixed(2)}->${(safePrice / USDC_PER_PAIR).toFixed(2)} qty=${order.quantity}  [${txCount}]`);
+      console.log(`[${mkt.ticker}] ${arrow} ${side} $${(order.price / USDC_PER_PAIR).toFixed(2)}->${(refreshedSafePrice / USDC_PER_PAIR).toFixed(2)} qty=${order.quantity}  [${txCount}]`);
 
     } else if (roll < 0.80) {
       // 25% - Place a new resting order near the spread, anchored to fair
@@ -238,10 +255,23 @@ async function main() {
       txCount++;
       await sleep(TX_DELAY_MS);
 
+      const refreshedBook = await loadBook(connection, mkt);
+      if (!refreshedBook) return;
+      const refreshedBestBid = refreshedBook.bids[0]?.price ?? Math.round(fair * USDC_PER_PAIR * 0.8);
+      const refreshedBestAsk = refreshedBook.asks[0]?.price ?? Math.round(fair * USDC_PER_PAIR * 1.2);
+      const refreshedMid = Math.floor((refreshedBestBid + refreshedBestAsk) / 2);
+      const refreshedPrice = clamp(
+        side === "bid" ? refreshedMid - offset : refreshedMid + offset,
+        MIN_PRICE,
+        MAX_PRICE,
+      );
+      if (side === "bid" && refreshedPrice >= refreshedBestAsk) return;
+      if (side === "ask" && refreshedPrice <= refreshedBestBid) return;
+
       await program.methods
         .placeOrder(
           side === "bid" ? { bid: {} } : { ask: {} },
-          new BN(price),
+          new BN(refreshedPrice),
           new BN(qty),
         )
         .accountsPartial({
@@ -257,7 +287,7 @@ async function main() {
         .rpc();
       txCount++;
 
-      console.log(`[${mkt.ticker}] + ${side} ${qty} @ $${(price / USDC_PER_PAIR).toFixed(2)}  [${txCount}]`);
+      console.log(`[${mkt.ticker}] + ${side} ${qty} @ $${(refreshedPrice / USDC_PER_PAIR).toFixed(2)}  [${txCount}]`);
 
     } else if (book.bids.length > MIN_ORDERS_PER_SIDE && book.asks.length > MIN_ORDERS_PER_SIDE) {
       // 20% - Cross the spread with qty 1 (visible fill)
@@ -279,9 +309,13 @@ async function main() {
       await sleep(TX_DELAY_MS);
 
       const side = Math.random() < 0.5 ? "bid" : "ask";
+      const refreshedBook = await loadBook(connection, mkt);
+      if (!refreshedBook) return;
 
       if (side === "bid") {
-        const hitPrice = book.asks[0].price;
+        const bestAsk = refreshedBook.asks[0];
+        if (!bestAsk) return;
+        const hitPrice = bestAsk.price;
         await program.methods
           .placeOrder({ bid: {} }, new BN(hitPrice), new BN(1))
           .accountsPartial({
@@ -294,7 +328,7 @@ async function main() {
             userYes: botYesAta,
           })
           .remainingAccounts([
-            { pubkey: getAssociatedTokenAddressSync(usdcMint, book.asks[0].owner), isWritable: true, isSigner: false },
+            { pubkey: getAssociatedTokenAddressSync(usdcMint, bestAsk.owner), isWritable: true, isSigner: false },
           ])
           .signers([bot])
           .rpc();
@@ -302,7 +336,9 @@ async function main() {
 
         console.log(`[${mkt.ticker}] * BUY 1 @ $${(hitPrice / USDC_PER_PAIR).toFixed(2)}  [${txCount}]`);
       } else {
-        const hitPrice = book.bids[0].price;
+        const bestBid = refreshedBook.bids[0];
+        if (!bestBid) return;
+        const hitPrice = bestBid.price;
         await program.methods
           .placeOrder({ ask: {} }, new BN(hitPrice), new BN(1))
           .accountsPartial({
@@ -315,7 +351,7 @@ async function main() {
             userYes: botYesAta,
           })
           .remainingAccounts([
-            { pubkey: getAssociatedTokenAddressSync(mkt.yesMint, book.bids[0].owner), isWritable: true, isSigner: false },
+            { pubkey: getAssociatedTokenAddressSync(mkt.yesMint, bestBid.owner), isWritable: true, isSigner: false },
           ])
           .signers([bot])
           .rpc();

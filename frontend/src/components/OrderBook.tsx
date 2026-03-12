@@ -10,11 +10,16 @@ interface OrderBookProps {
   title?: string;
 }
 
+interface PriceLevel {
+  price: number;
+  quantity: number;
+}
+
 function OrderRow({
   order,
   side,
 }: {
-  order: ParsedOrder;
+  order: PriceLevel;
   side: "bid" | "ask";
 }) {
   const color = side === "bid" ? "text-emerald-300" : "text-rose-300";
@@ -30,6 +35,20 @@ function depthForOrders(orders: ParsedOrder[]): number {
   return orders.reduce((sum, order) => sum + order.quantity, 0);
 }
 
+function aggregateByPrice(orders: ParsedOrder[], side: "bid" | "ask"): PriceLevel[] {
+  const levels = new Map<number, number>();
+  for (const order of orders) {
+    levels.set(order.price, (levels.get(order.price) ?? 0) + order.quantity);
+  }
+
+  const aggregated = [...levels.entries()].map(([price, quantity]) => ({
+    price,
+    quantity,
+  }));
+  aggregated.sort((a, b) => (side === "bid" ? b.price - a.price : a.price - b.price));
+  return aggregated;
+}
+
 export function OrderBook({
   bids,
   asks,
@@ -42,6 +61,8 @@ export function OrderBook({
   const displayBids = perspective === "yes" ? bids : noBids;
   const displayAsks = perspective === "yes" ? asks : noAsks;
   const label = perspective === "yes" ? "Yes" : "No";
+  const displayBidLevels = aggregateByPrice(displayBids, "bid");
+  const displayAskLevels = aggregateByPrice(displayAsks, "ask");
   const yesBestBid = bids[0]?.price ?? null;
   const yesBestAsk = asks[0]?.price ?? null;
   const noBestBid = noBids[0]?.price ?? null;
@@ -110,13 +131,13 @@ export function OrderBook({
 
       {/* Asks (lowest first, displayed top to bottom) */}
       <div className="mb-2 border-b border-white/10 pb-2">
-        {displayAsks.length === 0 ? (
+        {displayAskLevels.length === 0 ? (
           <div className="py-2 text-center text-xs text-stone-600">
             No asks
           </div>
         ) : (
-          [...displayAsks].reverse().map((o) => (
-            <OrderRow key={o.orderId} order={o} side="ask" />
+          [...displayAskLevels].reverse().map((level) => (
+            <OrderRow key={`ask-${level.price}`} order={level} side="ask" />
           ))
         )}
       </div>
@@ -130,13 +151,13 @@ export function OrderBook({
 
       {/* Bids (highest first, displayed top to bottom) */}
       <div className="pt-2">
-        {displayBids.length === 0 ? (
+        {displayBidLevels.length === 0 ? (
           <div className="py-2 text-center text-xs text-stone-600">
             No bids
           </div>
         ) : (
-          displayBids.map((o) => (
-            <OrderRow key={o.orderId} order={o} side="bid" />
+          displayBidLevels.map((level) => (
+            <OrderRow key={`bid-${level.price}`} order={level} side="bid" />
           ))
         )}
       </div>

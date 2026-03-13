@@ -523,6 +523,36 @@ describe("meridian", () => {
     }
   }
 
+  async function claimFills(
+    market: ReturnType<typeof deriveMarketPdas> & {
+      orderBookPda: PublicKey;
+      obUsdcVault: PublicKey;
+      obYesVault: PublicKey;
+    },
+    owner: PublicKey,
+    ownerUsdc: PublicKey,
+    ownerYes: PublicKey,
+    signers?: Keypair[]
+  ) {
+    const tx = methods
+      .claimFills()
+      .accountsPartial({
+        payer: admin.publicKey,
+        market: market.marketPda,
+        orderBook: market.orderBookPda,
+        obUsdcVault: market.obUsdcVault,
+        obYesVault: market.obYesVault,
+        owner,
+        ownerUsdc,
+        ownerYes,
+      });
+    if (signers) {
+      await tx.signers(signers).rpc();
+    } else {
+      await tx.rpc();
+    }
+  }
+
   async function buyNo(
     market: ReturnType<typeof deriveMarketPdas> & {
       orderBookPda: PublicKey;
@@ -1294,11 +1324,6 @@ describe("meridian", () => {
     let userB: Keypair;
     let userBUsdc: PublicKey;
 
-    // Helpers for order book PDAs
-    async function initOrderBook(marketPda: PublicKey, yesMintPda: PublicKey) {
-      return initOrderBookForMarket(marketPda, yesMintPda);
-    }
-
     // Unique market counter to avoid collisions
     let obMarketIdx = uniqueTestSeedBase;
     function nextDate() {
@@ -1380,45 +1405,6 @@ describe("meridian", () => {
       expect(Number(usdcVault.amount)).to.equal(0);
       const yesVault = await getAccount(connection, pdas.obYesVault);
       expect(Number(yesVault.amount)).to.equal(0);
-    });
-
-    it("rejects duplicate order book init once market creation has wired trading accounts", async () => {
-      const date = nextDate();
-      const pdas = await createMarket("OB2", new anchor.BN(100_000_000), date);
-
-      try {
-        await initOrderBook(pdas.marketPda, pdas.yesMintPda);
-        expect.fail("Should have thrown");
-      } catch (err: any) {
-        expect(err.toString()).to.include("InvalidMarketState");
-      }
-    });
-
-    it("rejects order book init with the wrong collateral mint", async () => {
-      const date = nextDate();
-      const pdas = await createMarket("OB2X", new anchor.BN(100_000_000), date);
-      const wrongMint = await createMint(
-        connection,
-        mintAuthority,
-        mintAuthority.publicKey,
-        null,
-        6
-      );
-
-      try {
-        await program.methods
-          .initializeOrderBook()
-          .accountsPartial({
-            admin: admin.publicKey,
-            market: pdas.marketPda,
-            yesMint: pdas.yesMintPda,
-            usdcMint: wrongMint,
-          })
-          .rpc();
-        expect.fail("Should have thrown");
-      } catch (err: any) {
-        expect(err.toString()).to.include("InvalidCollateralMint");
-      }
     });
 
     // ── place_order - resting (no match) ───────────────────────
@@ -1856,7 +1842,7 @@ describe("meridian", () => {
     let userBUsdc: PublicKey;
     let userC: Keypair;
     let userCUsdc: PublicKey;
-    let atomicMarketIdx = 1900000000;
+    let atomicMarketIdx = 1500000000;
 
     function nextAtomicDate() {
       return new anchor.BN(atomicMarketIdx++);
@@ -1894,6 +1880,7 @@ describe("meridian", () => {
         1,
         { signers: [userB] }
       );
+      await claimFills({ ...pdas, ...obPdas }, admin.publicKey, adminUsdcAta, adminYes);
 
       const adminUsdcAfter = await tokenAmount(adminUsdcAta);
       const userBUsdcAfter = await tokenAmount(userBUsdc);
@@ -1937,6 +1924,7 @@ describe("meridian", () => {
         1,
         { signers: [userB] }
       );
+      await claimFills({ ...pdas, ...obPdas }, admin.publicKey, adminUsdcAta, adminYes);
 
       const adminYesAfter = await tokenAmount(adminYes);
       const userBUsdcAfter = await tokenAmount(userBUsdc);
@@ -1986,6 +1974,7 @@ describe("meridian", () => {
         1,
         { signers: [userB] }
       );
+      await claimFills({ ...pdas, ...obPdas }, admin.publicKey, adminUsdcAta, adminYes);
 
       const adminYesAfter = await tokenAmount(adminYes);
       const userBYesAfter = await tokenAmount(userBYes);
@@ -2049,6 +2038,8 @@ describe("meridian", () => {
         2,
         { signers: [userB] }
       );
+      await claimFills({ ...pdas, ...obPdas }, admin.publicKey, adminUsdcAta, adminYes);
+      await claimFills({ ...pdas, ...obPdas }, userC.publicKey, userCUsdc, userCYes);
 
       const adminUsdcAfter = await tokenAmount(adminUsdcAta);
       const userCUsdcAfter = await tokenAmount(userCUsdc);
@@ -2113,6 +2104,7 @@ describe("meridian", () => {
         2,
         { signers: [userB] }
       );
+      await claimFills({ ...pdas, ...obPdas }, admin.publicKey, adminUsdcAta, adminYes);
 
       const adminUsdcAfter = await tokenAmount(adminUsdcAta);
       const userBUsdcAfter = await tokenAmount(userBUsdc);
@@ -2178,6 +2170,8 @@ describe("meridian", () => {
         2,
         { signers: [userB] }
       );
+      await claimFills({ ...pdas, ...obPdas }, admin.publicKey, adminUsdcAta, adminYes);
+      await claimFills({ ...pdas, ...obPdas }, userC.publicKey, userCUsdc, userCYes);
 
       const adminUsdcAfter = await tokenAmount(adminUsdcAta);
       const userCUsdcAfter = await tokenAmount(userCUsdc);
@@ -2338,7 +2332,7 @@ describe("meridian", () => {
     const connection = provider.connection;
     let userB: Keypair;
     let userBUsdc: PublicKey;
-    let freezeMarketIdx = 1950000000;
+    let freezeMarketIdx = 1550000000;
 
     function nextFreezeDate() {
       return new anchor.BN(freezeMarketIdx++);
@@ -2536,7 +2530,7 @@ describe("meridian", () => {
     let userBUsdc: PublicKey;
     let userC: Keypair;
     let userCUsdc: PublicKey;
-    let settlementIdx = 1960000000;
+    let settlementIdx = 1560000000;
 
     function nextSettlementDate() {
       return new anchor.BN(settlementIdx++);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { BorshInstructionCoder, type Idl } from "@coral-xyz/anchor";
 import {
   type ParsedInstruction,
@@ -16,6 +16,8 @@ import {
   USDC_PER_PAIR,
   type Ticker,
 } from "./constants";
+import { MarketDataContext } from "./market-data-context";
+import type { MarketRecord } from "./market-data";
 
 export type ActivityKind =
   | "mintPair"
@@ -234,57 +236,83 @@ async function fetchProgramSignatures(rawLimit: number): Promise<string[]> {
   return sigs.map((s) => s.signature);
 }
 
-const activityCache = new Map<string, { records: ActivityRecord[]; at: number }>();
-const activityInflight = new Map<string, Promise<ActivityRecord[]>>();
+type ActivityFeedResult = { records: ActivityRecord[]; lookup: Map<string, MarketLookupEntry> };
 
-export async function fetchActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: Ticker): Promise<ActivityRecord[]> {
+const activityCache = new Map<string, { records: ActivityRecord[]; lookup: Map<string, MarketLookupEntry>; at: number }>();
+const activityInflight = new Map<string, Promise<ActivityFeedResult>>();
+
+export async function fetchActivityFeed(
+  limit = ACTIVITY_LIMIT,
+  filterTicker?: Ticker,
+  existingMarkets?: MarketRecord[],
+): Promise<ActivityFeedResult> {
   const cacheKey = `${limit}:${filterTicker ?? "all"}`;
   const cached = activityCache.get(cacheKey);
   if (cached && Date.now() - cached.at < 30_000) {
-    return cached.records;
+    return { records: cached.records, lookup: cached.lookup };
   }
   const inflight = activityInflight.get(cacheKey);
   if (inflight) return inflight;
 
-  const request = (async () => {
-  const program = getReadOnlyProgram();
+  const request = (async (): Promise<ActivityFeedResult> => {
   const coder = new BorshInstructionCoder(idl as Idl);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rawMarkets = await (program.account as any).strikeMarket.all();
 
-  const latestDates = new Map<Ticker, number>();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const item of rawMarkets as any[]) {
-    const ticker = item.account.ticker as Ticker;
-    const date = item.account.date.toNumber() as number;
-    const current = latestDates.get(ticker);
-    if (current == null || date > current) {
-      latestDates.set(ticker, date);
+  let marketLookup: Map<string, MarketLookupEntry>;
+  if (existingMarkets) {
+    // Build lookup from context data - no RPC needed
+    const latestDates = new Map<Ticker, number>();
+    for (const m of existingMarkets) {
+      const current = latestDates.get(m.ticker);
+      if (current == null || m.date > current) latestDates.set(m.ticker, m.date);
+    }
+    marketLookup = new Map();
+    for (const m of existingMarkets) {
+      if (latestDates.get(m.ticker) !== m.date) continue;
+      if (filterTicker && m.ticker !== filterTicker) continue;
+      marketLookup.set(m.address, {
+        address: m.address,
+        ticker: m.ticker,
+        date: m.date,
+        strikePrice: m.strikePrice,
+        yesMint: m.yesMint.toBase58(),
+        noMint: m.noMint.toBase58(),
+      });
+    }
+  } else {
+    // Fall back to RPC
+    const program = getReadOnlyProgram();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawMarkets = await (program.account as any).strikeMarket.all();
+
+    const latestDates = new Map<Ticker, number>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const item of rawMarkets as any[]) {
+      const ticker = item.account.ticker as Ticker;
+      const date = item.account.date.toNumber() as number;
+      const current = latestDates.get(ticker);
+      if (current == null || date > current) latestDates.set(ticker, date);
+    }
+    marketLookup = new Map();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const item of rawMarkets as any[]) {
+      const ticker = item.account.ticker as Ticker;
+      const date = item.account.date.toNumber() as number;
+      if (latestDates.get(ticker) !== date) continue;
+      if (filterTicker && ticker !== filterTicker) continue;
+      const address = (item.publicKey as PublicKey).toBase58();
+      marketLookup.set(address, {
+        address,
+        ticker,
+        date,
+        strikePrice: item.account.strikePrice.toNumber() as number,
+        yesMint: (item.account.yesMint as PublicKey).toBase58(),
+        noMint: (item.account.noMint as PublicKey).toBase58(),
+      });
     }
   }
 
-  const marketLookup = new Map<string, MarketLookupEntry>();
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const item of rawMarkets as any[]) {
-    const ticker = item.account.ticker as Ticker;
-    const date = item.account.date.toNumber() as number;
-    if (latestDates.get(ticker) !== date) continue;
-    if (filterTicker && ticker !== filterTicker) continue;
-
-    const address = (item.publicKey as PublicKey).toBase58();
-    marketLookup.set(address, {
-      address,
-      ticker,
-      date,
-      strikePrice: item.account.strikePrice.toNumber() as number,
-      yesMint: (item.account.yesMint as PublicKey).toBase58(),
-      noMint: (item.account.noMint as PublicKey).toBase58(),
-    });
-  }
-
   const signatures = await fetchProgramSignatures(limit * 3);
-  if (signatures.length === 0) return [];
+  if (signatures.length === 0) return { records: [], lookup: marketLookup };
 
   const transactions = await connection.getParsedTransactions(signatures.slice(0, limit), {
     commitment: "confirmed",
@@ -313,8 +341,8 @@ export async function fetchActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: T
   });
 
     const next = activity.slice(0, limit);
-    activityCache.set(cacheKey, { records: next, at: Date.now() });
-    return next;
+    activityCache.set(cacheKey, { records: next, lookup: marketLookup, at: Date.now() });
+    return { records: next, lookup: marketLookup };
   })();
 
   activityInflight.set(cacheKey, request);
@@ -325,37 +353,6 @@ export async function fetchActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: T
   }
 }
 
-async function buildMarketLookup(): Promise<Map<string, MarketLookupEntry>> {
-  const program = getReadOnlyProgram();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rawMarkets = await (program.account as any).strikeMarket.all();
-  const latestDates = new Map<Ticker, number>();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const item of rawMarkets as any[]) {
-    const ticker = item.account.ticker as Ticker;
-    const date = item.account.date.toNumber() as number;
-    const current = latestDates.get(ticker);
-    if (current == null || date > current) latestDates.set(ticker, date);
-  }
-  const lookup = new Map<string, MarketLookupEntry>();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const item of rawMarkets as any[]) {
-    const ticker = item.account.ticker as Ticker;
-    const date = item.account.date.toNumber() as number;
-    if (latestDates.get(ticker) !== date) continue;
-    const address = (item.publicKey as PublicKey).toBase58();
-    lookup.set(address, {
-      address,
-      ticker,
-      date,
-      strikePrice: item.account.strikePrice.toNumber() as number,
-      yesMint: (item.account.yesMint as PublicKey).toBase58(),
-      noMint: (item.account.noMint as PublicKey).toBase58(),
-    });
-  }
-  return lookup;
-}
-
 export function useActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: Ticker) {
   const [data, setData] = useState<ActivityRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -363,16 +360,19 @@ export function useActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: Ticker) {
   const bufferRef = useRef<ActivityRecord[]>([]);
   const marketLookupRef = useRef<Map<string, MarketLookupEntry>>(new Map());
   const coderRef = useRef(new BorshInstructionCoder(idl as Idl));
+  const ctx = useContext(MarketDataContext);
+  const ctxRef = useRef(ctx.data);
+  ctxRef.current = ctx.data;
 
   useEffect(() => {
     let alive = true;
     const RING_SIZE = 120;
 
     async function init() {
-      const [records, lookup] = await Promise.all([
-        fetchActivityFeed(limit, filterTicker),
-        buildMarketLookup(),
-      ]);
+      const contextMarkets = ctxRef.current
+        ? Object.values(ctxRef.current.marketsByTicker).flat()
+        : undefined;
+      const { records, lookup } = await fetchActivityFeed(limit, filterTicker, contextMarkets);
       if (!alive) return;
       marketLookupRef.current = lookup;
       bufferRef.current = records.slice(0, RING_SIZE);

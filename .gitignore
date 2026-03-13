@@ -1,6 +1,9 @@
 gm.local.md
 .claude/
 .env
+.env.*
+*.local.*
+.dev.vars
 config/devnet.env
 frontend/.env.local
 

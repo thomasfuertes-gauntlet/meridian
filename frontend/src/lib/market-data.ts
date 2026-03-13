@@ -160,6 +160,8 @@ function deserializeOrderBook(book: {
       orderId: order.orderId,
       isActive: order.isActive,
     })),
+    creditCount: 0,
+    credits: [],
   };
 }
 

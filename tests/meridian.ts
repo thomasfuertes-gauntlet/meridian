@@ -2887,7 +2887,7 @@ describe("meridian", () => {
     // Unique market for pause mint tests
     const pTicker = "PAUS";
     const pStrike = new anchor.BN(111_000_000);
-    const pDate = new anchor.BN(1800000001);
+    const pDate = new anchor.BN(1600000001);
     let pMarket: ReturnType<typeof deriveMarketPdas>;
 
     before(async () => {
@@ -2922,7 +2922,7 @@ describe("meridian", () => {
       const pausedMarket = await createMarket(
         "PAST",
         new anchor.BN(112_000_000),
-        new anchor.BN(1800000002)
+        new anchor.BN(1600000002)
       );
 
       await freezeMarket(pausedMarket);
@@ -2936,7 +2936,7 @@ describe("meridian", () => {
       const pausedRedeemMarket = await createMarket(
         "PRED",
         new anchor.BN(113_000_000),
-        new anchor.BN(1800000003)
+        new anchor.BN(1600000003)
       );
       const { userYes } = await mintPairForAdmin(pausedRedeemMarket, 1);
 
@@ -3000,7 +3000,7 @@ describe("meridian", () => {
     const connection = provider.connection;
 
     it("after multiple mints: vault == totalPairsMinted * 1_000_000", async () => {
-      const pdas = await createMarket("IVLT", new anchor.BN(222_000_000), new anchor.BN(1800000010));
+      const pdas = await createMarket("IVLT", new anchor.BN(222_000_000), new anchor.BN(1600000010));
 
       for (let i = 0; i < 7; i++) {
         await mintPairForAdmin(pdas, 1);
@@ -3013,7 +3013,7 @@ describe("meridian", () => {
     });
 
     it("after mint then burn: vault == totalPairsMinted * 1_000_000", async () => {
-      const pdas = await createMarket("IVBU", new anchor.BN(223_000_000), new anchor.BN(1800000011));
+      const pdas = await createMarket("IVBU", new anchor.BN(223_000_000), new anchor.BN(1600000011));
 
       // Mint 5
       for (let i = 0; i < 5; i++) {
@@ -3030,7 +3030,7 @@ describe("meridian", () => {
     });
 
     it("after mint, settle, redeem winner: vault == (total - redeemed) * 1_000_000", async () => {
-      const pdas = await createMarket("IVRD", new anchor.BN(224_000_000), new anchor.BN(1800000012));
+      const pdas = await createMarket("IVRD", new anchor.BN(224_000_000), new anchor.BN(1600000012));
       const { userYes } = userTokenAccounts(pdas);
 
       // Mint 6
@@ -3059,7 +3059,7 @@ describe("meridian", () => {
     });
 
     it("full lifecycle (mint 10, burn 3, settle, redeem 7 winners): vault empty", async () => {
-      const pdas = await createMarket("IVFL", new anchor.BN(225_000_000), new anchor.BN(1800000013));
+      const pdas = await createMarket("IVFL", new anchor.BN(225_000_000), new anchor.BN(1600000013));
       const { userYes, userNo } = userTokenAccounts(pdas);
 
       // Mint 10
@@ -3101,7 +3101,7 @@ describe("meridian", () => {
     });
 
     it("repeated partial winner claims decrease vault, supply, and open interest in lockstep", async () => {
-      const pdas = await createMarket("IVPM", new anchor.BN(226_000_000), new anchor.BN(1800000014));
+      const pdas = await createMarket("IVPM", new anchor.BN(226_000_000), new anchor.BN(1600000014));
       const { userYes, userNo } = userTokenAccounts(pdas);
 
       await mintPairForAdmin(pdas, 5);
@@ -3162,7 +3162,7 @@ describe("meridian", () => {
     const connection = provider.connection;
     let userB: Keypair;
     let userBUsdc: PublicKey;
-    let supplyMarketIdx = 1800000022;
+    let supplyMarketIdx = 1600000022;
 
     function nextSupplyDate() {
       return new anchor.BN(supplyMarketIdx++);
@@ -3175,7 +3175,7 @@ describe("meridian", () => {
     });
 
     it("after mint: yes_supply == no_supply == totalPairsMinted", async () => {
-      const pdas = await createMarket("ISUP", new anchor.BN(230_000_000), new anchor.BN(1800000020));
+      const pdas = await createMarket("ISUP", new anchor.BN(230_000_000), new anchor.BN(1600000020));
 
       for (let i = 0; i < 4; i++) {
         await mintPairForAdmin(pdas, 1);
@@ -3192,7 +3192,7 @@ describe("meridian", () => {
     });
 
     it("after burn: yes_supply == no_supply (still equal)", async () => {
-      const pdas = await createMarket("ISUB", new anchor.BN(231_000_000), new anchor.BN(1800000021));
+      const pdas = await createMarket("ISUB", new anchor.BN(231_000_000), new anchor.BN(1600000021));
 
       // Mint 6
       for (let i = 0; i < 6; i++) {
@@ -3292,7 +3292,7 @@ describe("meridian", () => {
     const connection = provider.connection;
     let userB: Keypair;
     let userBUsdc: PublicKey;
-    let multiMarketIdx = 1800000100;
+    let multiMarketIdx = 1600000100;
 
     function nextMultiMarketDate() {
       return new anchor.BN(multiMarketIdx++);
@@ -3376,7 +3376,7 @@ describe("meridian", () => {
 
   describe("settlement immutability", () => {
     it("re-settling raises MarketAlreadySettled", async () => {
-      const pdas = await createMarket("ISIM", new anchor.BN(240_000_000), new anchor.BN(1800000030));
+      const pdas = await createMarket("ISIM", new anchor.BN(240_000_000), new anchor.BN(1600000030));
 
       await adminSettleMarket(pdas, new anchor.BN(250_000_000));
 
@@ -3396,7 +3396,7 @@ describe("meridian", () => {
     });
 
     it("outcome does not change on re-fetch after settlement", async () => {
-      const pdas = await createMarket("ISRF", new anchor.BN(241_000_000), new anchor.BN(1800000031));
+      const pdas = await createMarket("ISRF", new anchor.BN(241_000_000), new anchor.BN(1600000031));
 
       // Settle -> YesWins (price above strike)
       await adminSettleMarket(pdas, new anchor.BN(300_000_000));
@@ -3421,7 +3421,7 @@ describe("meridian", () => {
     // At-or-above rule: price exactly at strike -> YesWins
     it("oracle at exactly strike price -> YesWins (at-or-above rule)", async () => {
       const strikePrice = new anchor.BN(333_000_000);
-      const pdas = await createMarket("EEXA", strikePrice, new anchor.BN(1800000040));
+      const pdas = await createMarket("EEXA", strikePrice, new anchor.BN(1600000040));
 
       await adminSettleMarket(pdas, new anchor.BN(333_000_000));
 
@@ -3430,7 +3430,7 @@ describe("meridian", () => {
     });
 
     it("redeem losing tokens: burns tokens, user gets 0 USDC, vault unchanged", async () => {
-      const pdas = await createMarket("ELOSE", new anchor.BN(334_000_000), new anchor.BN(1800000041));
+      const pdas = await createMarket("ELOSE", new anchor.BN(334_000_000), new anchor.BN(1600000041));
       const { userNo } = userTokenAccounts(pdas);
 
       // Mint 3 pairs
@@ -3467,7 +3467,7 @@ describe("meridian", () => {
     });
 
     it("pre-settlement complete-set redeem returns exactly 1 USDC per pair", async () => {
-      const pdas = await createMarket("EBRN", new anchor.BN(335_000_000), new anchor.BN(1800000042));
+      const pdas = await createMarket("EBRN", new anchor.BN(335_000_000), new anchor.BN(1600000042));
 
       // Mint 5 pairs
       for (let i = 0; i < 5; i++) {

@@ -11,6 +11,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Fast path-filter for PRs: skip anchor job on frontend-only changes
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      anchor: ${{ steps.filter.outputs.anchor }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            anchor:
+              - 'programs/**'
+              - 'tests/**'
+              - 'Anchor.toml'
+              - 'Cargo.lock'
+              - 'package.json'
+              - 'tsconfig.json'
+              - '.github/workflows/ci.yml'
+
   frontend:
     name: Frontend (lint, typecheck, build)
     runs-on: ubuntu-latest
@@ -33,6 +55,9 @@ jobs:
 
   anchor:
     name: Anchor build + test
+    needs: changes
+    # Always run on push to main; on PRs only when anchor-relevant paths changed
+    if: always() && (github.event_name == 'push' || needs.changes.outputs.anchor == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,21 +78,30 @@ jobs:
           anchor-version: 0.32.0
           solana-cli-version: 3.1.9
 
-      # setup-anchor + setup-solana handle their own caching.
-      # rust-cache covers the program build artifacts.
+      # Cache the compiled BPF .so keyed on program source.
+      # On hit, skip anchor build entirely (~5 min saved).
+      - name: Cache anchor build artifacts
+        id: anchor-build-cache
+        uses: actions/cache@v4
+        with:
+          path: target/deploy/
+          key: anchor-deploy-${{ hashFiles('programs/**/*.rs', 'programs/**/Cargo.toml', 'Cargo.lock', 'Anchor.toml') }}
+
+      # Only needed when we actually build
       - uses: Swatinem/rust-cache@v2
+        if: steps.anchor-build-cache.outputs.cache-hit != 'true'
         with:
           workspaces: programs/meridian
 
-      # Anchor calls `cargo +solana build-sbf` which needs rustup's
-      # cargo proxy to resolve +toolchain syntax. Solana CLI may put
-      # a raw cargo on PATH that doesn't understand it.
       - name: Ensure rustup cargo proxy on PATH
+        if: steps.anchor-build-cache.outputs.cache-hit != 'true'
         run: |
           rustup default 1.94.0
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
-      - run: anchor build
+      - name: Anchor build
+        if: steps.anchor-build-cache.outputs.cache-hit != 'true'
+        run: anchor build
       - name: Generate dev wallets
         run: npx tsx scripts/dev-wallets.ts
       - name: Run tests

@@ -228,16 +228,27 @@ export function TradePanel({
         />
       </label>
 
-      {effectivePrice != null && (
-        <output>
-          You pay ${((effectivePrice / USDC_PER_PAIR) * parseInt(quantity || "1")).toFixed(2)} USDC.{" "}
-          You win <mark data-tone="green">${(parseInt(quantity || "1")).toFixed(2)}</mark> if {ticker} closes{" "}
-          {action === "buyYes" || action === "sellNo" ? "above" : "below"} ${strikeDollars}.
-          {payoff != null && (
-            <> Max profit: <mark data-tone="green">${((payoff / USDC_PER_PAIR) * parseInt(quantity || "1")).toFixed(2)}</mark></>
-          )}
-        </output>
-      )}
+      {effectivePrice != null && (() => {
+        const qty = parseInt(quantity || "1");
+        const isBuy = action === "buyYes" || action === "buyNo";
+        // Net cost: Buy Yes = ask price, Buy No = 1.00 - bid price,
+        //           Sell Yes = bid price, Sell No = 1.00 - ask price
+        const netPerContract =
+          action === "buyYes" || action === "sellYes"
+            ? effectivePrice
+            : USDC_PER_PAIR - effectivePrice;
+        const totalNet = (netPerContract / USDC_PER_PAIR) * qty;
+        return (
+          <output>
+            {isBuy
+              ? <>You pay <mark data-tone="blue">${totalNet.toFixed(2)}</mark> USDC for {qty} {action === "buyYes" ? "Yes" : "No"} contract{qty > 1 ? "s" : ""}. Win <mark data-tone="green">${qty.toFixed(2)}</mark> if {ticker} closes {action === "buyYes" ? "above" : "below"} ${strikeDollars}.</>
+              : <>You receive <mark data-tone="green">${totalNet.toFixed(2)}</mark> USDC for {qty} {action === "sellYes" ? "Yes" : "No"} contract{qty > 1 ? "s" : ""}.</>}
+            {isBuy && payoff != null && (
+              <> Max profit: <mark data-tone="green">${((payoff / USDC_PER_PAIR) * qty).toFixed(2)}</mark></>
+            )}
+          </output>
+        );
+      })()}
 
       {conflict && (
         <p><mark data-tone="blue">{conflict}</mark></p>

@@ -148,6 +148,10 @@ function inferSide(
   return null;
 }
 
+function snakeToCamel(s: string): string {
+  return s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
 function isPartiallyDecodedInstruction(
   instruction: ParsedInstruction | PartiallyDecodedInstruction
 ): instruction is PartiallyDecodedInstruction {
@@ -158,13 +162,16 @@ function buildAccountMap(
   instructionName: string,
   instruction: PartiallyDecodedInstruction
 ): Record<string, string> {
+  // IDL stores snake_case instruction names; decoded.name is already camelCase,
+  // so convert back for the IDL lookup.
+  const snakeName = instructionName.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
   const accountDefs =
-    (idl as Idl).instructions.find((item) => item.name === instructionName)?.accounts ?? [];
+    (idl as Idl).instructions.find((item) => item.name === snakeName)?.accounts ?? [];
   const mapped: Record<string, string> = {};
   accountDefs.forEach((account, index) => {
     const pubkey = instruction.accounts[index];
     if (pubkey) {
-      mapped[account.name] = pubkey.toBase58();
+      mapped[snakeToCamel(account.name)] = pubkey.toBase58();
     }
   });
   return mapped;
@@ -177,10 +184,11 @@ function decodeInstructionData(
   try {
     const decoded = coder.decode(Buffer.from(bs58.decode(instruction.data)));
     if (!decoded) return null;
-    return {
-      name: decoded.name,
-      data: (decoded.data ?? {}) as Record<string, unknown>,
-    };
+    // Anchor 0.32 IDL uses snake_case; normalize to camelCase for consumers
+    const rawData = (decoded.data ?? {}) as Record<string, unknown>;
+    const data: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(rawData)) data[snakeToCamel(k)] = v;
+    return { name: snakeToCamel(decoded.name), data };
   } catch {
     return null;
   }

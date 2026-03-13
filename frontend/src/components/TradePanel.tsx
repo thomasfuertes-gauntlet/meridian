@@ -9,6 +9,8 @@ import {
   buildBuyNoTx,
   buildSellYesTx,
   buildSellNoTx,
+  buildPlaceOrderTx,
+  buildBuyNoLimitTx,
 } from "../lib/trade";
 import { getPositionConflict } from "../lib/portfolio";
 import { USDC_PER_PAIR } from "../lib/constants";
@@ -75,11 +77,27 @@ export function TradePanel({
     ? getPositionConflict(balanceMap, yesMint, noMint, action)
     : null;
 
-  const effectivePrice = price
-    ? Math.round(parseFloat(price) * USDC_PER_PAIR)
+  const isLimit = price !== "";
+  const priceUsdc = isLimit ? Math.round(parseFloat(price) * USDC_PER_PAIR) : null;
+
+  const effectivePrice = isLimit
+    ? priceUsdc
     : action === "buyYes" || action === "sellNo"
       ? bestAsk
       : bestBid;
+
+  // Does a limit price cross the opposite side of the book?
+  const wouldCross =
+    isLimit &&
+    priceUsdc != null &&
+    (action === "buyYes" || action === "sellNo"
+      ? bestAsk != null && priceUsdc >= bestAsk
+      : bestBid != null && priceUsdc <= bestBid);
+
+  const isResting = isLimit && !wouldCross;
+
+  // Sell No limit can't be atomic (bid + redeem requires async fill)
+  const sellNoLimitBlocked = action === "sellNo" && isResting;
 
   const payoff =
     effectivePrice != null
@@ -89,7 +107,7 @@ export function TradePanel({
       : null;
 
   const handleTrade = useCallback(async () => {
-    if (!wallet || effectivePrice == null) return;
+    if (!wallet || effectivePrice == null || sellNoLimitBlocked) return;
 
     setStatus("Building transaction...");
     try {
@@ -106,14 +124,33 @@ export function TradePanel({
         quantity: new BN(parseInt(quantity) || 1),
       };
 
-      const builders: Record<TradeAction, typeof buildBuyYesTx> = {
-        buyYes: buildBuyYesTx,
-        buyNo: buildBuyNoTx,
-        sellYes: buildSellYesTx,
-        sellNo: buildSellNoTx,
-      };
+      let tx;
+      if (isResting) {
+        // Maker path: resting limit order
+        switch (action) {
+          case "buyYes":
+            tx = await buildPlaceOrderTx(params, "bid");
+            break;
+          case "sellYes":
+            tx = await buildPlaceOrderTx(params, "ask");
+            break;
+          case "buyNo":
+            tx = await buildBuyNoLimitTx(params);
+            break;
+          default:
+            return; // sellNo limit blocked above
+        }
+      } else {
+        // Taker path: cross the book
+        const builders: Record<TradeAction, typeof buildBuyYesTx> = {
+          buyYes: buildBuyYesTx,
+          buyNo: buildBuyNoTx,
+          sellYes: buildSellYesTx,
+          sellNo: buildSellNoTx,
+        };
+        tx = await builders[action](params);
+      }
 
-      const tx = await builders[action](params);
       setStatus("Awaiting signature...");
 
       const { blockhash } = await connection.getLatestBlockhash();
@@ -137,6 +174,8 @@ export function TradePanel({
     action,
     quantity,
     effectivePrice,
+    isResting,
+    sellNoLimitBlocked,
     market,
     yesMint,
     noMint,
@@ -204,16 +243,36 @@ export function TradePanel({
         <p><mark data-tone="blue">{conflict}</mark></p>
       )}
 
+      {sellNoLimitBlocked && (
+        <p><mark data-tone="blue">Sell No limits require liquidity - use market order or request liquidity below</mark></p>
+      )}
+
       <button
         type="submit"
-        disabled={!wallet || effectivePrice == null || !!conflict}
+        disabled={!wallet || effectivePrice == null || !!conflict || sellNoLimitBlocked}
       >
         {!wallet
           ? "Connect wallet"
           : conflict
             ? "Position conflict"
-            : ACTION_LABELS[action]}
+            : sellNoLimitBlocked
+              ? "No liquidity"
+              : isResting
+                ? `Limit ${ACTION_LABELS[action]}`
+                : ACTION_LABELS[action]}
       </button>
+
+      {bestBid == null && bestAsk == null && (
+        <button
+          type="button"
+          onClick={() => {
+            fetch(`/api/active-ticker?ticker=${encodeURIComponent(ticker)}`);
+            setStatus(`Requested liquidity for ${ticker}`);
+          }}
+        >
+          Request liquidity
+        </button>
+      )}
 
       {status && <small>{status}</small>}
     </form>

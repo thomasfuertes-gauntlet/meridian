@@ -2,7 +2,7 @@ import "dotenv/config";
 
 import { BorshInstructionCoder, AnchorProvider, type Idl, Program } from "@coral-xyz/anchor";
 import { createServer } from "node:http";
-import { readFileSync, existsSync, statSync, createReadStream } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, statSync, createReadStream } from "node:fs";
 import { join, extname } from "node:path";
 import { PublicKey, Connection, type ParsedInstruction, type ParsedTransactionWithMeta, type PartiallyDecodedInstruction } from "@solana/web3.js";
 import bs58 from "bs58";
@@ -653,6 +653,14 @@ async function handle(url: URL) {
   if (url.pathname === "/api/markets") {
     const payload = await cached(marketState, MARKET_TTL_MS, buildMarketUniverse);
     return json(payload);
+  }
+
+  if (url.pathname === "/api/active-ticker") {
+    const ticker = url.searchParams.get("ticker");
+    if (ticker) {
+      writeFileSync("/tmp/meridian-active-market.txt", ticker);
+    }
+    return json({ ok: true, ticker });
   }
 
   if (url.pathname === "/api/activity") {

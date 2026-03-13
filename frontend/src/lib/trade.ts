@@ -321,6 +321,96 @@ export async function buildSellNoTx(
   return tx;
 }
 
+// Place a resting limit order (maker-only - will not cross the book)
+export async function buildPlaceOrderTx(
+  params: TradeParams,
+  side: "bid" | "ask",
+): Promise<Transaction> {
+  const { program, user, market, yesMint, usdcMint, price, quantity } = params;
+
+  const [orderBook] = findOrderBookPda(market);
+  const [obUsdcVault] = findVaultPda("ob_usdc_vault", market);
+  const [obYesVault] = findVaultPda("ob_yes_vault", market);
+  const userUsdcAta = getAssociatedTokenAddressSync(usdcMint, user);
+  const userYesAta = getAssociatedTokenAddressSync(yesMint, user);
+
+  const tx = new Transaction();
+  tx.add(createAssociatedTokenAccountIdempotentInstruction(user, userUsdcAta, user, usdcMint));
+  tx.add(createAssociatedTokenAccountIdempotentInstruction(user, userYesAta, user, yesMint));
+
+  const ix = await program.methods
+    .placeOrder(side === "bid" ? { bid: {} } : { ask: {} }, price, quantity)
+    .accountsPartial({
+      user,
+      market,
+      orderBook,
+      obUsdcVault,
+      obYesVault,
+      userUsdc: userUsdcAta,
+      userYes: userYesAta,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    })
+    .instruction();
+
+  tx.add(ix);
+  return tx;
+}
+
+// Buy No via limit: mint pairs (get Yes+No), place resting ask for Yes, keep No
+export async function buildBuyNoLimitTx(
+  params: TradeParams,
+): Promise<Transaction> {
+  const { program, user, market, yesMint, noMint, usdcMint, price, quantity } = params;
+
+  const [orderBook] = findOrderBookPda(market);
+  const userUsdcAta = getAssociatedTokenAddressSync(usdcMint, user);
+  const userYesAta = getAssociatedTokenAddressSync(yesMint, user);
+  const userNoAta = getAssociatedTokenAddressSync(noMint, user);
+  const [vault] = findVaultPda("vault", market);
+  const [obUsdcVault] = findVaultPda("ob_usdc_vault", market);
+  const [obYesVault] = findVaultPda("ob_yes_vault", market);
+
+  const tx = new Transaction();
+  tx.add(createAssociatedTokenAccountIdempotentInstruction(user, userUsdcAta, user, usdcMint));
+  tx.add(createAssociatedTokenAccountIdempotentInstruction(user, userYesAta, user, yesMint));
+  tx.add(createAssociatedTokenAccountIdempotentInstruction(user, userNoAta, user, noMint));
+
+  const mintIx = await program.methods
+    .mintPair(quantity)
+    .accountsPartial({
+      user,
+      market,
+      userUsdc: userUsdcAta,
+      vault,
+      yesMint,
+      noMint,
+      userYes: userYesAta,
+      userNo: userNoAta,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    })
+    .instruction();
+  tx.add(mintIx);
+
+  const askIx = await program.methods
+    .placeOrder({ ask: {} }, price, quantity)
+    .accountsPartial({
+      user,
+      market,
+      orderBook,
+      obUsdcVault,
+      obYesVault,
+      userUsdc: userUsdcAta,
+      userYes: userYesAta,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    })
+    .instruction();
+  tx.add(askIx);
+
+  return tx;
+}
+
 // Claim credited fills from the order book (permissionless - anyone can crank)
 export async function buildClaimFillsTx(
   program: Program,

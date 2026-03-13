@@ -31,6 +31,7 @@ export default defineConfig({
       '/api/markets': READ_API_TARGET,
       '/api/activity': READ_API_TARGET,
       '/api/health': READ_API_TARGET,
+      '/api/active-ticker': READ_API_TARGET,
     },
   },
   define: {

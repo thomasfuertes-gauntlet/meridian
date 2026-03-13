@@ -1,19 +1,25 @@
 /**
  * Shared WebSocket subscription cache for bot scripts.
- * Subscribes to orderbook and market account changes via onAccountChange,
- * eliminating poll-based RPC reads that trigger 429s on devnet.
  *
- * Usage:
+ * Subscribes to ONLY the active market's orderbook via onAccountChange (1 WS sub).
+ * Rotates subscription when the active-market signal changes.
+ * Writes parsed book state to a tmpfile so other processes (strategy-bots) can
+ * read without their own WS connections. Fits within Helius free-tier 5 WS limit.
+ *
+ * Usage (owner - live-bots):
  *   const cache = createWsCache(connection, program);
  *   await cache.ready;
- *   const book = cache.books.get(mkt.orderBook.toBase58());
- *   const markets = [...cache.markets.values()];
- *   cache.close(); // on shutdown
+ *   const book = cache.books.get(obKey);
+ *
+ * Usage (reader - strategy-bots):
+ *   import { loadSharedBooks } from "./ws-cache";
+ *   const books = loadSharedBooks();
  */
-import { Connection } from "@solana/web3.js";
+import { Connection, PublicKey } from "@solana/web3.js";
 import { Program } from "@coral-xyz/anchor";
 import { Meridian } from "../target/types/meridian";
-import { MarketCtx, Book, parseBook, discoverMarkets } from "./bot-utils";
+import { MarketCtx, Book, Order, parseBook, discoverMarkets, getActiveMarket } from "./bot-utils";
+import { writeFileSync, readFileSync } from "node:fs";
 
 export interface WsCache {
   markets: Map<string, MarketCtx>;
@@ -22,92 +28,162 @@ export interface WsCache {
   close(): void;
 }
 
-const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // re-discover new markets every 5 min
+const STATE_FILE = "/tmp/meridian-ws-books.json";
+const ROTATE_INTERVAL_MS = 10_000;
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
+interface SerializedOrder {
+  owner: string;
+  price: number;
+  quantity: number;
+  orderId: number;
+  isActive: boolean;
+}
+
+interface SerializedBook {
+  bidCount: number;
+  askCount: number;
+  bids: SerializedOrder[];
+  asks: SerializedOrder[];
+}
+
+function serializeBooks(books: Map<string, Book>): Record<string, SerializedBook> {
+  const out: Record<string, SerializedBook> = {};
+  for (const [key, book] of books) {
+    out[key] = {
+      bidCount: book.bidCount,
+      askCount: book.askCount,
+      bids: book.bids.map((o) => ({ owner: o.owner.toBase58(), price: o.price, quantity: o.quantity, orderId: o.orderId, isActive: o.isActive })),
+      asks: book.asks.map((o) => ({ owner: o.owner.toBase58(), price: o.price, quantity: o.quantity, orderId: o.orderId, isActive: o.isActive })),
+    };
+  }
+  return out;
+}
+
+function deserializeOrder(o: SerializedOrder): Order {
+  return { owner: new PublicKey(o.owner), price: o.price, quantity: o.quantity, orderId: o.orderId, isActive: o.isActive };
+}
+
+/**
+ * Read shared book state written by the WS cache owner process.
+ * Safe to call from any process - returns empty map if file missing/stale.
+ */
+export function loadSharedBooks(): Map<string, Book> {
+  try {
+    const raw = JSON.parse(readFileSync(STATE_FILE, "utf-8")) as Record<string, SerializedBook>;
+    const books = new Map<string, Book>();
+    for (const [key, sb] of Object.entries(raw)) {
+      books.set(key, {
+        bidCount: sb.bidCount,
+        askCount: sb.askCount,
+        bids: sb.bids.map(deserializeOrder),
+        asks: sb.asks.map(deserializeOrder),
+      });
+    }
+    return books;
+  } catch {
+    return new Map();
+  }
+}
+
+function writeState(books: Map<string, Book>) {
+  try {
+    writeFileSync(STATE_FILE, JSON.stringify(serializeBooks(books)), "utf-8");
+  } catch {
+    // Non-fatal: reader will use stale data
+  }
+}
 
 export function createWsCache(connection: Connection, program: Program<Meridian>): WsCache {
   const markets = new Map<string, MarketCtx>();
   const books = new Map<string, Book>();
-  const listeners: number[] = [];
+  let activeSubId: number | null = null;
+  let activeObKey: string | null = null;
 
   function subscribeOrderBook(mkt: MarketCtx) {
     const obKey = mkt.orderBook.toBase58();
-    const id = connection.onAccountChange(
+    if (obKey === activeObKey) return; // already subscribed
+
+    // Unsub previous
+    if (activeSubId !== null) {
+      connection.removeAccountChangeListener(activeSubId).catch(() => {});
+      activeSubId = null;
+    }
+
+    activeObKey = obKey;
+    activeSubId = connection.onAccountChange(
       mkt.orderBook,
       (accountInfo) => {
         books.set(obKey, parseBook(accountInfo.data as Buffer));
+        writeState(books);
       },
       "confirmed",
     );
-    listeners.push(id);
   }
 
-  function subscribeMarket(mkt: MarketCtx) {
-    const marketKey = mkt.pubkey.toBase58();
-    const id = connection.onAccountChange(
-      mkt.pubkey,
-      (accountInfo) => {
-        try {
-          const decoded = program.coder.accounts.decode("strikeMarket", accountInfo.data);
-          if (decoded.outcome?.pending === undefined) {
-            // Market settled or frozen into terminal state - remove from active maps
-            markets.delete(marketKey);
-            books.delete(mkt.orderBook.toBase58());
-          }
-        } catch {
-          // ignore decode errors - account may have been closed
-        }
-      },
-      "confirmed",
-    );
-    listeners.push(id);
-  }
-
-  async function subscribeNewMarket(mkt: MarketCtx) {
-    markets.set(mkt.pubkey.toBase58(), mkt);
-
-    // Fetch initial book state before WS catches up
-    try {
-      const obInfo = await connection.getAccountInfo(mkt.orderBook);
-      if (obInfo) {
-        books.set(mkt.orderBook.toBase58(), parseBook(obInfo.data as Buffer));
-      }
-    } catch {
-      // Non-fatal: WS will populate once first change arrives
+  function rotateActiveSubscription() {
+    const signal = getActiveMarket();
+    // Try exact market address first, then any market matching the ticker
+    if (signal?.marketAddress) {
+      const mkt = markets.get(signal.marketAddress);
+      if (mkt) { subscribeOrderBook(mkt); return; }
     }
-
-    subscribeOrderBook(mkt);
-    subscribeMarket(mkt);
+    if (signal?.ticker) {
+      const match = [...markets.values()].find((m) => m.ticker === signal.ticker);
+      if (match) { subscribeOrderBook(match); return; }
+    }
+    // Fallback: first market
+    const first = [...markets.values()][0];
+    if (first) subscribeOrderBook(first);
   }
 
   async function bootstrap() {
     const discovered = await discoverMarkets(program);
     for (const mkt of discovered) {
-      await subscribeNewMarket(mkt);
+      markets.set(mkt.pubkey.toBase58(), mkt);
+      // Fetch initial book state via RPC (one-time)
+      try {
+        const obInfo = await connection.getAccountInfo(mkt.orderBook);
+        if (obInfo) books.set(mkt.orderBook.toBase58(), parseBook(obInfo.data as Buffer));
+      } catch {
+        // Non-fatal: WS will populate for active market
+      }
     }
+    rotateActiveSubscription();
+    writeState(books);
   }
 
   const ready = bootstrap();
 
-  // Periodic refresh to discover newly created markets
+  // Rotate WS sub when active market signal changes
+  const rotateInterval = setInterval(rotateActiveSubscription, ROTATE_INTERVAL_MS);
+
+  // Discover new markets periodically
   const refreshInterval = setInterval(async () => {
     try {
       const discovered = await discoverMarkets(program);
       for (const mkt of discovered) {
         if (!markets.has(mkt.pubkey.toBase58())) {
-          await subscribeNewMarket(mkt);
+          markets.set(mkt.pubkey.toBase58(), mkt);
+          // Fetch initial book
+          try {
+            const obInfo = await connection.getAccountInfo(mkt.orderBook);
+            if (obInfo) books.set(mkt.orderBook.toBase58(), parseBook(obInfo.data as Buffer));
+          } catch {}
         }
       }
+      writeState(books);
     } catch {
       // ignore - will retry next interval
     }
   }, REFRESH_INTERVAL_MS);
 
   function close() {
+    clearInterval(rotateInterval);
     clearInterval(refreshInterval);
-    for (const id of listeners) {
-      connection.removeAccountChangeListener(id).catch(() => {});
+    if (activeSubId !== null) {
+      connection.removeAccountChangeListener(activeSubId).catch(() => {});
     }
-    listeners.length = 0;
   }
 
   return { markets, books, ready, close };

@@ -22,8 +22,8 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
-import { MarketCtx, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveMarket, getBotTickerFilter, defaultTxDelay, type Order } from "./bot-utils";
-import { createWsCache } from "./ws-cache";
+import { MarketCtx, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveMarket, getBotTickerFilter, defaultTxDelay, discoverMarkets, type Order } from "./bot-utils";
+import { loadSharedBooks } from "./ws-cache";
 
 const TICK_MS = 45_000;
 const TX_DELAY_MS = defaultTxDelay();
@@ -217,11 +217,13 @@ async function main() {
     console.log("Demo ticker focus:", demoTicker);
   }
 
-  const cache = createWsCache(connection, program);
-  await cache.ready;
+  // Discover markets via RPC (one-time). Book state comes from shared tmpfile
+  // written by live-bots' ws-cache (no WS subs in this process).
+  const discoveredMarkets = await discoverMarkets(program);
+  const marketsByKey = new Map(discoveredMarkets.map((m) => [m.pubkey.toBase58(), m]));
 
-  console.log(`Found ${cache.markets.size} active markets`);
-  if (cache.markets.size === 0) {
+  console.log(`Found ${marketsByKey.size} active markets`);
+  if (marketsByKey.size === 0) {
     console.log("No active markets. Exiting.");
     process.exit(0);
   }
@@ -243,7 +245,7 @@ async function main() {
 
   // Initialize ATAs for all markets upfront
   console.log("Initializing token accounts...");
-  for (const mkt of cache.markets.values()) {
+  for (const mkt of marketsByKey.values()) {
     try {
       await ensureAtas(mkt);
       await sleep(TX_DELAY_MS);
@@ -392,15 +394,16 @@ async function main() {
       if (hist.length > 20) hist.shift();
     }
 
-    // Build MarketInfo for each market using WS cache (no RPC reads)
+    // Build MarketInfo using shared book state from live-bots ws-cache
+    const sharedBooks = loadSharedBooks();
     const marketInfos: MarketInfo[] = [];
-    const currentMarkets = [...cache.markets.values()];
+    const currentMarkets = [...marketsByKey.values()];
     if (currentMarkets.length === 0) {
       console.log("[done] All markets settled. Exiting.");
       process.exit(0);
     }
     for (const mkt of currentMarkets) {
-      const book = cache.books.get(mkt.orderBook.toBase58());
+      const book = sharedBooks.get(mkt.orderBook.toBase58());
       if (!book) continue;
 
       // Filter out bot-b's own orders (self-trade guard)

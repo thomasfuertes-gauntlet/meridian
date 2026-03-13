@@ -164,6 +164,37 @@ export function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** True when RPC is not localhost (devnet/mainnet - rate-limited) */
+export function isRemoteRpc(): boolean {
+  const url = process.env.ANCHOR_PROVIDER_URL || process.env.RPC_URL || "";
+  return !url.includes("localhost") && !url.includes("127.0.0.1");
+}
+
+/**
+ * Default TX delay based on RPC target.
+ * Remote RPCs (Helius free: 10 req/s) need wider spacing since
+ * both live-bots and strategy-bots share the same endpoint.
+ */
+export function defaultTxDelay(): number {
+  return Number(process.env.TX_DELAY_MS ?? (isRemoteRpc() ? 2500 : 0));
+}
+
+/**
+ * Shared RPC throttle for reads. On remote RPCs, spaces reads 200ms apart
+ * to avoid 429s from account fetches (getAccountInfo, etc.).
+ */
+let lastRpcRead = 0;
+const RPC_READ_GAP_MS = isRemoteRpc() ? 200 : 0;
+
+export async function throttledRead<T>(fn: () => Promise<T>): Promise<T> {
+  if (RPC_READ_GAP_MS > 0) {
+    const wait = Math.max(0, RPC_READ_GAP_MS - (Date.now() - lastRpcRead));
+    if (wait > 0) await sleep(wait);
+    lastRpcRead = Date.now();
+  }
+  return fn();
+}
+
 const ACTIVE_MARKET_FILE = "/tmp/meridian-active-market.txt";
 
 /** Read the active ticker from env or file signal. Returns null if none set. */

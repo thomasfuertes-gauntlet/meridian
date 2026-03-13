@@ -22,10 +22,10 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
-import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveTicker, getBotTickerFilter, type Order } from "./bot-utils";
+import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveTicker, getBotTickerFilter, defaultTxDelay, type Order } from "./bot-utils";
 
 const TICK_MS = 45_000;
-const TX_DELAY_MS = Number(process.env.TX_DELAY_MS ?? 1000); // 1s global throttle
+const TX_DELAY_MS = defaultTxDelay();
 const MAX_TRADES_PER_TICK = 2;
 const COOLDOWN_TICKS = 5;
 const MARKET_REFRESH_TICKS = 50;

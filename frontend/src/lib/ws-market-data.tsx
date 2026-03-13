@@ -8,7 +8,7 @@ import { PublicKey } from "@solana/web3.js";
 import { connection, getReadOnlyProgram } from "./anchor";
 import { MAG7, PROGRAM_ID, USDC_PER_PAIR, type Ticker } from "./constants";
 import { parseOrderBook, type ParsedOrderBook } from "./orderbook";
-import { fetchPrices } from "./pyth";
+import { fetchPrices, createPriceStream } from "./pyth";
 import { MarketDataContext } from "./market-data-context";
 import type {
   MarketUniverse,
@@ -305,11 +305,11 @@ export function MarketDataProvider({ children }: { children: ReactNode }) {
       if (alive) void pollMarkets();
     }, 10_000);
 
-    // Refresh Pyth prices every 30s
-    const pythInterval = window.setInterval(async () => {
-      if (!alive) return;
-      try {
-        const newPrices = await fetchPrices(MAG7.map((e) => e.pythFeedId));
+    // Stream Pyth prices via SSE (replaces 30s HTTP polling)
+    const priceStream = createPriceStream(
+      MAG7.map((e) => e.pythFeedId),
+      (newPrices) => {
+        if (!alive) return;
         const priceMap: PriceMap = new Map();
         for (const [feedId, stock] of newPrices.entries()) {
           priceMap.set(feedId, {
@@ -319,11 +319,9 @@ export function MarketDataProvider({ children }: { children: ReactNode }) {
           });
         }
         pricesRef.current = priceMap;
-        if (alive) rebuild();
-      } catch {
-        // ignore Pyth errors
+        rebuild();
       }
-    }, 30_000);
+    );
 
     // Re-discover new markets every 5 minutes
     const discoveryInterval = window.setInterval(async () => {
@@ -339,7 +337,7 @@ export function MarketDataProvider({ children }: { children: ReactNode }) {
     return () => {
       alive = false;
       window.clearInterval(pollInterval);
-      window.clearInterval(pythInterval);
+      priceStream.close();
       window.clearInterval(discoveryInterval);
     };
   }, []);

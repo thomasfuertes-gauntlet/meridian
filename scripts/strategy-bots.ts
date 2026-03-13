@@ -228,13 +228,22 @@ async function main() {
     process.exit(0);
   }
 
-  // Ensure ATAs exist for all markets
+  // Ensure ATAs exist for all markets (skip if already created)
   const atasInitialized = new Set<string>();
   async function ensureAtas(mkt: MarketCtx) {
     const key = mkt.pubkey.toString();
     if (atasInitialized.has(key)) return;
     const botYesAta = getAssociatedTokenAddressSync(mkt.yesMint, bot.publicKey);
     const botNoAta = getAssociatedTokenAddressSync(mkt.noMint, bot.publicKey);
+    // Check if both ATAs already exist before sending a tx
+    const [yesInfo, noInfo] = await Promise.all([
+      connection.getAccountInfo(botYesAta),
+      connection.getAccountInfo(botNoAta),
+    ]);
+    if (yesInfo && noInfo) {
+      atasInitialized.add(key);
+      return;
+    }
     const tx = new anchor.web3.Transaction().add(
       createAssociatedTokenAccountIdempotentInstruction(bot.publicKey, botYesAta, bot.publicKey, mkt.yesMint),
       createAssociatedTokenAccountIdempotentInstruction(bot.publicKey, botNoAta, bot.publicKey, mkt.noMint),

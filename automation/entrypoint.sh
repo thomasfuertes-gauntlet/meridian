@@ -40,8 +40,8 @@ echo "Starting live trading bot..."
 npx tsx scripts/live-bots.ts &
 LIVE_PID=$!
 
-echo "Waiting 30s for order book liquidity..."
-sleep 30
+echo "Waiting 90s for order book liquidity + RPC cooldown..."
+sleep 90
 
 echo "Starting strategy bots..."
 npx tsx scripts/strategy-bots.ts &

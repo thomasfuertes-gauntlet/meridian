@@ -1,4 +1,5 @@
 import { BorshInstructionCoder, type Idl, type Program } from "@coral-xyz/anchor";
+import type { MarketRecord } from "./market-data";
 import BN from "bn.js";
 import { PublicKey, Transaction, type ParsedTransactionWithMeta, type PartiallyDecodedInstruction } from "@solana/web3.js";
 import {
@@ -376,10 +377,26 @@ export function derivePositionPerformanceFromTransactions(
 export async function fetchPositions(
   program: Program,
   connection: Connection,
-  wallet: PublicKey
+  wallet: PublicKey,
+  existingMarkets?: MarketRecord[]
 ): Promise<Position[]> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const allMarkets = await (program.account as any).strikeMarket.all();
+  const allMarkets = existingMarkets
+    ? existingMarkets.map((m) => ({
+        publicKey: m.publicKey,
+        account: {
+          yesMint: m.yesMint,
+          noMint: m.noMint,
+          strikePrice: { toNumber: () => m.strikePrice },
+          date: { toNumber: () => m.date },
+          ticker: m.ticker,
+          vault: m.vault,
+          bump: 0,
+          outcome: m.outcome === "yesWins" ? { yesWins: {} } : m.outcome === "noWins" ? { noWins: {} } : { pending: {} },
+          settlementPrice: m.settlementPrice != null ? { toNumber: () => m.settlementPrice } : null,
+        },
+      }))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    : await (program.account as any).strikeMarket.all();
   const positions: Position[] = [];
 
   // Batch fetch all token accounts for this wallet

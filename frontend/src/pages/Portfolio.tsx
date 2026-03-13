@@ -108,7 +108,10 @@ export function Portfolio() {
     setLoading(true);
     try {
       const program = getReadOnlyProgram();
-      const next = await fetchPositions(program, connection, selectedDesk.publicKey);
+      const allMarkets = data
+        ? Object.values(data.marketsByTicker).flat()
+        : undefined;
+      const next = await fetchPositions(program, connection, selectedDesk.publicKey, allMarkets);
       setPositions(next);
       if (usdcMint) {
         const nextPerformance = await fetchPositionPerformance(connection, selectedDesk.publicKey, next, usdcMint);
@@ -122,7 +125,7 @@ export function Portfolio() {
     } finally {
       setLoading(false);
     }
-  }, [connection, selectedDesk, usdcMint]);
+  }, [connection, data, selectedDesk, usdcMint]);
 
   useEffect(() => {
     loadPositions();

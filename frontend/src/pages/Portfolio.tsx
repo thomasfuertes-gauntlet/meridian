@@ -4,7 +4,7 @@ import { getProgram, getReadOnlyProgram } from "../lib/anchor";
 import { DeskSelector } from "../components/DeskSelector";
 import { MAG7, type Ticker } from "../lib/constants";
 import { money, formatContracts, formatUsdcBaseUnits } from "../lib/format";
-import { useMarketData } from "../lib/ws-market-data";
+import { useMarketData } from "../lib/use-market-data";
 import { getDeskWallets } from "../lib/dev-wallets";
 import {
   buildBurnPairTx,

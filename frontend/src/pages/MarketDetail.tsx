@@ -6,7 +6,7 @@ import { compact, formatContracts, formatRelativePublishTime, formatTimestamp, f
 import { formatActivityNotional, formatActivityPrice, useActivityFeed } from "../lib/activity";
 import { flipToNoPerspective } from "../lib/orderbook";
 import { MAG7, type Ticker } from "../lib/constants";
-import { useMarketData } from "../lib/ws-market-data";
+import { useMarketData } from "../lib/use-market-data";
 import { getConfiguredUsdcMint } from "../lib/usdc-mint";
 
 function statusTone(status: string): "green" | "blue" | "muted" {
@@ -49,14 +49,16 @@ export function MarketDetail() {
   // Signal active market to bots so they weight activity toward this strike.
   // On Railway: VITE_SIGNAL_URL points to the bots service signal-server.
   // Locally: Vite dev middleware handles /api/active-ticker.
+  const featuredAddress = featured?.address;
+  const featuredTicker = featured?.ticker;
   useEffect(() => {
-    if (!featured) return;
+    if (!featuredAddress || !featuredTicker) return;
     const base = import.meta.env.VITE_SIGNAL_URL;
     const url = base
-      ? `${base}/active-market?ticker=${featured.ticker}&market=${featured.address}`
-      : `/api/active-ticker?ticker=${featured.ticker}&market=${featured.address}`;
+      ? `${base}/active-market?ticker=${featuredTicker}&market=${featuredAddress}`
+      : `/api/active-ticker?ticker=${featuredTicker}&market=${featuredAddress}`;
     fetch(url).catch(() => {});
-  }, [featured?.address, featured?.ticker]);
+  }, [featuredAddress, featuredTicker]);
 
   const noBook = featured?.orderBook ? flipToNoPerspective(featured.orderBook) : null;
   const usdcMint = getConfiguredUsdcMint();

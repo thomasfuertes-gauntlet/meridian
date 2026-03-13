@@ -1,6 +1,6 @@
 import { MarketCard } from "../components/MarketCard";
 import { compact, formatContracts } from "../lib/format";
-import { useMarketData } from "../lib/ws-market-data";
+import { useMarketData } from "../lib/use-market-data";
 
 export function Markets() {
   const { data, error, loading, stats } = useMarketData();

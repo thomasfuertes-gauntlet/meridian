@@ -11,7 +11,7 @@
  */
 
 import * as anchor from "@coral-xyz/anchor";
-import { PublicKey, Keypair, Connection } from "@solana/web3.js";
+import { PublicKey, Keypair, Connection, AccountMeta } from "@solana/web3.js";
 // KEY-DECISION 2026-03-09: import BN from bn.js directly, not anchor.BN.
 // automation/ uses "type": "module" so `import * as anchor` gets ESM semantics
 // where anchor.BN is undefined.
@@ -176,6 +176,15 @@ async function settleMarketWithRetry(
         `[settle] ${ticker} @ $${strikeDollars} - Pyth price: $${dollarPrice.toFixed(2)} (${priceBaseUnits.toString()} base units)`
       );
 
+      // Derive OrderBook PDA so auto_credit_resting_orders can credit makers
+      const [orderBookPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("orderbook"), marketPubkey.toBuffer()],
+        program.programId
+      );
+      const remainingAccounts: AccountMeta[] = [
+        { pubkey: orderBookPda, isSigner: false, isWritable: true },
+      ];
+
       let sig: string | null = null;
       for (let attempt = 0; attempt <= MAX_RPC_429_RETRIES; attempt++) {
         try {
@@ -185,6 +194,7 @@ async function settleMarketWithRetry(
               admin: admin.publicKey,
               market: marketPubkey,
             })
+            .remainingAccounts(remainingAccounts)
             .signers([admin])
             .rpc();
           break;

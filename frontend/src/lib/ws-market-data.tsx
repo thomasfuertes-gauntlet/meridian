@@ -146,31 +146,42 @@ export function MarketDataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let alive = true;
-    // Subscription IDs - mutated in place so cleanup always sees current list
-    const subs: number[] = [];
 
     function rebuild() {
       if (!alive) return;
       setData(buildUniverse(marketsRef.current, pricesRef.current));
     }
 
-    function subscribeToMarkets() {
-      // Clear existing subscriptions before re-subscribing
-      for (const id of subs.splice(0)) {
-        connection.removeAccountChangeListener(id).catch(() => {});
-      }
+    // Poll orderbooks + market status instead of per-account WS subs.
+    // Helius free tier caps at 5 WS subs; per-market subs would need ~84.
+    async function pollMarkets() {
+      if (!alive || marketsRef.current.size === 0) return;
+      try {
+        const entries = [...marketsRef.current.entries()];
+        const obAddresses = entries.map(([, m]) =>
+          PublicKey.findProgramAddressSync(
+            [Buffer.from("orderbook"), m.publicKey.toBuffer()],
+            PROGRAM_ID
+          )[0]
+        );
+        const marketAddresses = entries.map(([, m]) => m.publicKey);
 
-      for (const [address, market] of marketsRef.current.entries()) {
-        // Market account: re-decode status/outcome on change
-        const marketSubId = connection.onAccountChange(
-          market.publicKey,
-          (accountInfo) => {
+        const [obAccounts, marketAccounts] = await Promise.all([
+          connection.getMultipleAccountsInfo(obAddresses),
+          connection.getMultipleAccountsInfo(marketAddresses),
+        ]);
+
+        const program = getReadOnlyProgram();
+        let changed = false;
+        entries.forEach(([address, existing], idx) => {
+          // Update market status
+          const marketAccount = marketAccounts[idx];
+          if (marketAccount) {
             try {
-              const program = getReadOnlyProgram();
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const decoded = (program.coder.accounts as any).decode(
                 "StrikeMarket",
-                accountInfo.data
+                marketAccount.data
               ) as {
                 status: unknown;
                 outcome: unknown;
@@ -178,9 +189,7 @@ export function MarketDataProvider({ children }: { children: ReactNode }) {
                 settlementPrice?: { toNumber?(): number } | null;
                 settlementSource: unknown;
               };
-              const existing = marketsRef.current.get(address);
-              if (!existing) return;
-              marketsRef.current.set(address, {
+              existing = {
                 ...existing,
                 status: normalizeStatus(decoded.status),
                 outcome: normalizeOutcome(decoded.outcome),
@@ -189,37 +198,20 @@ export function MarketDataProvider({ children }: { children: ReactNode }) {
                 settlementSource: decoded.settlementSource
                   ? decodeEnum(decoded.settlementSource)
                   : null,
-              });
-              rebuild();
+              };
             } catch {
               // ignore decode errors
             }
-          },
-          "confirmed"
-        );
-        subs.push(marketSubId);
-
-        // Orderbook PDA: re-parse raw buffer on change
-        const obPda = PublicKey.findProgramAddressSync(
-          [Buffer.from("orderbook"), market.publicKey.toBuffer()],
-          PROGRAM_ID
-        )[0];
-        const obSubId = connection.onAccountChange(
-          obPda,
-          (accountInfo) => {
-            try {
-              const orderBook = parseOrderBook(accountInfo);
-              const existing = marketsRef.current.get(address);
-              if (!existing) return;
-              marketsRef.current.set(address, computeDerived(existing, orderBook));
-              rebuild();
-            } catch {
-              // ignore
-            }
-          },
-          "confirmed"
-        );
-        subs.push(obSubId);
+          }
+          // Update orderbook
+          const obAccount = obAccounts[idx];
+          const orderBook = obAccount ? parseOrderBook(obAccount) : null;
+          marketsRef.current.set(address, computeDerived(existing, orderBook));
+          changed = true;
+        });
+        if (changed) rebuild();
+      } catch {
+        // ignore poll errors
       }
     }
 
@@ -297,7 +289,6 @@ export function MarketDataProvider({ children }: { children: ReactNode }) {
       if (!alive) return;
       rebuild();
       setError(null);
-      subscribeToMarkets();
     }
 
     init()
@@ -308,6 +299,11 @@ export function MarketDataProvider({ children }: { children: ReactNode }) {
       .finally(() => {
         if (alive) setLoading(false);
       });
+
+    // Poll orderbooks + market status every 10s (replaces per-market WS subs)
+    const pollInterval = window.setInterval(() => {
+      if (alive) void pollMarkets();
+    }, 10_000);
 
     // Refresh Pyth prices every 30s
     const pythInterval = window.setInterval(async () => {
@@ -334,10 +330,7 @@ export function MarketDataProvider({ children }: { children: ReactNode }) {
       if (!alive) return;
       try {
         await coldLoad();
-        if (alive) {
-          rebuild();
-          subscribeToMarkets();
-        }
+        if (alive) rebuild();
       } catch {
         // ignore
       }
@@ -345,11 +338,9 @@ export function MarketDataProvider({ children }: { children: ReactNode }) {
 
     return () => {
       alive = false;
+      window.clearInterval(pollInterval);
       window.clearInterval(pythInterval);
       window.clearInterval(discoveryInterval);
-      for (const id of subs.splice(0)) {
-        connection.removeAccountChangeListener(id).catch(() => {});
-      }
     };
   }, []);
 

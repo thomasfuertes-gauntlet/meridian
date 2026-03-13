@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { OrderBook } from "../components/OrderBook";
 import { TradePanel } from "../components/TradePanel";
@@ -42,25 +42,17 @@ export function MarketDetail() {
     [data, routeTicker]
   );
 
-  const defaultFeatured = markets.find((market) => market.status === "created")
-    ?? markets.find((market) => market.status === "frozen")
-    ?? markets[0]
-    ?? null;
-  const featured = markets.find((market) => market.address === selectedMarketAddress)
-    ?? defaultFeatured;
-
-  useEffect(() => {
-    if (!markets.length) {
-      setSelectedMarketAddress(null);
-      return;
+  const featured = useMemo(() => {
+    if (!markets.length) return null;
+    if (selectedMarketAddress) {
+      const selected = markets.find((m) => m.address === selectedMarketAddress);
+      if (selected) return selected;
     }
-
-    if (selectedMarketAddress && markets.some((market) => market.address === selectedMarketAddress)) {
-      return;
-    }
-
-    setSelectedMarketAddress(defaultFeatured?.address ?? markets[0]?.address ?? null);
-  }, [defaultFeatured?.address, markets, selectedMarketAddress]);
+    return markets.find((m) => m.status === "created")
+      ?? markets.find((m) => m.status === "frozen")
+      ?? markets[0]
+      ?? null;
+  }, [markets, selectedMarketAddress]);
 
   const noBook = featured?.orderBook ? flipToNoPerspective(featured.orderBook) : null;
   const usdcMint = getConfiguredUsdcMint();

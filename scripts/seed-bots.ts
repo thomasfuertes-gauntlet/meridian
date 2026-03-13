@@ -50,9 +50,16 @@ async function main() {
   // Fund bot with SOL (only on localhost - devnet faucets rate-limit heavily)
   const botBal = await connection.getBalance(bot.publicKey);
   if (isLocalhost && botBal < 5 * LAMPORTS_PER_SOL) {
-    const airdropSig = await connection.requestAirdrop(bot.publicKey, 10 * LAMPORTS_PER_SOL);
-    await connection.confirmTransaction(airdropSig);
-    console.log("Airdropped 10 SOL to bot");
+    const { SystemProgram, Transaction, sendAndConfirmTransaction } = await import("@solana/web3.js");
+    const tx = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: admin.publicKey,
+        toPubkey: bot.publicKey,
+        lamports: 10 * LAMPORTS_PER_SOL,
+      })
+    );
+    await sendAndConfirmTransaction(connection, tx, [admin]);
+    console.log("Transferred 10 SOL to bot from admin");
   } else {
     console.log(`Bot SOL balance: ${(botBal / LAMPORTS_PER_SOL).toFixed(2)} SOL`);
   }

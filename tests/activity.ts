@@ -85,9 +85,10 @@ describe("activity: single-call signature pattern", () => {
     }
 
     // The core assertion: program-level signature fetch finds all instruction types
-    expect(decodedNames.has("createStrikeMarket")).to.be.true;
-    expect(decodedNames.has("mintPair")).to.be.true;
-    expect(decodedNames.has("placeOrder")).to.be.true;
+    // IDL uses snake_case names in Anchor 0.32
+    expect(decodedNames.has("create_strike_market")).to.be.true;
+    expect(decodedNames.has("mint_pair")).to.be.true;
+    expect(decodedNames.has("place_order")).to.be.true;
   });
 
   it("program-level fetch includes activity from multiple tickers", async () => {
@@ -178,7 +179,7 @@ describe("activity: single-call signature pattern", () => {
           const decoded = coder.decode(Buffer.from(
             bs58.decode(ix.data)
           ));
-          return decoded?.name === "buyYes";
+          return decoded?.name === "buy_yes";
         } catch { return false; }
       });
     });

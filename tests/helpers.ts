@@ -84,7 +84,7 @@ export async function setupTestContext(): Promise<TestContext> {
     usdcMint,
     adminUsdcAta,
     mintAuthority,
-    100_000_000
+    1_000_000_000
   );
 
   // Ensure globalConfig is initialized

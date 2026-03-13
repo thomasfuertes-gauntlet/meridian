@@ -22,13 +22,13 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
-import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveTicker, getBotTickerFilter, defaultTxDelay, type Order } from "./bot-utils";
+import { MarketCtx, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveMarket, getBotTickerFilter, defaultTxDelay, type Order } from "./bot-utils";
+import { createWsCache } from "./ws-cache";
 
 const TICK_MS = 45_000;
 const TX_DELAY_MS = defaultTxDelay();
 const MAX_TRADES_PER_TICK = 2;
 const COOLDOWN_TICKS = 5;
-const MARKET_REFRESH_TICKS = 50;
 
 // --- Types ---
 
@@ -217,10 +217,11 @@ async function main() {
     console.log("Demo ticker focus:", demoTicker);
   }
 
-  let markets = await discoverMarkets(program);
+  const cache = createWsCache(connection, program);
+  await cache.ready;
 
-  console.log(`Found ${markets.length} active markets`);
-  if (markets.length === 0) {
+  console.log(`Found ${cache.markets.size} active markets`);
+  if (cache.markets.size === 0) {
     console.log("No active markets. Exiting.");
     process.exit(0);
   }
@@ -242,7 +243,7 @@ async function main() {
 
   // Initialize ATAs for all markets upfront
   console.log("Initializing token accounts...");
-  for (const mkt of markets) {
+  for (const mkt of cache.markets.values()) {
     try {
       await ensureAtas(mkt);
       await sleep(TX_DELAY_MS);
@@ -374,27 +375,6 @@ async function main() {
   while (true) {
     tickCount++;
 
-    // Drop settled markets periodically
-    if (tickCount % MARKET_REFRESH_TICKS === 0) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const refreshed = await (program.account as any).strikeMarket.all();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const activePubkeys = new Set(refreshed.filter((m: any) => m.account.outcome?.pending !== undefined).map((m: any) => m.publicKey.toString()));
-        const before = markets.length;
-        markets = markets.filter((m) => activePubkeys.has(m.pubkey.toString()));
-        if (markets.length < before) {
-          console.log(`[refresh] ${before - markets.length} markets settled, ${markets.length} remaining`);
-        }
-        if (markets.length === 0) {
-          console.log("[done] All markets settled. Exiting.");
-          process.exit(0);
-        }
-      } catch {
-        // RPC failure - keep going with current list
-      }
-    }
-
     // Refresh stock prices every 30s
     if (Date.now() - lastPriceRefresh > 30_000) {
       stockPrices = await fetchStockPrices();
@@ -412,26 +392,16 @@ async function main() {
       if (hist.length > 20) hist.shift();
     }
 
-    // Batch-read all order books in one RPC call
-    const obKeys = markets.map((m) => m.orderBook);
-    let obInfos: (anchor.web3.AccountInfo<Buffer> | null)[];
-    try {
-      obInfos = await connection.getMultipleAccountsInfo(obKeys);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.log(`  [err] Failed to fetch order books: ${msg.slice(0, 120)}, skipping tick`);
-      await sleep(TICK_MS);
-      continue;
-    }
-
-    // Build MarketInfo for each market
+    // Build MarketInfo for each market using WS cache (no RPC reads)
     const marketInfos: MarketInfo[] = [];
-    for (let i = 0; i < markets.length; i++) {
-      const mkt = markets[i];
-      const obData = obInfos[i];
-      if (!obData) continue;
-
-      const book = parseBook(obData.data as Buffer);
+    const currentMarkets = [...cache.markets.values()];
+    if (currentMarkets.length === 0) {
+      console.log("[done] All markets settled. Exiting.");
+      process.exit(0);
+    }
+    for (const mkt of currentMarkets) {
+      const book = cache.books.get(mkt.orderBook.toBase58());
+      if (!book) continue;
 
       // Filter out bot-b's own orders (self-trade guard)
       const otherBids = book.bids.filter((o) => !o.owner.equals(bot.publicKey));
@@ -470,8 +440,9 @@ async function main() {
       else cooldowns.set(key, ticks - 1);
     }
 
-    // Collect signals from all strategies, prioritizing active ticker
-    const activeTicker = getActiveTicker();
+    // Collect signals from all strategies, prioritizing active market signal
+    const activeMarket = getActiveMarket();
+    const activeTicker = activeMarket?.ticker ?? null;
     const signals: { signal: TradeSignal; stratName: string }[] = [];
     for (const strategy of STRATEGIES) {
       for (const mi of marketInfos) {

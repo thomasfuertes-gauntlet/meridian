@@ -25,7 +25,8 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fairValue, fetchStockPrices } from "./fair-value";
-import { parseBook, MarketCtx, discoverMarkets, loadUsdcMint, sleep, USDC_PER_PAIR, MAX_PER_SIDE, weightedMarketSelect, getBotTickerFilter, defaultTxDelay } from "./bot-utils";
+import { MarketCtx, loadUsdcMint, sleep, USDC_PER_PAIR, MAX_PER_SIDE, weightedMarketSelect, getBotTickerFilter, defaultTxDelay } from "./bot-utils";
+import { createWsCache } from "./ws-cache";
 
 const MIN_PRICE = 50_000;   // $0.05 floor
 const MAX_PRICE = 950_000;  // $0.95 ceiling
@@ -34,7 +35,6 @@ const TICK_MS_MIN = 150;
 const TICK_MS_MAX = 400;
 const PRICE_REFRESH_MS = 30_000;
 const TX_DELAY_MS = defaultTxDelay();
-const MARKET_REFRESH_TICKS = 100; // re-check which markets are still active every ~100 ticks
 const REPLENISH_THRESHOLD = 2_000 * USDC_PER_PAIR; // keep a larger free-USDC buffer for market making
 const REPLENISH_AMOUNT = 10_000 * USDC_PER_PAIR;
 
@@ -48,12 +48,6 @@ function clamp(v: number, lo: number, hi: number) {
 
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
-}
-
-async function loadBook(connection: anchor.web3.Connection, mkt: MarketCtx) {
-  const obInfo = await connection.getAccountInfo(mkt.orderBook);
-  if (!obInfo) return null;
-  return parseBook(obInfo.data as Buffer);
 }
 
 async function main() {
@@ -74,9 +68,10 @@ async function main() {
     console.log("Demo ticker focus:", demoTicker);
   }
 
-  let markets = await discoverMarkets(program);
+  const cache = createWsCache(connection, program);
+  await cache.ready;
 
-  console.log(`Found ${markets.length} active markets`);
+  console.log(`Found ${cache.markets.size} active markets`);
 
   // Fetch initial stock prices
   let stockPrices = await fetchStockPrices();
@@ -131,7 +126,7 @@ async function main() {
     const fair = getFairForMarket(mkt);
     const fairPrice = Math.round(fair * USDC_PER_PAIR);
 
-    const book = await loadBook(connection, mkt);
+    const book = cache.books.get(mkt.orderBook.toBase58());
     if (!book) return;
 
     const botBids = book.bids.filter((o) => o.owner.equals(bot.publicKey));
@@ -183,7 +178,7 @@ async function main() {
       txCount++;
       await sleep(TX_DELAY_MS);
 
-      const refreshedBook = await loadBook(connection, mkt);
+      const refreshedBook = cache.books.get(mkt.orderBook.toBase58());
       if (!refreshedBook) return;
       const refreshedBestAsk = refreshedBook.asks[0]?.price ?? MAX_PRICE;
       const refreshedBestBid = refreshedBook.bids[0]?.price ?? MIN_PRICE;
@@ -255,7 +250,7 @@ async function main() {
       txCount++;
       await sleep(TX_DELAY_MS);
 
-      const refreshedBook = await loadBook(connection, mkt);
+      const refreshedBook = cache.books.get(mkt.orderBook.toBase58());
       if (!refreshedBook) return;
       const refreshedBestBid = refreshedBook.bids[0]?.price ?? Math.round(fair * USDC_PER_PAIR * 0.8);
       const refreshedBestAsk = refreshedBook.asks[0]?.price ?? Math.round(fair * USDC_PER_PAIR * 1.2);
@@ -309,7 +304,7 @@ async function main() {
       await sleep(TX_DELAY_MS);
 
       const side = Math.random() < 0.5 ? "bid" : "ask";
-      const refreshedBook = await loadBook(connection, mkt);
+      const refreshedBook = cache.books.get(mkt.orderBook.toBase58());
       if (!refreshedBook) return;
 
       if (side === "bid") {
@@ -358,31 +353,9 @@ async function main() {
   }
 
   let replenishCounter = 0;
-  let tickCounter = 0;
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    // Periodically drop settled markets from the active list
-    if (++tickCounter % MARKET_REFRESH_TICKS === 0) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const refreshed = await (program.account as any).strikeMarket.all();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const activePubkeys = new Set(refreshed.filter((m: any) => m.account.outcome?.pending !== undefined).map((m: any) => m.publicKey.toString()));
-        const before = markets.length;
-        markets = markets.filter((m) => activePubkeys.has(m.pubkey.toString()));
-        if (markets.length < before) {
-          console.log(`[refresh] ${before - markets.length} markets settled, ${markets.length} remaining`);
-        }
-        if (markets.length === 0) {
-          console.log("[done] All markets settled. Exiting gracefully.");
-          process.exit(0);
-        }
-      } catch {
-        // RPC failure - keep going with current list
-      }
-    }
-
     // Refresh stock prices periodically
     if (Date.now() - lastPriceRefresh > PRICE_REFRESH_MS) {
       stockPrices = await fetchStockPrices();
@@ -394,7 +367,12 @@ async function main() {
       await checkReplenish();
     }
 
-    // Pick 1-2 markets weighted toward active frontend ticker
+    // Pick 1-2 markets weighted toward active frontend market signal
+    const markets = [...cache.markets.values()];
+    if (markets.length === 0) {
+      console.log("[done] All markets settled. Exiting gracefully.");
+      process.exit(0);
+    }
     const batch = randInt(1, Math.min(2, markets.length));
     const selected = weightedMarketSelect(markets, batch);
 

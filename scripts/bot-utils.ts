@@ -90,8 +90,6 @@ export function getBotTickerFilter(): string {
   return ticker || "NVDA";
 }
 
-const READ_API_BASE = process.env.READ_API_URL || "http://localhost:8080";
-
 function marketRecordToCtx(m: { address: string; ticker: string; strikePrice: number; closeTime: number }, pid: PublicKey): MarketCtx {
   const pk = new PublicKey(m.address);
   return {
@@ -108,25 +106,10 @@ function marketRecordToCtx(m: { address: string; ticker: string; strikePrice: nu
   };
 }
 
-/** Discover all active (pending) markets - tries read-api first, falls back to direct RPC. */
+/** Discover all active (pending) markets via direct RPC. */
 export async function discoverMarkets(program: Program<Meridian>): Promise<MarketCtx[]> {
   const pid = program.programId;
   const demoTicker = getBotTickerFilter();
-
-  // Try read-api first (reuses cached data, saves an RPC call)
-  try {
-    const res = await fetch(`${READ_API_BASE}/api/markets`);
-    if (res.ok) {
-      const data = await res.json() as { marketsByTicker: Record<string, Array<{ address: string; ticker: string; strikePrice: number; closeTime: number; status: string; outcome: string }>> };
-      const all = Object.values(data.marketsByTicker).flat();
-      return all
-        .filter((m) => m.outcome === "pending" && m.status === "created")
-        .filter((m) => !demoTicker || m.ticker.toUpperCase() === demoTicker)
-        .map((m) => marketRecordToCtx(m, pid));
-    }
-  } catch {
-    // read-api not available, fall back to direct RPC
-  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allMarkets = await (program.account as any).strikeMarket.all();
@@ -179,48 +162,66 @@ export function defaultTxDelay(): number {
   return Number(process.env.TX_DELAY_MS ?? (isRemoteRpc() ? 2500 : 0));
 }
 
-/**
- * Shared RPC throttle for reads. On remote RPCs, spaces reads 200ms apart
- * to avoid 429s from account fetches (getAccountInfo, etc.).
- */
-let lastRpcRead = 0;
-const RPC_READ_GAP_MS = isRemoteRpc() ? 200 : 0;
+const ACTIVE_MARKET_FILE = "/tmp/meridian-active-market.txt";
+const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
-export async function throttledRead<T>(fn: () => Promise<T>): Promise<T> {
-  if (RPC_READ_GAP_MS > 0) {
-    const wait = Math.max(0, RPC_READ_GAP_MS - (Date.now() - lastRpcRead));
-    if (wait > 0) await sleep(wait);
-    lastRpcRead = Date.now();
-  }
-  return fn();
+export interface ActiveMarket {
+  ticker: string;
+  marketAddress: string | null;
 }
 
-const ACTIVE_MARKET_FILE = "/tmp/meridian-active-market.txt";
+/**
+ * Read the active market signal from env or file.
+ * Supports `ticker:address` format; if no colon, treats as ticker-only.
+ * File signal is considered stale if mtime > 5 min and returns null.
+ */
+export function getActiveMarket(): ActiveMarket | null {
+  // Env var override takes priority (ACTIVE_MARKET=ticker:address or just ticker)
+  const envVal = process.env.ACTIVE_MARKET?.trim();
+  if (envVal) {
+    const colonIdx = envVal.indexOf(":");
+    if (colonIdx >= 0) {
+      return { ticker: envVal.slice(0, colonIdx).toUpperCase(), marketAddress: envVal.slice(colonIdx + 1) };
+    }
+    return { ticker: envVal.toUpperCase(), marketAddress: null };
+  }
 
-/** Read the active ticker from env or file signal. Returns null if none set. */
-export function getActiveTicker(): string | null {
-  const demoTicker = getBotTickerFilter();
-  if (demoTicker) return demoTicker;
-  if (process.env.ACTIVE_TICKER) return process.env.ACTIVE_TICKER;
+  // File signal (written by frontend dev server middleware)
   try {
-    return fs.readFileSync(ACTIVE_MARKET_FILE, "utf-8").trim() || null;
+    const stat = fs.statSync(ACTIVE_MARKET_FILE);
+    if (Date.now() - stat.mtimeMs > STALE_THRESHOLD_MS) return null; // stale
+    const content = fs.readFileSync(ACTIVE_MARKET_FILE, "utf-8").trim();
+    if (!content) return null;
+    const colonIdx = content.indexOf(":");
+    if (colonIdx >= 0) {
+      return { ticker: content.slice(0, colonIdx).toUpperCase(), marketAddress: content.slice(colonIdx + 1) };
+    }
+    return { ticker: content.toUpperCase(), marketAddress: null };
   } catch {
     return null;
   }
 }
 
+/** @deprecated Use getActiveMarket() instead. Kept for backwards compat. */
+export function getActiveTicker(): string | null {
+  return getActiveMarket()?.ticker ?? null;
+}
+
 /**
- * Select markets weighted toward the active ticker.
- * 80% chance of picking from active ticker's markets, 20% from the rest.
- * Falls back to uniform random if no active ticker or no matching markets.
+ * Select markets weighted toward the active market signal.
+ * If active market has a specific address: 80% weight on that exact strike.
+ * If active market is ticker-only: 80% weight on all markets for that ticker.
+ * Falls back to uniform random if no signal or no matching markets.
  */
 export function weightedMarketSelect(markets: MarketCtx[], count: number): MarketCtx[] {
-  const activeTicker = getActiveTicker();
-  if (!activeTicker || count >= markets.length) {
+  const activeMarket = getActiveMarket();
+  if (!activeMarket || count >= markets.length) {
     return [...markets].sort(() => Math.random() - 0.5).slice(0, count);
   }
-  const active = markets.filter((m) => m.ticker === activeTicker);
-  const rest = markets.filter((m) => m.ticker !== activeTicker);
+  const active = activeMarket.marketAddress
+    ? markets.filter((m) => m.pubkey.toBase58() === activeMarket.marketAddress)
+    : markets.filter((m) => m.ticker === activeMarket.ticker);
+  const rest = markets.filter((m) => !active.includes(m));
   if (active.length === 0) {
     return [...markets].sort(() => Math.random() - 0.5).slice(0, count);
   }

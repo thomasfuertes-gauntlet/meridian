@@ -75,8 +75,7 @@ export function PriceSparkline({
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
-      className="overflow-visible"
-      style={{ filter: `drop-shadow(0 0 6px ${activeColor}40)` }}
+      style={{ overflow: "visible", filter: `drop-shadow(0 0 6px ${activeColor}40)` }}
     >
       <defs>
         <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">

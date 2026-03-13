@@ -45,8 +45,6 @@ export function SettlementCountdown() {
   }, []);
 
   return (
-    <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-stone-300">
-      Next settle <span className="font-mono text-amber-200">{timeLeft}</span>
-    </div>
+    <small>Next settle <kbd>{timeLeft}</kbd></small>
   );
 }

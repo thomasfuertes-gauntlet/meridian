@@ -14,15 +14,14 @@ export function DeskSelector({
   label = "Desk",
 }: DeskSelectorProps) {
   return (
-    <label className="inline-flex items-center gap-3 rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300">
-      <span>{label}</span>
+    <label>
+      {label}:{" "}
       <select
         value={selectedDeskId}
         onChange={(event) => onChange(event.target.value)}
-        className="bg-transparent text-white outline-none"
       >
         {desks.map((desk) => (
-          <option key={desk.id} value={desk.id} className="bg-stone-950 text-white">
+          <option key={desk.id} value={desk.id}>
             {desk.label}
           </option>
         ))}

@@ -1,6 +1,5 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 import * as fs from 'fs'
 
@@ -9,7 +8,6 @@ const ACTIVE_MARKET_FILE = '/tmp/meridian-active-market.txt'
 export default defineConfig({
   plugins: [
     react(),
-    tailwindcss(),
     nodePolyfills(),
     {
       name: 'active-ticker-api',

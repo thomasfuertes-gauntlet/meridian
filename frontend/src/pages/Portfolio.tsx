@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import { getProgram, getReadOnlyProgram } from "../lib/anchor";
 import { DeskSelector } from "../components/DeskSelector";
@@ -98,6 +98,10 @@ export function Portfolio() {
     }
   }, [desks, selectedDeskId]);
 
+  // Use ref for market data to avoid re-triggering loadPositions on every SSE price update
+  const dataRef = useRef(data);
+  dataRef.current = data;
+
   const loadPositions = useCallback(async () => {
     if (!selectedDesk) {
       setPositions([]);
@@ -108,8 +112,9 @@ export function Portfolio() {
     setLoading(true);
     try {
       const program = getReadOnlyProgram();
-      const allMarkets = data
-        ? Object.values(data.marketsByTicker).flat()
+      const snapshot = dataRef.current;
+      const allMarkets = snapshot
+        ? Object.values(snapshot.marketsByTicker).flat()
         : undefined;
       const next = await fetchPositions(program, connection, selectedDesk.publicKey, allMarkets);
       setPositions(next);
@@ -125,7 +130,7 @@ export function Portfolio() {
     } finally {
       setLoading(false);
     }
-  }, [connection, data, selectedDesk, usdcMint]);
+  }, [connection, selectedDesk, usdcMint]);
 
   useEffect(() => {
     loadPositions();

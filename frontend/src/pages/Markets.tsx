@@ -10,41 +10,29 @@ export function Markets() {
     : null;
 
   return (
-    <div className="space-y-8">
-      <section className="grid gap-4 md:grid-cols-3">
-        <div className="terminal-panel p-5">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Tracked markets</div>
-          <div className="mt-3 font-display text-4xl text-white">{stats.totalMarkets}</div>
-          <div className="mt-2 text-sm text-zinc-400">Latest-date strike markets loaded from chain.</div>
-        </div>
-        <div className="terminal-panel p-5">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Pairs minted</div>
-          <div className="mt-3 font-display text-4xl text-white">{compact.format(stats.totalOpenInterest)}</div>
-          <div className="mt-2 text-sm text-zinc-400">{formatContracts(stats.totalOpenInterest)} contracts of open interest.</div>
-        </div>
-        <div className="terminal-panel p-5">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Indexer state</div>
-          <div className="mt-3 font-display text-xl text-white">{loading ? "Syncing" : error ? "Degraded" : "Live"}</div>
-          <div className="mt-2 text-sm text-zinc-400">{error ?? "Polling live chain and Hermes every 15 seconds."}</div>
-        </div>
+    <>
+      <section>
+        <h1>MAG7 market surface</h1>
+        <dl>
+          <dt>Tracked markets</dt>
+          <dd>{stats.totalMarkets}</dd>
+          <dt>Pairs minted</dt>
+          <dd>{compact.format(stats.totalOpenInterest)} ({formatContracts(stats.totalOpenInterest)} contracts)</dd>
+          <dt>Indexer state</dt>
+          <dd>{loading ? "Syncing" : error ? "Degraded" : "Live"}</dd>
+          <dt>Updated</dt>
+          <dd>{loading ? "Loading..." : updatedLabel ? updatedLabel : "Awaiting first snapshot"}</dd>
+        </dl>
+        {error && <small>{error}</small>}
       </section>
 
-      <section className="terminal-panel p-6">
-        <div className="mb-6 flex flex-col gap-3 border-b border-white/10 pb-5 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Coverage</div>
-            <h1 className="mt-2 font-display text-3xl text-white">MAG7 market surface</h1>
-          </div>
-          <div className="text-sm text-zinc-400">
-            {loading ? "Loading..." : updatedLabel ? `Updated ${updatedLabel}` : "Awaiting first snapshot"}
-          </div>
-        </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <section>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: "1rem" }}>
           {snapshots.map((snapshot) => (
             <MarketCard key={snapshot.ticker} snapshot={snapshot} />
           ))}
         </div>
       </section>
-    </div>
+    </>
   );
 }

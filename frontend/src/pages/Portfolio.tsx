@@ -16,14 +16,11 @@ import {
 } from "../lib/portfolio";
 import { getConfiguredUsdcMint } from "../lib/usdc-mint";
 
-function outcomeTone(outcome: Position["outcome"]): string {
+function outcomeTone(outcome: Position["outcome"]): "green" | "red" | "blue" {
   switch (outcome) {
-    case "yesWins":
-      return "text-emerald-300";
-    case "noWins":
-      return "text-rose-300";
-    default:
-      return "text-amber-300";
+    case "yesWins": return "green";
+    case "noWins": return "red";
+    default: return "blue";
   }
 }
 
@@ -38,12 +35,9 @@ function markValue(position: Position, yesMid: number | null): number {
 
 function outcomeLabel(outcome: Position["outcome"]): string {
   switch (outcome) {
-    case "yesWins":
-      return "Yes won";
-    case "noWins":
-      return "No won";
-    default:
-      return "Open";
+    case "yesWins": return "Yes won";
+    case "noWins": return "No won";
+    default: return "Open";
   }
 }
 
@@ -64,11 +58,11 @@ function redeemableContracts(position: Position): number {
   return Math.min(position.yesBalance, position.noBalance);
 }
 
-function pnlTone(value: number | null): string {
-  if (value == null) return "text-stone-400";
-  if (value > 0) return "text-emerald-300";
-  if (value < 0) return "text-rose-300";
-  return "text-stone-200";
+function pnlTone(value: number | null): "green" | "red" | "muted" {
+  if (value == null) return "muted";
+  if (value > 0) return "green";
+  if (value < 0) return "red";
+  return "muted";
 }
 
 function hasPartialHistory(positions: Array<{ performance?: PositionPerformance }>): boolean {
@@ -235,250 +229,140 @@ export function Portfolio() {
   }, [canMutateSelectedDesk, connection, loadPositions, selectedDesk, usdcMint, wallet]);
 
   return (
-    <div className="space-y-8">
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <div className="rounded-[1.75rem] border border-white/10 bg-stone-950/85 p-5">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-stone-500">Yes tokens</div>
-          <div className="mt-3 text-4xl font-semibold text-white">{formatContracts(totals.yes)}</div>
-        </div>
-        <div className="rounded-[1.75rem] border border-white/10 bg-stone-950/85 p-5">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-stone-500">No tokens</div>
-          <div className="mt-3 text-4xl font-semibold text-white">{formatContracts(totals.no)}</div>
-        </div>
-        <div className="rounded-[1.75rem] border border-white/10 bg-stone-950/85 p-5">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-stone-500">Mark value</div>
-          <div className="mt-3 text-4xl font-semibold text-white">{money.format(totals.markValue)}</div>
-        </div>
-        <div className="rounded-[1.75rem] border border-white/10 bg-stone-950/85 p-5">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-stone-500">Cost basis</div>
-          <div className="mt-3 text-4xl font-semibold text-white">{money.format(totals.costBasis)}</div>
-        </div>
-        <div className="rounded-[1.75rem] border border-white/10 bg-stone-950/85 p-5">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-stone-500">Unrealized P&L</div>
-          <div className={`mt-3 text-4xl font-semibold ${pnlTone(totals.unrealizedPnl)}`}>
-            {money.format(totals.unrealizedPnl)}
-          </div>
-        </div>
-        <div className="rounded-[1.75rem] border border-white/10 bg-stone-950/85 p-5">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-stone-500">Realized P&L</div>
-          <div className={`mt-3 text-4xl font-semibold ${pnlTone(totals.realizedPnl)}`}>
-            {money.format(totals.realizedPnl)}
-          </div>
-        </div>
-        <div className="rounded-[1.75rem] border border-white/10 bg-stone-950/85 p-5 md:col-span-3">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-stone-500">Redeemable now</div>
-          <div className="mt-3 text-4xl font-semibold text-white">{money.format(totals.redeemable)}</div>
-          <div className="mt-2 text-sm text-stone-400">
-            Includes settled winners and pre-settlement complete sets.
-          </div>
-        </div>
+    <>
+      <section>
+        <h1>Live positions and exits</h1>
+        <dl>
+          <dt>Yes tokens</dt>
+          <dd>{formatContracts(totals.yes)}</dd>
+          <dt>No tokens</dt>
+          <dd>{formatContracts(totals.no)}</dd>
+          <dt>Mark value</dt>
+          <dd>{money.format(totals.markValue)}</dd>
+          <dt>Cost basis</dt>
+          <dd>{money.format(totals.costBasis)}</dd>
+          <dt>Unrealized P&amp;L</dt>
+          <dd><mark data-tone={pnlTone(totals.unrealizedPnl)}>{money.format(totals.unrealizedPnl)}</mark></dd>
+          <dt>Realized P&amp;L</dt>
+          <dd><mark data-tone={pnlTone(totals.realizedPnl)}>{money.format(totals.realizedPnl)}</mark></dd>
+          <dt>Redeemable now</dt>
+          <dd>{money.format(totals.redeemable)} <small>Includes settled winners and pre-settlement complete sets.</small></dd>
+        </dl>
       </section>
 
-      <section className="rounded-[2rem] border border-white/10 bg-stone-950/85 p-6">
-        <div className="mb-6 flex flex-col gap-3 border-b border-white/10 pb-5 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="text-[11px] uppercase tracking-[0.24em] text-stone-500">Wallet holdings</div>
-            <h1 className="mt-2 text-3xl font-semibold text-white">Live positions and exits</h1>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <DeskSelector
-              desks={desks}
-              selectedDeskId={selectedDesk?.id ?? desks[0]?.id ?? ""}
-              onChange={setSelectedDeskId}
-              label="Wallet"
-            />
-            <button
-              onClick={loadPositions}
-              disabled={loading}
-              className="rounded-full border border-white/10 px-4 py-2 text-sm text-stone-200 transition hover:border-amber-200/40 hover:text-white disabled:opacity-60"
-            >
-              {loading ? "Refreshing..." : "Refresh"}
-            </button>
-          </div>
-        </div>
+      <section>
+        <nav>
+          <DeskSelector
+            desks={desks}
+            selectedDeskId={selectedDesk?.id ?? desks[0]?.id ?? ""}
+            onChange={setSelectedDeskId}
+            label="Wallet"
+          />
+          <button
+            onClick={loadPositions}
+            disabled={loading}
+          >
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
+        </nav>
 
-        <div className="mb-4 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-zinc-300">
+        <p>
           {selectedDesk ? (
             canMutateSelectedDesk
-              ? `Viewing ${selectedDesk.label}. Redeem and complete-set exit actions are enabled for this connected wallet.`
-              : `Viewing ${selectedDesk.label} in read-only mode. Connect that wallet to sign exits from this desk.`
+              ? `Viewing ${selectedDesk.label}. Redeem and complete-set exit actions are enabled.`
+              : `Viewing ${selectedDesk.label} in read-only mode. Connect that wallet to sign exits.`
           ) : (
             "No wallet selected."
           )}
-        </div>
+        </p>
 
         {partialHistoryVisible && (
-          <div className="mb-4 rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
-            Cost basis and unrealized P&amp;L are hidden for positions whose current inventory is older than the fetched transaction window or came from non-canonical flows.
-          </div>
+          <p><mark data-tone="blue">Cost basis and unrealized P&amp;L are hidden for positions whose current inventory is older than the fetched transaction window or came from non-canonical flows.</mark></p>
         )}
 
-        {error && (
-          <div className="mb-4 rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
-            {error}
-          </div>
-        )}
+        {error && <p><mark data-tone="red">{error}</mark></p>}
 
         {enriched.length === 0 ? (
-          <div className="rounded-[1.5rem] border border-dashed border-white/10 px-6 py-10 text-center text-stone-400">
-            {loading ? "Loading wallet positions..." : "No positions found for this wallet."}
-          </div>
+          <p><mark data-tone="muted">{loading ? "Loading wallet positions..." : "No positions found for this wallet."}</mark></p>
         ) : (
-          <div className="space-y-4">
-            {enriched.map((position) => (
-              <div
-                key={position.market.toBase58()}
-                className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5"
-              >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.24em] text-stone-500">
-                      {position.ticker}
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-3">
-                      <h2 className="text-2xl font-semibold text-white">
-                        {formatUsdcBaseUnits(position.strikePrice)}
-                      </h2>
-                      <span className={`text-xs uppercase tracking-[0.2em] ${outcomeTone(position.outcome)}`}>
-                        {outcomeLabel(position.outcome)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-5">
-                    <div>
-                      <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Yes</div>
-                      <div className="mt-1 text-lg text-white">{formatContracts(position.yesBalance)}</div>
-                    </div>
-                    <div>
-                      <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">No</div>
-                      <div className="mt-1 text-lg text-white">{formatContracts(position.noBalance)}</div>
-                    </div>
-                    <div>
-                      <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Mark</div>
-                      <div className="mt-1 text-lg text-white">{money.format(position.markValue)}</div>
-                    </div>
-                    <div>
-                      <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Redeemable</div>
-                      <div className="mt-1 text-lg text-white">{money.format(position.redeemableValue)}</div>
-                    </div>
-                    <div>
-                      <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">U. P&L</div>
-                      <div className={`mt-1 text-lg ${pnlTone(position.unrealizedPnl)}`}>
-                        {position.unrealizedPnl != null ? money.format(position.unrealizedPnl) : "--"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-5 grid gap-4 text-sm text-stone-300 sm:grid-cols-2 lg:grid-cols-6">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Yes price</div>
-                    <div className="mt-1 font-mono text-white">
-                      {formatUsdcBaseUnits(position.yesPrice)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">No price</div>
-                    <div className="mt-1 font-mono text-white">
-                      {formatUsdcBaseUnits(position.noPrice)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Yes entry</div>
-                    <div className="mt-1 font-mono text-white">
-                      {formatUsdcBaseUnits(position.performance?.yesEntryPrice ?? null)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">No entry</div>
-                    <div className="mt-1 font-mono text-white">
-                      {formatUsdcBaseUnits(position.performance?.noEntryPrice ?? null)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Pair entry</div>
-                    <div className="mt-1 font-mono text-white">
-                      {formatUsdcBaseUnits(position.performance?.pairEntryPrice ?? null)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Best yes mid</div>
-                    <div className="mt-1 font-mono text-white">
-                      {formatUsdcBaseUnits(position.marketView?.yesMid ?? null)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Cost basis</div>
-                    <div className="mt-1 text-white">
-                      {position.costBasis != null ? money.format(position.costBasis) : "--"}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Realized</div>
-                    <div className={`mt-1 ${pnlTone(position.performance?.realizedPnl ?? 0)}`}>
-                      {money.format(position.performance?.realizedPnl ?? 0)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">History</div>
-                    <div className={`mt-1 ${position.performance?.partialHistory ? "text-amber-200" : "text-white"}`}>
-                      {position.performance?.partialHistory ? "Partial" : "Covered"}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Paired</div>
-                    <div className="mt-1 text-white">
-                      {formatContracts(position.performance?.pairedContracts ?? 0)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Depth</div>
-                    <div className="mt-1 text-white">{formatContracts(position.marketView?.totalDepth ?? 0)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Pairs minted</div>
-                    <div className="mt-1 text-white">{formatContracts(position.marketView?.totalPairsMinted ?? 0)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Settlement</div>
-                    <div className="mt-1 text-white">
-                      {formatUsdcBaseUnits(position.settlementPrice ?? position.marketView?.settlementPrice ?? null)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.2em] text-stone-500">Action</div>
-                    {position.redeemable > 0 && canMutateSelectedDesk ? (
-                      <button
-                        onClick={() => void handleRedeem(position)}
-                        className="mt-1 rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1.5 text-xs font-medium text-emerald-100 transition hover:border-emerald-200/40 hover:text-white"
-                      >
-                        {position.settled ? "Redeem" : "Exit complete set"}
-                      </button>
-                    ) : (
-                      <div className="mt-1 text-stone-500">
-                        {position.redeemable === 0
-                          ? position.settled ? "Nothing redeemable" : "Single-leg position"
-                          : "Read-only desk"}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-stone-400">
-                  <span>
-                    {position.settled
-                      ? "Settled contracts redeem at fixed $1.00 on the winning side."
-                      : "Open positions are marked from the live Yes/USDC order book."}
-                  </span>
-                  {actionState[position.market.toBase58()] && (
-                    <span className="text-stone-300">{actionState[position.market.toBase58()]}</span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Strike</th>
+                <th>Status</th>
+                <th>Yes</th>
+                <th>No</th>
+                <th>Yes price</th>
+                <th>No price</th>
+                <th>Mark</th>
+                <th>Cost</th>
+                <th>U. P&amp;L</th>
+                <th>R. P&amp;L</th>
+                <th>Yes entry</th>
+                <th>No entry</th>
+                <th>Pair entry</th>
+                <th>Best mid</th>
+                <th>History</th>
+                <th>Paired</th>
+                <th>Depth</th>
+                <th>Pairs minted</th>
+                <th>Settlement</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {enriched.map((position) => {
+                const actionKey = position.market.toBase58();
+                return (
+                  <tr key={actionKey}>
+                    <td>{position.ticker}</td>
+                    <td>{formatUsdcBaseUnits(position.strikePrice)}</td>
+                    <td><mark data-tone={outcomeTone(position.outcome)}>{outcomeLabel(position.outcome)}</mark></td>
+                    <td>{formatContracts(position.yesBalance)}</td>
+                    <td>{formatContracts(position.noBalance)}</td>
+                    <td>{formatUsdcBaseUnits(position.yesPrice)}</td>
+                    <td>{formatUsdcBaseUnits(position.noPrice)}</td>
+                    <td>{money.format(position.markValue)}</td>
+                    <td>{position.costBasis != null ? money.format(position.costBasis) : "--"}</td>
+                    <td><mark data-tone={pnlTone(position.unrealizedPnl)}>{position.unrealizedPnl != null ? money.format(position.unrealizedPnl) : "--"}</mark></td>
+                    <td><mark data-tone={pnlTone(position.performance?.realizedPnl ?? 0)}>{money.format(position.performance?.realizedPnl ?? 0)}</mark></td>
+                    <td>{formatUsdcBaseUnits(position.performance?.yesEntryPrice ?? null)}</td>
+                    <td>{formatUsdcBaseUnits(position.performance?.noEntryPrice ?? null)}</td>
+                    <td>{formatUsdcBaseUnits(position.performance?.pairEntryPrice ?? null)}</td>
+                    <td>{formatUsdcBaseUnits(position.marketView?.yesMid ?? null)}</td>
+                    <td>
+                      {position.performance?.partialHistory
+                        ? <mark data-tone="blue">Partial</mark>
+                        : "Covered"}
+                    </td>
+                    <td>{formatContracts(position.performance?.pairedContracts ?? 0)}</td>
+                    <td>{formatContracts(position.marketView?.totalDepth ?? 0)}</td>
+                    <td>{formatContracts(position.marketView?.totalPairsMinted ?? 0)}</td>
+                    <td>{formatUsdcBaseUnits(position.settlementPrice ?? position.marketView?.settlementPrice ?? null)}</td>
+                    <td>
+                      {position.redeemable > 0 && canMutateSelectedDesk ? (
+                        <button onClick={() => void handleRedeem(position)}>
+                          {position.settled ? "Redeem" : "Exit complete set"}
+                        </button>
+                      ) : (
+                        <mark data-tone="muted">
+                          {position.redeemable === 0
+                            ? position.settled ? "Nothing redeemable" : "Single-leg"
+                            : "Read-only"}
+                        </mark>
+                      )}
+                      {actionState[actionKey] && (
+                        <small> {actionState[actionKey]}</small>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
       </section>
-    </div>
+    </>
   );
 }

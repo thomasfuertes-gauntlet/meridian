@@ -9,16 +9,11 @@ import { IS_LOCAL_RPC, MAG7, MARKET_POLL_MS, type Ticker } from "../lib/constant
 import { useMarketUniverse } from "../lib/market-data";
 import { getConfiguredUsdcMint } from "../lib/usdc-mint";
 
-function statusColor(status: string): string {
+function statusTone(status: string): "green" | "blue" | "muted" {
   switch (status) {
-    case "created":
-      return "text-emerald-300";
-    case "frozen":
-      return "text-amber-300";
-    case "settled":
-      return "text-stone-300";
-    default:
-      return "text-stone-500";
+    case "created": return "green";
+    case "frozen": return "blue";
+    default: return "muted";
   }
 }
 
@@ -69,130 +64,80 @@ export function MarketDetail() {
 
   if (!loading && !routeTicker) {
     return (
-      <div className="rounded-[2rem] border border-white/10 bg-stone-950/85 p-8 text-stone-300">
-        Unknown ticker. <Link className="text-amber-200" to="/markets">Return to market grid.</Link>
-      </div>
+      <section>
+        <p>Unknown ticker. <Link to="/markets">Return to market grid.</Link></p>
+      </section>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <section className="terminal-panel p-3.5">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-          <div className="min-w-0">
-            <Link to="/markets" className="text-xs uppercase tracking-[0.2em] text-zinc-500 transition hover:text-white">
-              ← Back to markets
-            </Link>
-            <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1">
-              <h1 className="font-display text-3xl leading-none text-white">{ticker}</h1>
-              <div className="pb-0.5 text-[11px] uppercase tracking-[0.28em] text-zinc-500">
-                {snapshot?.company ?? ticker}
-              </div>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2 text-sm text-zinc-300">
-              <span className="rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1">
-                Spot {snapshot?.latestPrice != null ? money.format(snapshot.latestPrice) : "--"}
-              </span>
-              <span className="rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1">
-                {snapshot?.publishTime ? `Published ${formatRelativePublishTime(snapshot.publishTime)}` : "Oracle unavailable"}
-              </span>
-              <span className={statusColor(snapshot?.status ?? "idle")}>
-                {snapshot?.status ?? "idle"}
-              </span>
-            </div>
-            {featured && (
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-                <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2">
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Selected strike</div>
-                  <div className="mt-1 font-data text-lg text-white">{formatUsdcBaseUnits(featured.strikePrice)}</div>
-                </div>
-                <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2">
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Yes bid / ask</div>
-                  <div className="mt-1 font-mono text-sm text-white">
-                    {formatUsdcBaseUnits(featured.bestBid)} / {formatUsdcBaseUnits(featured.bestAsk)}
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2">
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">No bid / ask</div>
-                  <div className="mt-1 font-mono text-sm text-white">
-                    {formatUsdcBaseUnits(featured.bestNoBid)} / {formatUsdcBaseUnits(featured.bestNoAsk)}
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2">
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Book liquidity</div>
-                  <div className="mt-1 text-sm text-white">{formatContracts(featured.totalDepth)}</div>
-                </div>
-                <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2">
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Close time</div>
-                  <div className="mt-1 text-sm text-white">{formatTimestamp(featured.closeTime)}</div>
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="grid gap-2 text-xs uppercase tracking-[0.22em] text-zinc-500 sm:grid-cols-3">
-            <div className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-1.5">
-              Strikes <span className="ml-2 font-mono text-zinc-200">{markets.length}</span>
-            </div>
-            <div className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-1.5">
-              Open interest <span className="ml-2 font-mono text-zinc-200">{compact.format(snapshot?.totalOpenInterest ?? 0)}</span>
-            </div>
-            <div className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-1.5">
-              Best yes mid <span className="ml-2 font-mono text-sky-200">{formatUsdcBaseUnits(snapshot?.topYesMid ?? null)}</span>
-            </div>
-          </div>
-        </div>
+    <>
+      <section>
+        <Link to="/markets">← Back to markets</Link>
+        <header>
+          <h1>{ticker} <small>{snapshot?.company ?? ticker}</small></h1>
+          <dl>
+            <dt>Spot</dt>
+            <dd>{snapshot?.latestPrice != null ? `$${snapshot.latestPrice.toFixed(2)}` : "--"}</dd>
+            <dt>Oracle</dt>
+            <dd>{snapshot?.publishTime ? formatRelativePublishTime(snapshot.publishTime) : "unavailable"}</dd>
+            <dt>Status</dt>
+            <dd><mark data-tone={statusTone(snapshot?.status ?? "idle")}>{snapshot?.status ?? "idle"}</mark></dd>
+            <dt>Strikes</dt>
+            <dd>{markets.length}</dd>
+            <dt>Open interest</dt>
+            <dd>{compact.format(snapshot?.totalOpenInterest ?? 0)}</dd>
+            <dt>Best yes mid</dt>
+            <dd><mark data-tone="blue">{formatUsdcBaseUnits(snapshot?.topYesMid ?? null)}</mark></dd>
+          </dl>
+          {featured && (
+            <dl>
+              <dt>Selected strike</dt>
+              <dd>{formatUsdcBaseUnits(featured.strikePrice)}</dd>
+              <dt>Yes bid / ask</dt>
+              <dd>{formatUsdcBaseUnits(featured.bestBid)} / {formatUsdcBaseUnits(featured.bestAsk)}</dd>
+              <dt>No bid / ask</dt>
+              <dd>{formatUsdcBaseUnits(featured.bestNoBid)} / {formatUsdcBaseUnits(featured.bestNoAsk)}</dd>
+              <dt>Book liquidity</dt>
+              <dd>{formatContracts(featured.totalDepth)}</dd>
+              <dt>Close time</dt>
+              <dd>{formatTimestamp(featured.closeTime)}</dd>
+            </dl>
+          )}
+        </header>
+        {error && <p><mark data-tone="red">{error}</mark></p>}
       </section>
 
-      {error && (
-        <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
-          {error}
-        </div>
-      )}
-
-      <section className="grid gap-4 lg:grid-cols-[210px_minmax(0,1fr)] xl:grid-cols-[210px_minmax(0,1fr)_360px]">
-        <div className="terminal-panel p-3 lg:sticky lg:top-4 lg:self-start">
-          <div className="mb-3 text-[11px] uppercase tracking-[0.22em] text-zinc-500">Strikes</div>
-          <div className="flex gap-3 overflow-x-auto pb-1 lg:max-h-[calc(100vh-13rem)] lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden">
+      <section style={{ display: "grid", gridTemplateColumns: "210px minmax(0,1fr) 360px", gap: "1rem", background: "none", border: "none", padding: 0 }}>
+        <section style={{ position: "sticky", top: "1rem", alignSelf: "start" }}>
+          <h3>Strikes</h3>
+          <nav style={{ flexDirection: "column", gap: "0.5rem" }}>
             {markets.map((market) => {
               const noMid = market.yesMid != null ? 1_000_000 - market.yesMid : null;
               return (
                 <button
                   key={market.address}
                   type="button"
+                  data-active={featured?.address === market.address ? "true" : undefined}
                   onClick={() => setSelectedMarketAddress(market.address)}
-                  className={`min-w-[168px] shrink-0 rounded-[18px] border px-3 py-2.5 text-left transition lg:min-w-0 ${
-                    featured?.address === market.address
-                      ? "border-sky-400/20 bg-sky-400/10"
-                      : "border-white/8 bg-white/[0.03] hover:border-white/15 hover:bg-white/[0.05]"
-                  }`}
+                  style={{ textAlign: "left", width: "100%" }}
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="font-data text-base text-white">
-                      {formatUsdcBaseUnits(market.strikePrice)}
-                    </div>
-                    <div className={`text-[10px] uppercase tracking-[0.18em] ${statusColor(market.status)}`}>
-                      {market.status}
-                    </div>
-                  </div>
-                  <div className="mt-2.5 space-y-2 text-sm text-zinc-300">
-                    <div className="grid grid-cols-[24px_1fr] gap-2">
-                      <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Yes</div>
-                      <div className="font-mono text-white">{formatUsdcBaseUnits(market.yesMid)}</div>
-                    </div>
-                    <div className="grid grid-cols-[24px_1fr] gap-2">
-                      <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">No</div>
-                      <div className="font-mono text-white">{formatUsdcBaseUnits(noMid)}</div>
-                    </div>
-                    <div className="grid grid-cols-[88px_1fr] gap-2 pt-1">
-                      <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500">Liquidity</div>
-                      <div className="text-white">{formatContracts(market.totalDepth)}</div>
-                    </div>
-                  </div>
+                  <span>{formatUsdcBaseUnits(market.strikePrice)}</span>
+                  {" "}
+                  <mark data-tone={statusTone(market.status)}>{market.status}</mark>
+                  <dl style={{ marginTop: "0.25rem" }}>
+                    <dt>Yes</dt>
+                    <dd>{formatUsdcBaseUnits(market.yesMid)}</dd>
+                    <dt>No</dt>
+                    <dd>{formatUsdcBaseUnits(noMid)}</dd>
+                    <dt>Liq</dt>
+                    <dd>{formatContracts(market.totalDepth)}</dd>
+                  </dl>
                 </button>
               );
             })}
-          </div>
-        </div>
+          </nav>
+        </section>
 
         <div>
           {featured?.orderBook && noBook ? (
@@ -204,13 +149,13 @@ export function MarketDetail() {
               noAsks={noBook.asks}
             />
           ) : (
-            <div className="terminal-panel p-6 text-sm text-zinc-400">
-              No order book account was available for the selected market.
-            </div>
+            <section>
+              <p><mark data-tone="muted">No order book account was available for the selected market.</mark></p>
+            </section>
           )}
         </div>
 
-        <div className="xl:sticky xl:top-4 xl:self-start">
+        <div style={{ position: "sticky", top: "1rem", alignSelf: "start" }}>
           {featured && usdcMint && featured.bestBid != null && featured.bestAsk != null ? (
             <TradePanel
               market={featured.publicKey}
@@ -223,69 +168,54 @@ export function MarketDetail() {
               bestAsk={featured.bestAsk}
             />
           ) : (
-            <div className="terminal-panel p-6 text-sm text-zinc-400">
-              Entry is unavailable until the selected market has a visible top of book.
-            </div>
+            <section>
+              <p><mark data-tone="muted">Entry is unavailable until the selected market has a visible top of book.</mark></p>
+            </section>
           )}
         </div>
       </section>
 
-      <section className="terminal-panel p-4">
-        <div className="flex flex-col gap-2 border-b border-white/10 pb-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Recent trades</div>
-            <h2 className="mt-1 font-display text-2xl text-white">Selected market tape</h2>
-          </div>
-          <div className="text-sm text-zinc-500">
-            {featured ? `${ticker} ${formatUsdcBaseUnits(featured.strikePrice)}` : "No market selected"}
-          </div>
-        </div>
+      <section>
+        <h2>Selected market tape</h2>
+        <small>{featured ? `${ticker} ${formatUsdcBaseUnits(featured.strikePrice)}` : "No market selected"}</small>
 
         {!featured ? (
-          <div className="mt-4 text-sm text-zinc-400">No current market accounts for this ticker.</div>
+          <p><mark data-tone="muted">No current market accounts for this ticker.</mark></p>
         ) : recentTrades.length === 0 ? (
-          <div className="mt-4 rounded-[1.25rem] border border-dashed border-white/10 px-4 py-8 text-sm text-zinc-400">
-            No decoded market activity yet for this strike. Current reads are poll-based; the right production upgrade is a read API stream over websocket or SSE so fills and prints land here immediately without browser-side RPC scans.
-          </div>
+          <p><mark data-tone="muted">No decoded market activity yet for this strike.</mark></p>
         ) : (
-          <div className="mt-4 space-y-3">
-            {recentTrades.map((item) => {
-              const tradePrice = formatActivityPrice(item);
-              const tradeNotional = formatActivityNotional(item);
-              return (
-                <div
-                  key={`${item.signature}-${item.instructionName}-${item.slot}`}
-                  className="grid gap-3 rounded-[1.2rem] border border-white/8 bg-white/[0.03] px-4 py-3 md:grid-cols-[140px_1fr_120px_120px_140px]"
-                >
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">{item.label}</div>
-                    <div className={`mt-1 text-sm uppercase tracking-[0.18em] ${statusColor(item.success ? "created" : "settled")}`}>
-                      {item.success ? "Confirmed" : "Failed"}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Time</div>
-                    <div className="mt-1 text-sm text-white">{formatTimestamp(item.blockTime)}</div>
-                    <div className="text-xs text-zinc-500">{item.user ? `${item.user.slice(0, 4)}...${item.user.slice(-4)}` : "--"}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Qty</div>
-                    <div className="mt-1 text-sm text-white">{item.amount != null ? formatContracts(item.amount) : "--"}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Price</div>
-                    <div className="mt-1 font-mono text-sm text-white">{formatUsdcBaseUnits(tradePrice)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Notional</div>
-                    <div className="mt-1 text-sm text-white">{tradeNotional != null ? money.format(tradeNotional) : "--"}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Time</th>
+                <th>User</th>
+                <th>Qty</th>
+                <th>Price</th>
+                <th>Notional</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentTrades.map((item) => {
+                const tradePrice = formatActivityPrice(item);
+                const tradeNotional = formatActivityNotional(item);
+                return (
+                  <tr key={`${item.signature}-${item.instructionName}-${item.slot}`}>
+                    <td>{item.label}</td>
+                    <td><mark data-tone={item.success ? "green" : "red"}>{item.success ? "Confirmed" : "Failed"}</mark></td>
+                    <td><time>{formatTimestamp(item.blockTime)}</time></td>
+                    <td><kbd>{item.user ? `${item.user.slice(0, 4)}...${item.user.slice(-4)}` : "--"}</kbd></td>
+                    <td>{item.amount != null ? formatContracts(item.amount) : "--"}</td>
+                    <td>{formatUsdcBaseUnits(tradePrice)}</td>
+                    <td>{tradeNotional != null ? money.format(tradeNotional) : "--"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
       </section>
-    </div>
+    </>
   );
 }

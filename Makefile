@@ -2,7 +2,7 @@
 	build wallets \
 	local local-full local-validator local-validator-stop local-validator-reset \
 	local-rpc-check local-bootstrap local-validator-live \
-	local-deploy local-setup local-bots local-live local-strategy local-read-api local-ui-ready local-ui \
+	local-deploy local-setup local-bots local-live local-strategy local-ui-ready local-ui \
 	local-test-rust local-test-anchor local-test-smoke local-test-grep local-check \
 	devnet-env-check railway-env-check railway-sync \
 	railway-deploy-frontend railway-deploy-bots railway-deploy railway-release \
@@ -198,11 +198,6 @@ local-ui-ready: local local-setup local-bots
 
 local-ui:
 	cd frontend && npm run dev:local
-
-local-read-api:
-	@echo "Starting local read-api on :8080..."
-	cd automation && RPC_URL=http://127.0.0.1:8899 PORT=8080 READ_API_RPC_GAP_MS=0 $(TSX) src/read-api.ts
-
 
 local-live: wallets
 	@echo "Starting local live bot..."

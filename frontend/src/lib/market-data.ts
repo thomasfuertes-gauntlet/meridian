@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { connection, getReadOnlyProgram } from "./anchor";
-import { MAG7, MARKET_POLL_MS, PROGRAM_ID, USDC_PER_PAIR, type Ticker } from "./constants";
+import { MAG7, PROGRAM_ID, USDC_PER_PAIR, type Ticker } from "./constants";
 import { parseOrderBook, type ParsedOrderBook } from "./orderbook";
 import { fetchPrices } from "./pyth";
 
@@ -57,7 +56,7 @@ let marketUniverseCache: MarketUniverse | null = null;
 let marketUniverseCacheAt = 0;
 let marketUniverseInflight: Promise<MarketUniverse> | null = null;
 
-interface NormalizedMarketBase {
+export interface NormalizedMarketBase {
   address: string;
   publicKey: PublicKey;
   ticker: Ticker;
@@ -124,100 +123,14 @@ function latestDateByTicker(records: Array<{ ticker: Ticker; date: number }>): M
   return dates;
 }
 
-function deserializeOrderBook(book: {
-  market: string;
-  obUsdcVault: string;
-  obYesVault: string;
-  nextOrderId: number;
-  bidCount: number;
-  askCount: number;
-  bump: number;
-  bids: Array<{ owner: string; price: number; quantity: number; timestamp: number; orderId: number; isActive: boolean }>;
-  asks: Array<{ owner: string; price: number; quantity: number; timestamp: number; orderId: number; isActive: boolean }>;
-} | null): ParsedOrderBook | null {
-  if (!book) return null;
-  return {
-    market: new PublicKey(book.market),
-    obUsdcVault: new PublicKey(book.obUsdcVault),
-    obYesVault: new PublicKey(book.obYesVault),
-    nextOrderId: book.nextOrderId,
-    bidCount: book.bidCount,
-    askCount: book.askCount,
-    bump: book.bump,
-    bids: book.bids.map((order) => ({
-      owner: new PublicKey(order.owner),
-      price: order.price,
-      quantity: order.quantity,
-      timestamp: order.timestamp,
-      orderId: order.orderId,
-      isActive: order.isActive,
-    })),
-    asks: book.asks.map((order) => ({
-      owner: new PublicKey(order.owner),
-      price: order.price,
-      quantity: order.quantity,
-      timestamp: order.timestamp,
-      orderId: order.orderId,
-      isActive: order.isActive,
-    })),
-    creditCount: 0,
-    credits: [],
-  };
-}
-
-async function fetchRemoteMarketUniverse(): Promise<MarketUniverse> {
-  const response = await fetch("/api/markets");
-  if (!response.ok) {
-    throw new Error(`Read API returned ${response.status} for /markets`);
-  }
-
-  const data = await response.json() as {
-    asOf: number;
-    tickerSnapshots: TickerSnapshot[];
-    marketsByTicker: Record<Ticker, Array<Omit<MarketRecord, "publicKey" | "yesMint" | "noMint" | "vault" | "orderBook"> & {
-      publicKey: string;
-      yesMint: string;
-      noMint: string;
-      vault: string;
-      orderBook: Parameters<typeof deserializeOrderBook>[0];
-    }>>;
-  };
-
-  const marketsByTicker = Object.fromEntries(
-    Object.entries(data.marketsByTicker).map(([ticker, markets]) => [
-      ticker,
-      markets.map((market) => ({
-        ...market,
-        publicKey: new PublicKey(market.publicKey),
-        yesMint: new PublicKey(market.yesMint),
-        noMint: new PublicKey(market.noMint),
-        vault: new PublicKey(market.vault),
-        orderBook: deserializeOrderBook(market.orderBook),
-      })),
-    ])
-  ) as Record<Ticker, MarketRecord[]>;
-
-  return {
-    asOf: data.asOf,
-    tickerSnapshots: data.tickerSnapshots,
-    marketsByTicker,
-  };
-}
-
 export async function fetchMarketUniverse(): Promise<MarketUniverse> {
   const now = Date.now();
-  if (marketUniverseCache && now - marketUniverseCacheAt < Math.max(5_000, MARKET_POLL_MS / 2)) {
+  if (marketUniverseCache && now - marketUniverseCacheAt < 5_000) {
     return marketUniverseCache;
   }
   if (marketUniverseInflight) return marketUniverseInflight;
 
   marketUniverseInflight = (async () => {
-  try {
-    return await fetchRemoteMarketUniverse();
-  } catch (error) {
-    console.warn("/api/markets failed, falling back to direct RPC:", error);
-  }
-
   const program = getReadOnlyProgram();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rawMarkets = await (program.account as any).strikeMarket.all();
@@ -348,45 +261,3 @@ export async function fetchMarketUniverse(): Promise<MarketUniverse> {
   }
 }
 
-export function useMarketUniverse(pollMs = MARKET_POLL_MS) {
-  const [data, setData] = useState<MarketUniverse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let alive = true;
-
-    async function load() {
-      if (document.visibilityState === "hidden") return;
-      try {
-        const next = await fetchMarketUniverse();
-        if (!alive) return;
-        setData(next);
-        setError(null);
-      } catch (err) {
-        if (!alive) return;
-        setError(err instanceof Error ? err.message : "Failed to load markets");
-      } finally {
-        if (alive) setLoading(false);
-      }
-    }
-
-    load();
-    const id = window.setInterval(load, pollMs);
-    return () => {
-      alive = false;
-      window.clearInterval(id);
-    };
-  }, [pollMs]);
-
-  const stats = useMemo(() => {
-    const snapshots = data?.tickerSnapshots ?? [];
-    return {
-      activeTickers: snapshots.filter((item) => item.marketCount > 0).length,
-      totalMarkets: snapshots.reduce((sum, item) => sum + item.marketCount, 0),
-      totalOpenInterest: snapshots.reduce((sum, item) => sum + item.totalOpenInterest, 0),
-    };
-  }, [data]);
-
-  return { data, error, loading, stats };
-}

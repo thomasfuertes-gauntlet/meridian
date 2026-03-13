@@ -25,13 +25,9 @@ export const IS_REMOTE_RPC = !IS_LOCAL_RPC;
 
 
 export const RPC_MODE_LABEL = IS_LOCAL_RPC ? "Local validator" : "Remote RPC";
-export const MARKET_POLL_MS = IS_LOCAL_RPC ? 15_000 : 120_000;
-export const ACTIVITY_POLL_MS = IS_LOCAL_RPC ? 20_000 : 480_000;
 export const ACTIVITY_LIMIT = IS_LOCAL_RPC ? 120 : 12;
 
 export const PORTFOLIO_SIGNATURE_LIMIT = IS_LOCAL_RPC ? 120 : 12;
-export const TRADE_PRICE_POLL_MS = IS_LOCAL_RPC ? 15_000 : 120_000;
-export const TRADE_BOOK_POLL_MS = IS_LOCAL_RPC ? 10_000 : 120_000;
 
 // MAG7 tickers and their Pyth Hermes price feed IDs (equity feeds)
 export const MAG7 = [

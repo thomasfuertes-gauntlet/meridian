@@ -12,7 +12,6 @@ import { connection, getReadOnlyProgram } from "./anchor";
 import {
   ACTIVITY_LIMIT,
   ACTIVITY_POLL_MS,
-  ACTIVITY_SIGNATURES_PER_MARKET,
   MAG7,
   PROGRAM_ID,
   READ_API_URL,
@@ -222,16 +221,11 @@ function normalizeInstruction(
   };
 }
 
-async function fetchRelevantSignatures(
-  addresses: PublicKey[],
-  limitPerAddress: number
-): Promise<string[]> {
-  const signatureGroups = await Promise.all(
-    addresses.map((address) =>
-      connection.getSignaturesForAddress(address, { limit: limitPerAddress }, "confirmed")
-    )
+async function fetchProgramSignatures(rawLimit: number): Promise<string[]> {
+  const sigs = await connection.getSignaturesForAddress(
+    PROGRAM_ID, { limit: rawLimit }, "confirmed"
   );
-  return [...new Set(signatureGroups.flat().map((item) => item.signature))];
+  return sigs.map((s) => s.signature);
 }
 
 const activityCache = new Map<string, { records: ActivityRecord[]; at: number }>();
@@ -280,7 +274,6 @@ export async function fetchActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: T
   }
 
   const marketLookup = new Map<string, MarketLookupEntry>();
-  const marketAddresses: PublicKey[] = [];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const item of rawMarkets as any[]) {
@@ -298,10 +291,9 @@ export async function fetchActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: T
       yesMint: (item.account.yesMint as PublicKey).toBase58(),
       noMint: (item.account.noMint as PublicKey).toBase58(),
     });
-    marketAddresses.push(item.publicKey as PublicKey);
   }
 
-  const signatures = await fetchRelevantSignatures(marketAddresses, ACTIVITY_SIGNATURES_PER_MARKET);
+  const signatures = await fetchProgramSignatures(limit * 3);
   if (signatures.length === 0) return [];
 
   const transactions = await connection.getParsedTransactions(signatures.slice(0, limit), {

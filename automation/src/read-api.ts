@@ -15,7 +15,7 @@ const RPC_GAP_MS = Number(process.env.READ_API_RPC_GAP_MS || "1100");
 const MARKET_TTL_MS = Number(process.env.READ_API_MARKET_TTL_MS || "15000");
 const ACTIVITY_TTL_MS = Number(process.env.READ_API_ACTIVITY_TTL_MS || "45000");
 const MAX_ACTIVITY_LIMIT = Number(process.env.READ_API_MAX_ACTIVITY_LIMIT || "20");
-const ACTIVITY_SIGNATURES_PER_MARKET = Number(process.env.READ_API_ACTIVITY_SIGNATURES_PER_MARKET || "1");
+
 const USDC_PER_PAIR = 1_000_000;
 const PROGRAM_ID = new PublicKey("GMwKXYNKRkN3wGdgAwR4BzG2RfPGGLGjehuoNwUzBGk2");
 
@@ -553,16 +553,14 @@ function normalizeInstruction(
   };
 }
 
-async function fetchRelevantSignatures(addresses: PublicKey[], limitPerAddress: number): Promise<string[]> {
-  const signatures = new Set<string>();
-  for (const address of addresses) {
-    const items = await queued(() => connection.getSignaturesForAddress(address, { limit: limitPerAddress }, COMMITMENT));
-    for (const item of items) signatures.add(item.signature);
-  }
-  return [...signatures];
+async function fetchProgramSignatures(rawLimit: number): Promise<string[]> {
+  const sigs = await queued(() =>
+    connection.getSignaturesForAddress(PROGRAM_ID, { limit: rawLimit }, COMMITMENT)
+  );
+  return sigs.map((s) => s.signature);
 }
 
-async function buildActivity(limit: number): Promise<ActivityRecord[]> {
+async function buildActivity(limit: number, filterTicker?: Ticker): Promise<ActivityRecord[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rawMarkets = await queued(() => (program.account as any).strikeMarket.all());
   const latestDates = new Map<Ticker, number>();
@@ -576,7 +574,6 @@ async function buildActivity(limit: number): Promise<ActivityRecord[]> {
   }
 
   const marketLookup = new Map<string, MarketLookupEntry>();
-  const marketAddresses: PublicKey[] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   for (const item of rawMarkets as any[]) {
     const ticker = item.account.ticker as Ticker;
@@ -591,13 +588,12 @@ async function buildActivity(limit: number): Promise<ActivityRecord[]> {
       yesMint: (item.account.yesMint as PublicKey).toBase58(),
       noMint: (item.account.noMint as PublicKey).toBase58(),
     });
-    marketAddresses.push(item.publicKey as PublicKey);
   }
 
-  const signatures = await fetchRelevantSignatures(marketAddresses, ACTIVITY_SIGNATURES_PER_MARKET);
+  const signatures = await fetchProgramSignatures(limit * 3);
   if (signatures.length === 0) return [];
 
-  const transactions = await queued(() => connection.getParsedTransactions(signatures.slice(0, limit), {
+  const transactions = await queued(() => connection.getParsedTransactions(signatures, {
     commitment: COMMITMENT,
     maxSupportedTransactionVersion: 0,
   }));
@@ -611,6 +607,7 @@ async function buildActivity(limit: number): Promise<ActivityRecord[]> {
       const normalized = normalizeInstruction(tx, instruction, marketLookup);
       if (!normalized) continue;
       if (!normalized.marketAddress || !marketLookup.has(normalized.marketAddress)) continue;
+      if (filterTicker && normalized.ticker !== filterTicker) continue;
       activity.push(normalized);
     }
   }
@@ -630,7 +627,7 @@ type CachedState<T> = {
 };
 
 const marketState: CachedState<MarketUniverse> = { value: null, at: 0, inflight: null };
-const activityState = new Map<number, CachedState<ActivityRecord[]>>();
+const activityState = new Map<string, CachedState<ActivityRecord[]>>();
 
 async function cached<T>(state: CachedState<T>, ttlMs: number, builder: () => Promise<T>): Promise<T> {
   if (state.value && Date.now() - state.at < ttlMs) return state.value;
@@ -658,10 +655,15 @@ async function handle(url: URL) {
   }
 
   if (url.pathname === "/activity") {
-    const limit = Math.max(1, Math.min(MAX_ACTIVITY_LIMIT, Number(url.searchParams.get("limit") || "12")));
-    const state = activityState.get(limit) ?? { value: null, at: 0, inflight: null };
-    activityState.set(limit, state);
-    const payload = await cached(state, ACTIVITY_TTL_MS, () => buildActivity(limit));
+    const rawLimit = Number(url.searchParams.get("limit") || "12");
+    const limit = Math.max(1, Math.min(MAX_ACTIVITY_LIMIT, Number.isFinite(rawLimit) ? rawLimit : 12));
+    const tickerParam = url.searchParams.get("ticker")?.toUpperCase();
+    const validTickers = new Set(MAG7.map((m) => m.ticker as string));
+    const filterTicker = tickerParam && validTickers.has(tickerParam) ? tickerParam as Ticker : undefined;
+    const cacheKey = `${limit}:${filterTicker ?? "all"}`;
+    const state = activityState.get(cacheKey) ?? { value: null, at: 0, inflight: null };
+    activityState.set(cacheKey, state);
+    const payload = await cached(state, ACTIVITY_TTL_MS, () => buildActivity(limit, filterTicker));
     return json(payload);
   }
 

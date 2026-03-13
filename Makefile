@@ -34,6 +34,7 @@ TSX ?= node --import tsx
 DEVNET_URL ?= $(DEVNET_RPC_URL)
 RAILWAY_FRONTEND_SERVICE ?= frontend
 RAILWAY_BOTS_SERVICE ?= bots
+RAILWAY_BOTS_URL ?= $(RAILWAY_BOTS_PUBLIC_URL)
 VITE_DEV_WALLET ?= true
 DEMO_TICKER ?= NVDA
 
@@ -255,6 +256,7 @@ railway-sync: railway-env-check
 		"VITE_RPC_URL=$(DEVNET_URL)" \
 		"VITE_USDC_MINT=$(DEVNET_USDC_MINT)" \
 		"VITE_DEV_WALLET=$(VITE_DEV_WALLET)" \
+		"VITE_SIGNAL_URL=$(RAILWAY_BOTS_URL)" \
 	| xargs railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)"
 	@printf '%s\n' \
 		"ANCHOR_PROVIDER_URL=$(DEVNET_URL)" \

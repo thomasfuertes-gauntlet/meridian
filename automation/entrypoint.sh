@@ -25,6 +25,10 @@ echo "  Demo ticker: $DEMO_TICKER"
 echo "  bot-a: 48xYES8qxE1vvHPVJKJCdKRhDMbueeWmJhGHKQ3gWGhh"
 echo "  bot-b: RSG4qia3Dp9pGPzsMnFS9AzsRPKyJxJ75iyoSubwQ5W"
 
+echo "Starting signal server on :${PORT:-8080}..."
+npx tsx scripts/signal-server.ts &
+SIGNAL_PID=$!
+
 echo "Running seed-bots (auto-skips if already seeded)..."
 npx tsx scripts/seed-bots.ts
 

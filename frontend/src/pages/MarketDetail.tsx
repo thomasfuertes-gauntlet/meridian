@@ -46,10 +46,16 @@ export function MarketDetail() {
       ?? null;
   }, [markets, selectedMarketAddress]);
 
-  // Step 7b: signal active market to bots so they weight activity toward this strike
+  // Signal active market to bots so they weight activity toward this strike.
+  // On Railway: VITE_SIGNAL_URL points to the bots service signal-server.
+  // Locally: Vite dev middleware handles /api/active-ticker.
   useEffect(() => {
     if (!featured) return;
-    fetch(`/api/active-ticker?ticker=${featured.ticker}&market=${featured.address}`).catch(() => {});
+    const base = import.meta.env.VITE_SIGNAL_URL;
+    const url = base
+      ? `${base}/active-market?ticker=${featured.ticker}&market=${featured.address}`
+      : `/api/active-ticker?ticker=${featured.ticker}&market=${featured.address}`;
+    fetch(url).catch(() => {});
   }, [featured?.address, featured?.ticker]);
 
   const noBook = featured?.orderBook ? flipToNoPerspective(featured.orderBook) : null;

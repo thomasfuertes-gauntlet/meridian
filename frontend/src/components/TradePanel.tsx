@@ -266,7 +266,11 @@ export function TradePanel({
         <button
           type="button"
           onClick={() => {
-            fetch(`/api/active-ticker?ticker=${encodeURIComponent(ticker)}`);
+            const base = import.meta.env.VITE_SIGNAL_URL;
+            const url = base
+              ? `${base}/active-market?ticker=${encodeURIComponent(ticker)}`
+              : `/api/active-ticker?ticker=${encodeURIComponent(ticker)}`;
+            fetch(url).catch(() => {});
             setStatus(`Requested liquidity for ${ticker}`);
           }}
         >

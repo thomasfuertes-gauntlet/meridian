@@ -22,6 +22,7 @@ import {
   sellNo,
   claimFills,
   freezeMarket,
+  cancelOrder,
   adminSettleMarket,
   settleWithOrderBookProof,
   unwindOrderForSettlement,
@@ -455,5 +456,70 @@ describe("settlement unwind flow", () => {
     expect(yesBalanceAfter).to.equal(0);
     expect(settled.outcome).to.deep.equal({ yesWins: {} });
     expect(settled.totalPairsMinted.toNumber()).to.equal(0);
+  });
+
+  it("cancel orders pre-freeze, unwind remaining post-freeze, settle with empty book", async () => {
+    const pdas = await createMarket(ctx, "UWDB", new anchor.BN(293_000_000), nextUnwindDate());
+    const { userYes: adminYes, userNo: adminNo } = await mintPairForAdmin(ctx, pdas, 3);
+    const { userYes: userBYes, userNo: userBNo } = await mintPairForUser(
+      ctx, userB.publicKey, userBUsdc, pdas, 2, [userB]
+    );
+
+    // Admin places 2 bids at different prices
+    await placeBid(ctx, pdas, ctx.admin.publicKey, ctx.adminUsdcAta, adminYes, 400_000, 1);
+    await placeBid(ctx, pdas, ctx.admin.publicKey, ctx.adminUsdcAta, adminYes, 600_000, 1);
+
+    // UserB places 1 ask
+    await placeAsk(ctx, pdas, userB.publicKey, userBUsdc, userBYes, 700_000, 1, { signers: [userB] });
+
+    // Read order IDs
+    const obBefore = await ctx.program.account.orderBook.fetch(pdas.orderBookPda);
+    const bid1Id = obBefore.bids[0].orderId;
+    const bid2Id = obBefore.bids[1].orderId;
+    const askId = obBefore.asks[0].orderId;
+
+    // Cancel admin's first bid pre-freeze → refund USDC
+    await cancelOrder(ctx, pdas, bid1Id, ctx.admin.publicKey, ctx.adminUsdcAta);
+
+    // Freeze market
+    await freezeMarket(ctx, pdas);
+
+    // Cancel fails on frozen market
+    try {
+      await cancelOrder(ctx, pdas, bid2Id, ctx.admin.publicKey, ctx.adminUsdcAta);
+      expect.fail("cancel should fail when frozen");
+    } catch (err: any) {
+      expect(err.toString()).to.include("MarketFrozen");
+    }
+
+    // Unwind admin's second bid → refund USDC
+    await unwindOrderForSettlement(ctx, pdas, bid2Id, ctx.adminUsdcAta, adminYes);
+
+    // Unwind userB's ask → refund Yes tokens
+    await unwindOrderForSettlement(ctx, pdas, askId, userBUsdc, userBYes);
+
+    // Assert: orderbook drained, escrow vaults empty
+    const obAfter = await ctx.program.account.orderBook.fetch(pdas.orderBookPda);
+    expect(obAfter.bidCount).to.equal(0);
+    expect(obAfter.askCount).to.equal(0);
+    expect(await tokenAmount(ctx, pdas.obUsdcVault)).to.equal(0);
+    expect(await tokenAmount(ctx, pdas.obYesVault)).to.equal(0);
+
+    // Settle with orderbook proof → succeeds on empty book
+    await settleWithOrderBookProof(ctx, pdas, new anchor.BN(300_000_000));
+
+    // Redeem winners (yesWins: price 300M >= strike 293M)
+    await redeemForUser(ctx, pdas, ctx.admin.publicKey, ctx.adminUsdcAta, pdas.yesMintPda, adminYes, 3);
+    await redeemForUser(ctx, pdas, userB.publicKey, userBUsdc, pdas.yesMintPda, userBYes, 2, [userB]);
+
+    // Redeem losers (burns No tokens, 0 USDC)
+    await redeemForUser(ctx, pdas, ctx.admin.publicKey, ctx.adminUsdcAta, pdas.noMintPda, adminNo, 3);
+    await redeemForUser(ctx, pdas, userB.publicKey, userBUsdc, pdas.noMintPda, userBNo, 2, [userB]);
+
+    // Assert full invariants: vault=0, supply=0, totalPairsMinted=0
+    const vault = await tokenAmount(ctx, pdas.vaultPda);
+    const market = await ctx.program.account.strikeMarket.fetch(pdas.marketPda);
+    expect(vault).to.equal(0);
+    expect(market.totalPairsMinted.toNumber()).to.equal(0);
   });
 });

@@ -16,6 +16,7 @@ import {
   adminSettleMarket,
   placeBid,
   placeAsk,
+  cancelOrder,
   tokenAmount,
   expectIncrease,
   expectDecrease,
@@ -289,17 +290,7 @@ describe("order book", () => {
     const ob = await ctx.program.account.orderBook.fetch(m.orderBookPda);
     const orderId = ob.bids[0].orderId;
 
-    await ctx.program.methods
-      .cancelOrder(orderId)
-      .accountsPartial({
-        user: ctx.admin.publicKey,
-        market: m.marketPda,
-        orderBook: m.orderBookPda,
-        obUsdcVault: m.obUsdcVault,
-        obYesVault: m.obYesVault,
-        refundDestination: ctx.adminUsdcAta,
-      })
-      .rpc();
+    await cancelOrder(ctx, m, orderId, ctx.admin.publicKey, ctx.adminUsdcAta);
 
     const usdcAfter = await tokenAmount(ctx, ctx.adminUsdcAta);
     expect(usdcAfter).to.equal(usdcBefore);
@@ -320,17 +311,7 @@ describe("order book", () => {
     const usdcBefore = await tokenAmount(ctx, ctx.adminUsdcAta);
     const obUsdcBefore = await tokenAmount(ctx, m.obUsdcVault);
 
-    await ctx.program.methods
-      .cancelOrder(orderId)
-      .accountsPartial({
-        user: ctx.admin.publicKey,
-        market: m.marketPda,
-        orderBook: m.orderBookPda,
-        obUsdcVault: m.obUsdcVault,
-        obYesVault: m.obYesVault,
-        refundDestination: ctx.adminUsdcAta,
-      })
-      .rpc();
+    await cancelOrder(ctx, m, orderId, ctx.admin.publicKey, ctx.adminUsdcAta);
 
     const usdcAfter = await tokenAmount(ctx, ctx.adminUsdcAta);
     const obUsdcAfter = await tokenAmount(ctx, m.obUsdcVault);
@@ -353,17 +334,7 @@ describe("order book", () => {
     const ob = await ctx.program.account.orderBook.fetch(m.orderBookPda);
     const orderId = ob.asks[0].orderId;
 
-    await ctx.program.methods
-      .cancelOrder(orderId)
-      .accountsPartial({
-        user: ctx.admin.publicKey,
-        market: m.marketPda,
-        orderBook: m.orderBookPda,
-        obUsdcVault: m.obUsdcVault,
-        obYesVault: m.obYesVault,
-        refundDestination: adminYes,
-      })
-      .rpc();
+    await cancelOrder(ctx, m, orderId, ctx.admin.publicKey, adminYes);
 
     const yesAfter = await tokenAmount(ctx, adminYes);
     expect(yesAfter).to.equal(yesBefore);
@@ -383,18 +354,7 @@ describe("order book", () => {
     const orderId = ob.bids[0].orderId;
 
     try {
-      await ctx.program.methods
-        .cancelOrder(orderId)
-        .accountsPartial({
-          user: userB.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          refundDestination: ctx.adminUsdcAta,
-        })
-        .signers([userB])
-        .rpc();
+      await cancelOrder(ctx, m, orderId, userB.publicKey, ctx.adminUsdcAta, [userB]);
       expect.fail("Should have thrown");
     } catch (err: any) {
       expect(err.toString()).to.include("NotOrderOwner");
@@ -406,17 +366,7 @@ describe("order book", () => {
     await mintPairsFor(m, ctx.admin.publicKey, ctx.adminUsdcAta, 1);
 
     try {
-      await ctx.program.methods
-        .cancelOrder(new anchor.BN(99999))
-        .accountsPartial({
-          user: ctx.admin.publicKey,
-          market: m.marketPda,
-          orderBook: m.orderBookPda,
-          obUsdcVault: m.obUsdcVault,
-          obYesVault: m.obYesVault,
-          refundDestination: ctx.adminUsdcAta,
-        })
-        .rpc();
+      await cancelOrder(ctx, m, 99999, ctx.admin.publicKey, ctx.adminUsdcAta);
       expect.fail("Should have thrown");
     } catch (err: any) {
       expect(err.toString()).to.include("OrderNotFound");

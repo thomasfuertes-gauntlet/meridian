@@ -657,6 +657,35 @@ export async function claimFills(
   }
 }
 
+export async function cancelOrder(
+  ctx: TestContext,
+  market: ReturnType<typeof deriveMarketPdas> & {
+    orderBookPda: PublicKey;
+    obUsdcVault: PublicKey;
+    obYesVault: PublicKey;
+  },
+  orderId: anchor.BN | number,
+  user: PublicKey,
+  refundDestination: PublicKey,
+  signers?: Keypair[]
+) {
+  const tx = ctx.program.methods
+    .cancelOrder(orderId instanceof anchor.BN ? orderId : new anchor.BN(orderId))
+    .accountsPartial({
+      user,
+      market: market.marketPda,
+      orderBook: market.orderBookPda,
+      obUsdcVault: market.obUsdcVault,
+      obYesVault: market.obYesVault,
+      refundDestination,
+    });
+  if (signers) {
+    await tx.signers(signers).rpc();
+  } else {
+    await tx.rpc();
+  }
+}
+
 export async function buyNo(
   ctx: TestContext,
   market: ReturnType<typeof deriveMarketPdas> & {

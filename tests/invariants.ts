@@ -19,6 +19,7 @@ import {
   userTokenAccounts,
   placeBid,
   placeAsk,
+  buyYes,
   buyNo,
   sellNo,
   adminSettleMarket,
@@ -27,6 +28,11 @@ import {
   expectIncrease,
   createFundedUser,
   transferTokens,
+  pauseProtocol,
+  unpauseProtocol,
+  freezeMarket,
+  unwindOrderForSettlement,
+  settleWithOrderBookProof,
 } from "./helpers";
 
 // ─────────────────────────────────────────────────────────────────
@@ -430,5 +436,192 @@ describe("edge cases", () => {
 
     const usdcAfter = Number((await getAccount(ctx.provider.connection, ctx.adminUsdcAta)).amount);
     expect(usdcAfter - usdcBefore).to.equal(3 * 1_000_000);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+//  PAUSED-PROTOCOL INVARIANTS
+// ─────────────────────────────────────────────────────────────────
+
+describe("paused-protocol invariants", () => {
+  let ctx: TestContext;
+  let pauseMarketIdx = 1600000200;
+
+  function nextPauseDate() {
+    return new anchor.BN(pauseMarketIdx++);
+  }
+
+  before(async () => {
+    ctx = await setupTestContext();
+  });
+
+  it("vault and supply invariants hold when operations are rejected during pause", async () => {
+    const pdas = await createMarket(ctx, "AAPL", new anchor.BN(250_000_000), nextPauseDate());
+    const { userYes: adminYes } = await mintPairForAdmin(ctx, pdas, 5);
+
+    const vaultBefore = await tokenAmount(ctx, pdas.vaultPda);
+    const yesMintBefore = await getMint(ctx.provider.connection, pdas.yesMintPda);
+    const noMintBefore = await getMint(ctx.provider.connection, pdas.noMintPda);
+    const marketBefore = await ctx.program.account.strikeMarket.fetch(pdas.marketPda);
+
+    await pauseProtocol(ctx);
+
+    try {
+      // Attempt mint - should fail with Paused
+      try {
+        await mintPairForAdmin(ctx, pdas, 1);
+        expect.fail("mint should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("Paused");
+      }
+
+      // Attempt placeOrder - should fail with Paused
+      try {
+        await placeBid(ctx, pdas, ctx.admin.publicKey, ctx.adminUsdcAta, adminYes, 500_000, 1);
+        expect.fail("placeOrder should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("Paused");
+      }
+
+      // Attempt buyYes - should fail with Paused
+      try {
+        await buyYes(ctx, pdas, ctx.admin.publicKey, ctx.adminUsdcAta, adminYes, 500_000, 1);
+        expect.fail("buyYes should have thrown");
+      } catch (err: any) {
+        expect(err.toString()).to.include("Paused");
+      }
+
+      // Assert invariants unchanged
+      const vaultAfter = await tokenAmount(ctx, pdas.vaultPda);
+      const yesMintAfter = await getMint(ctx.provider.connection, pdas.yesMintPda);
+      const noMintAfter = await getMint(ctx.provider.connection, pdas.noMintPda);
+      const marketAfter = await ctx.program.account.strikeMarket.fetch(pdas.marketPda);
+
+      expect(vaultAfter).to.equal(vaultBefore);
+      expect(Number(yesMintAfter.supply)).to.equal(Number(yesMintBefore.supply));
+      expect(Number(noMintAfter.supply)).to.equal(Number(noMintBefore.supply));
+      expect(marketAfter.totalPairsMinted.toNumber()).to.equal(marketBefore.totalPairsMinted.toNumber());
+    } finally {
+      await unpauseProtocol(ctx);
+    }
+
+    // After unpause, mint 1 more pair succeeds and invariants hold
+    await mintPairForAdmin(ctx, pdas, 1);
+
+    const vaultFinal = await tokenAmount(ctx, pdas.vaultPda);
+    const marketFinal = await ctx.program.account.strikeMarket.fetch(pdas.marketPda);
+    expect(vaultFinal).to.equal(6_000_000);
+    expect(marketFinal.totalPairsMinted.toNumber()).to.equal(6);
+  });
+
+  it("settlement and redeem succeed while paused, preserving invariants", async () => {
+    const pdas = await createMarket(ctx, "MSFT", new anchor.BN(251_000_000), nextPauseDate());
+    const { userYes: adminYes } = await mintPairForAdmin(ctx, pdas, 3);
+
+    await pauseProtocol(ctx);
+
+    try {
+      // Settlement should succeed while paused (not pause-aware)
+      await adminSettleMarket(ctx, pdas, new anchor.BN(251_000_000));
+
+      // Redeem winners should succeed while paused
+      await redeemForUser(ctx, pdas, ctx.admin.publicKey, ctx.adminUsdcAta, pdas.yesMintPda, adminYes, 2);
+
+      const vault = await tokenAmount(ctx, pdas.vaultPda);
+      const market = await ctx.program.account.strikeMarket.fetch(pdas.marketPda);
+      const yesMint = await getMint(ctx.provider.connection, pdas.yesMintPda);
+
+      expect(vault).to.equal(1_000_000);
+      expect(market.totalPairsMinted.toNumber()).to.equal(1);
+      expect(Number(yesMint.supply)).to.equal(1);
+    } finally {
+      await unpauseProtocol(ctx);
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+//  CROSS-MARKET ISOLATION WITH PARALLEL OPERATIONS
+// ─────────────────────────────────────────────────────────────────
+
+describe("cross-market isolation with parallel operations", () => {
+  let ctx: TestContext;
+  let isoMarketIdx = 1600000300;
+
+  function nextIsoDate() {
+    return new anchor.BN(isoMarketIdx++);
+  }
+
+  before(async () => {
+    ctx = await setupTestContext();
+  });
+
+  it("settle market A while B has open orders and C is being unwound", async () => {
+    // Create 3 markets on different tickers
+    const marketA = await createMarket(ctx, "AAPL", new anchor.BN(260_000_000), nextIsoDate());
+    const marketB = await createMarket(ctx, "NVDA", new anchor.BN(261_000_000), nextIsoDate());
+    const marketC = await createMarket(ctx, "TSLA", new anchor.BN(262_000_000), nextIsoDate());
+
+    // Derive admin ATAs for each market's Yes mint
+    const adminYesA = getAssociatedTokenAddressSync(marketA.yesMintPda, ctx.admin.publicKey);
+    const adminYesB = getAssociatedTokenAddressSync(marketB.yesMintPda, ctx.admin.publicKey);
+    const adminYesC = getAssociatedTokenAddressSync(marketC.yesMintPda, ctx.admin.publicKey);
+
+    // Market A: mint 3 pairs, place a bid
+    await mintPairForAdmin(ctx, marketA, 3);
+    await placeBid(ctx, marketA, ctx.admin.publicKey, ctx.adminUsdcAta, adminYesA, 500_000, 1);
+
+    // Market B: mint 2 pairs, place bid + ask (active CLOB)
+    await mintPairForAdmin(ctx, marketB, 2);
+    await placeBid(ctx, marketB, ctx.admin.publicKey, ctx.adminUsdcAta, adminYesB, 400_000, 1);
+    await placeAsk(ctx, marketB, ctx.admin.publicKey, ctx.adminUsdcAta, adminYesB, 700_000, 1);
+
+    // Market C: mint 2 pairs, place ask
+    await mintPairForAdmin(ctx, marketC, 2);
+    await placeAsk(ctx, marketC, ctx.admin.publicKey, ctx.adminUsdcAta, adminYesC, 600_000, 1);
+
+    // Freeze market C
+    await freezeMarket(ctx, marketC);
+
+    // Read market C's ask order ID before unwind
+    const obC = await ctx.program.account.orderBook.fetch(marketC.orderBookPda);
+    const askOrderIdC = obC.asks[0].orderId;
+
+    // Settle market A (freeze + admin_settle with orderbook proof)
+    await adminSettleMarket(ctx, marketA, new anchor.BN(260_000_000));
+
+    // Unwind market C's ask
+    await unwindOrderForSettlement(ctx, marketC, askOrderIdC, ctx.adminUsdcAta, adminYesC);
+
+    // ── Assert Market A: settled (yesWins), vault intact ──
+    const marketAState = await ctx.program.account.strikeMarket.fetch(marketA.marketPda);
+    const marketAVault = await tokenAmount(ctx, marketA.vaultPda);
+    expect(marketAState.outcome).to.deep.equal({ yesWins: {} });
+    expect(marketAVault).to.equal(3_000_000);
+
+    // ── Assert Market B: still active, vault + CLOB escrow intact ──
+    const marketBState = await ctx.program.account.strikeMarket.fetch(marketB.marketPda);
+    const marketBVault = await tokenAmount(ctx, marketB.vaultPda);
+    const marketBBook = await ctx.program.account.orderBook.fetch(marketB.orderBookPda);
+    const marketBObUsdc = await tokenAmount(ctx, marketB.obUsdcVault);
+    const marketBObYes = await tokenAmount(ctx, marketB.obYesVault);
+    expect(marketBState.outcome).to.deep.equal({ pending: {} });
+    expect(marketBVault).to.equal(2_000_000);
+    expect(marketBBook.bidCount).to.equal(1);
+    expect(marketBBook.askCount).to.equal(1);
+    expect(marketBObUsdc).to.equal(400_000);
+    expect(marketBObYes).to.equal(1);
+
+    // ── Assert Market C: frozen, orderbook empty after unwind, escrow returned ──
+    const marketCState = await ctx.program.account.strikeMarket.fetch(marketC.marketPda);
+    const marketCVault = await tokenAmount(ctx, marketC.vaultPda);
+    const marketCBook = await ctx.program.account.orderBook.fetch(marketC.orderBookPda);
+    const marketCObUsdc = await tokenAmount(ctx, marketC.obUsdcVault);
+    const marketCObYes = await tokenAmount(ctx, marketC.obYesVault);
+    expect(marketCState.outcome).to.deep.equal({ pending: {} });
+    expect(marketCVault).to.equal(2_000_000);
+    expect(marketCBook.askCount).to.equal(0);
+    expect(marketCObUsdc).to.equal(0);
+    expect(marketCObYes).to.equal(0);
   });
 });

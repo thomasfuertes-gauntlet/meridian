@@ -7,7 +7,7 @@
 	devnet-env-check railway-env-check railway-sync \
 	railway-deploy-frontend railway-deploy-bots railway-deploy-read-api railway-deploy railway-release \
 	devnet-deploy devnet-setup devnet-health devnet-settle devnet-morning devnet-reset \
-	wallet-pubkeys circuit tree clean \
+	wallet-pubkeys clean \
 	dev dev-validator deploy setup bots live strategy-bots test check \
 	deploy-devnet setup-devnet health settle morning reset
 
@@ -315,12 +315,6 @@ wallet-pubkeys: wallets
 	@echo "Admin: $$(solana-keygen pubkey $(ADMIN_WALLET))"
 	@echo "Bot-A: $$(solana-keygen pubkey $(BOT_A_WALLET))"
 	@echo "Bot-B: $$(solana-keygen pubkey $(BOT_B_WALLET))"
-
-circuit:
-	cd circuits && ./build.sh
-
-tree:
-	$(LOCAL_TS_ENV) $(TSX) scripts/build-tree.ts
 
 clean: local-validator-stop
 	@for script in seed-bots.ts live-bots.ts strategy-bots.ts; do \

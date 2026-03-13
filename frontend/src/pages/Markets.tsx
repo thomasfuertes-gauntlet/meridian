@@ -1,9 +1,9 @@
 import { MarketCard } from "../components/MarketCard";
 import { compact, formatContracts } from "../lib/format";
-import { useMarketUniverse } from "../lib/market-data";
+import { useMarketData } from "../lib/ws-market-data";
 
 export function Markets() {
-  const { data, error, loading, stats } = useMarketUniverse();
+  const { data, error, loading, stats } = useMarketData();
   const snapshots = data?.tickerSnapshots ?? [];
   const updatedLabel = data?.asOf
     ? new Date(data.asOf).toLocaleTimeString()

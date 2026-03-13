@@ -1,10 +1,12 @@
 import { AnchorProvider, Program, type Idl } from "@coral-xyz/anchor";
 import { Connection } from "@solana/web3.js";
 import { type AnchorWallet } from "@solana/wallet-adapter-react";
-import { RPC_URL } from "./constants";
+import { IS_REMOTE_RPC, RPC_URL } from "./constants";
 import idl from "../idl/meridian.json";
 
-const rawConnection = new Connection(RPC_URL, "confirmed");
+// Remote RPCs require explicit wsEndpoint (http->ws). Local validator auto-derives port+1.
+const wsEndpoint = IS_REMOTE_RPC ? RPC_URL.replace(/^http/, "ws") : undefined;
+const rawConnection = new Connection(RPC_URL, { commitment: "confirmed", wsEndpoint });
 
 // Debug proxy: logs all RPC method calls to console when ?debug=rpc is in URL
 const debugRpc = new URLSearchParams(window.location.search).has("debug");

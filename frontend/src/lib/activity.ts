@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BorshInstructionCoder, type Idl } from "@coral-xyz/anchor";
 import {
   type ParsedInstruction,
@@ -11,7 +11,6 @@ import idl from "../idl/meridian.json";
 import { connection, getReadOnlyProgram } from "./anchor";
 import {
   ACTIVITY_LIMIT,
-  ACTIVITY_POLL_MS,
   MAG7,
   PROGRAM_ID,
   USDC_PER_PAIR,
@@ -233,27 +232,13 @@ const activityInflight = new Map<string, Promise<ActivityRecord[]>>();
 export async function fetchActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: Ticker): Promise<ActivityRecord[]> {
   const cacheKey = `${limit}:${filterTicker ?? "all"}`;
   const cached = activityCache.get(cacheKey);
-  if (cached && Date.now() - cached.at < Math.max(10_000, ACTIVITY_POLL_MS / 2)) {
+  if (cached && Date.now() - cached.at < 30_000) {
     return cached.records;
   }
   const inflight = activityInflight.get(cacheKey);
   if (inflight) return inflight;
 
   const request = (async () => {
-  try {
-    const params = new URLSearchParams({ limit: String(limit) });
-    if (filterTicker) params.set("ticker", filterTicker);
-    const response = await fetch(`/api/activity?${params}`);
-    if (!response.ok) {
-      throw new Error(`API returned ${response.status} for /api/activity`);
-    }
-    const next = await response.json() as ActivityRecord[];
-    activityCache.set(cacheKey, { records: next, at: Date.now() });
-    return next;
-  } catch (error) {
-    console.warn("/api/activity failed, falling back to direct RPC:", error);
-  }
-
   const program = getReadOnlyProgram();
   const coder = new BorshInstructionCoder(idl as Idl);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -332,34 +317,112 @@ export async function fetchActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: T
   }
 }
 
+async function buildMarketLookup(): Promise<Map<string, MarketLookupEntry>> {
+  const program = getReadOnlyProgram();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawMarkets = await (program.account as any).strikeMarket.all();
+  const latestDates = new Map<Ticker, number>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const item of rawMarkets as any[]) {
+    const ticker = item.account.ticker as Ticker;
+    const date = item.account.date.toNumber() as number;
+    const current = latestDates.get(ticker);
+    if (current == null || date > current) latestDates.set(ticker, date);
+  }
+  const lookup = new Map<string, MarketLookupEntry>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const item of rawMarkets as any[]) {
+    const ticker = item.account.ticker as Ticker;
+    const date = item.account.date.toNumber() as number;
+    if (latestDates.get(ticker) !== date) continue;
+    const address = (item.publicKey as PublicKey).toBase58();
+    lookup.set(address, {
+      address,
+      ticker,
+      date,
+      strikePrice: item.account.strikePrice.toNumber() as number,
+      yesMint: (item.account.yesMint as PublicKey).toBase58(),
+      noMint: (item.account.noMint as PublicKey).toBase58(),
+    });
+  }
+  return lookup;
+}
+
 export function useActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: Ticker) {
   const [data, setData] = useState<ActivityRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const bufferRef = useRef<ActivityRecord[]>([]);
+  const marketLookupRef = useRef<Map<string, MarketLookupEntry>>(new Map());
+  const coderRef = useRef(new BorshInstructionCoder(idl as Idl));
 
   useEffect(() => {
     let alive = true;
-    async function load() {
-      if (document.visibilityState === "hidden") return;
-      setLoading(true);
-      try {
-        const next = await fetchActivityFeed(limit, filterTicker);
-        if (!alive) return;
-        setData(next);
-        setError(null);
-      } catch (err) {
-        if (!alive) return;
-        setError(err instanceof Error ? err.message : "Failed to load activity");
-      } finally {
-        if (alive) setLoading(false);
-      }
+    const RING_SIZE = 120;
+
+    async function init() {
+      const [records, lookup] = await Promise.all([
+        fetchActivityFeed(limit, filterTicker),
+        buildMarketLookup(),
+      ]);
+      if (!alive) return;
+      marketLookupRef.current = lookup;
+      bufferRef.current = records.slice(0, RING_SIZE);
+      setData([...bufferRef.current]);
+      setError(null);
     }
 
-    void load();
-    const interval = window.setInterval(() => void load(), ACTIVITY_POLL_MS);
+    init()
+      .catch((err) => {
+        if (!alive) return;
+        setError(err instanceof Error ? err.message : "Failed to load activity");
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+
+    const subId = connection.onLogs(
+      PROGRAM_ID,
+      ({ signature, err: txErr, logs }) => {
+        if (!alive || txErr) return;
+        // Quick bail if no instruction log line
+        if (!logs.some((l) => l.includes("Program log: Instruction:"))) return;
+
+        void (async () => {
+          try {
+            const txs = await connection.getParsedTransactions([signature], {
+              commitment: "confirmed",
+              maxSupportedTransactionVersion: 0,
+            });
+            const tx = txs[0];
+            if (!tx || !alive) return;
+
+            const lookup = marketLookupRef.current;
+            const newRecords: ActivityRecord[] = [];
+            for (const instruction of tx.transaction.message.instructions) {
+              if (!isPartiallyDecodedInstruction(instruction)) continue;
+              if (!instruction.programId.equals(PROGRAM_ID)) continue;
+              const normalized = normalizeInstruction(tx, instruction, lookup, coderRef.current);
+              if (!normalized) continue;
+              if (!normalized.marketAddress || !lookup.has(normalized.marketAddress)) continue;
+              if (filterTicker && normalized.ticker !== filterTicker) continue;
+              newRecords.push(normalized);
+            }
+
+            if (newRecords.length === 0 || !alive) return;
+            bufferRef.current = [...newRecords, ...bufferRef.current].slice(0, RING_SIZE);
+            setData([...bufferRef.current]);
+          } catch {
+            // ignore tx fetch errors
+          }
+        })();
+      },
+      "confirmed"
+    );
+
     return () => {
       alive = false;
-      window.clearInterval(interval);
+      connection.removeOnLogsListener(subId).catch(() => {});
     };
   }, [limit, filterTicker]);
 

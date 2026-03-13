@@ -4,7 +4,7 @@ import { getProgram, getReadOnlyProgram } from "../lib/anchor";
 import { DeskSelector } from "../components/DeskSelector";
 import { MAG7, type Ticker } from "../lib/constants";
 import { money, formatContracts, formatUsdcBaseUnits } from "../lib/format";
-import { useMarketUniverse } from "../lib/market-data";
+import { useMarketData } from "../lib/ws-market-data";
 import { getDeskWallets } from "../lib/dev-wallets";
 import {
   buildBurnPairTx,
@@ -72,7 +72,7 @@ function hasPartialHistory(positions: Array<{ performance?: PositionPerformance 
 export function Portfolio() {
   const wallet = useAnchorWallet();
   const { connection } = useConnection();
-  const { data } = useMarketUniverse(20_000);
+  const { data } = useMarketData();
   const desks = useMemo(() => getDeskWallets(wallet?.publicKey), [wallet]);
   const [selectedDeskId, setSelectedDeskId] = useState<string>("");
   const [positions, setPositions] = useState<Position[]>([]);

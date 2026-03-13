@@ -9,6 +9,7 @@ import "@solana/wallet-adapter-react-ui/styles.css";
 import { SettlementCountdown } from "./components/SettlementCountdown";
 import { IS_LOCAL_RPC, PROGRAM_ID, RPC_MODE_LABEL, RPC_URL } from "./lib/constants";
 import { LocalDevWalletAdapter } from "./lib/local-wallet";
+import { MarketDataProvider } from "./lib/ws-market-data";
 import { WalletButton } from "./components/WalletButton";
 import { Markets } from "./pages/Markets";
 import { MarketDetail } from "./pages/MarketDetail";
@@ -38,6 +39,7 @@ export default function App() {
     <ConnectionProvider endpoint={RPC_URL}>
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
+          <MarketDataProvider>
           <header>
             <nav>
               <strong>Meridian</strong>
@@ -61,6 +63,7 @@ export default function App() {
               <Route path="/portfolio" element={<Portfolio />} />
             </Routes>
           </main>
+          </MarketDataProvider>
         </WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>

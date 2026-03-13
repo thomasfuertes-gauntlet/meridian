@@ -1,12 +1,12 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { OrderBook } from "../components/OrderBook";
 import { TradePanel } from "../components/TradePanel";
 import { compact, formatContracts, formatRelativePublishTime, formatTimestamp, formatUsdcBaseUnits, money } from "../lib/format";
 import { formatActivityNotional, formatActivityPrice, useActivityFeed } from "../lib/activity";
 import { flipToNoPerspective } from "../lib/orderbook";
-import { IS_LOCAL_RPC, MAG7, MARKET_POLL_MS, type Ticker } from "../lib/constants";
-import { useMarketUniverse } from "../lib/market-data";
+import { MAG7, type Ticker } from "../lib/constants";
+import { useMarketData } from "../lib/ws-market-data";
 import { getConfiguredUsdcMint } from "../lib/usdc-mint";
 
 function statusTone(status: string): "green" | "blue" | "muted" {
@@ -20,8 +20,8 @@ function statusTone(status: string): "green" | "blue" | "muted" {
 export function MarketDetail() {
   const { ticker } = useParams<{ ticker: string }>();
   const routeTicker = MAG7.find((entry) => entry.ticker === ticker)?.ticker ?? null;
-  const { data, error, loading } = useMarketUniverse(IS_LOCAL_RPC ? 10_000 : MARKET_POLL_MS);
-  const { data: activity } = useActivityFeed(IS_LOCAL_RPC ? 60 : 20, routeTicker ?? undefined);
+  const { data, error, loading } = useMarketData();
+  const { data: activity } = useActivityFeed(20, routeTicker ?? undefined);
   const [selectedMarketAddress, setSelectedMarketAddress] = useState<string | null>(null);
 
   const snapshot = useMemo(
@@ -45,6 +45,12 @@ export function MarketDetail() {
       ?? markets[0]
       ?? null;
   }, [markets, selectedMarketAddress]);
+
+  // Step 7b: signal active market to bots so they weight activity toward this strike
+  useEffect(() => {
+    if (!featured) return;
+    fetch(`/api/active-ticker?ticker=${featured.ticker}&market=${featured.address}`).catch(() => {});
+  }, [featured?.address, featured?.ticker]);
 
   const noBook = featured?.orderBook ? flipToNoPerspective(featured.orderBook) : null;
   const usdcMint = getConfiguredUsdcMint();

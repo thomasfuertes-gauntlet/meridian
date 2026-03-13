@@ -10,11 +10,33 @@ const rawConnection = new Connection(RPC_URL, { commitment: "confirmed", wsEndpo
 
 // Debug proxy: logs all RPC method calls to console when ?debug=rpc is in URL
 const debugRpc = new URLSearchParams(window.location.search).has("debug");
+let wsSubCount = 0;
+const WS_SUB_METHODS = new Set(["onLogs", "onAccountChange", "onProgramAccountChange"]);
+const WS_UNSUB_METHODS = new Set(["removeOnLogsListener", "removeAccountChangeListener", "removeProgramAccountChangeListener"]);
 export const connection: Connection = debugRpc
   ? new Proxy(rawConnection, {
       get(target, prop, receiver) {
         const val = Reflect.get(target, prop, receiver);
         if (typeof val === "function") {
+          if (WS_SUB_METHODS.has(String(prop))) {
+            return (...args: unknown[]) => {
+              const result = val.apply(target, args);
+              wsSubCount++;
+              console.debug(`[ws-budget] ${wsSubCount} active WS subs`);
+              if (wsSubCount > 5) {
+                console.warn(`[ws-budget] ${wsSubCount} active WS subs - exceeds Helius free-tier limit of 5`);
+              }
+              return result;
+            };
+          }
+          if (WS_UNSUB_METHODS.has(String(prop))) {
+            return (...args: unknown[]) => {
+              const result = val.apply(target, args);
+              wsSubCount = Math.max(0, wsSubCount - 1);
+              console.debug(`[ws-budget] ${wsSubCount} active WS subs`);
+              return result;
+            };
+          }
           return (...args: unknown[]) => {
             const result = val.apply(target, args);
             if (result instanceof Promise) {

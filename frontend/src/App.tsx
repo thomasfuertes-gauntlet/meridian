@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Route, Routes, Link, useLocation } from "react-router-dom";
+import { Route, Routes, Navigate, Link, useLocation } from "react-router-dom";
 import {
   ConnectionProvider,
   WalletProvider,
@@ -10,7 +10,6 @@ import { SettlementCountdown } from "./components/SettlementCountdown";
 import { IS_LOCAL_RPC, PROGRAM_ID, RPC_MODE_LABEL, RPC_URL } from "./lib/constants";
 import { LocalDevWalletAdapter } from "./lib/local-wallet";
 import { WalletButton } from "./components/WalletButton";
-import { Landing } from "./pages/Landing";
 import { Markets } from "./pages/Markets";
 import { MarketDetail } from "./pages/MarketDetail";
 import { Portfolio } from "./pages/Portfolio";
@@ -42,7 +41,6 @@ export default function App() {
           <header>
             <nav>
               <strong>Meridian</strong>
-              <NavLink to="/" label="Overview" />
               <NavLink to="/markets" label="Markets" />
               <NavLink to="/activity" label="Activity" />
               <NavLink to="/portfolio" label="Portfolio" />
@@ -56,7 +54,7 @@ export default function App() {
           </header>
           <main>
             <Routes>
-              <Route path="/" element={<Landing />} />
+              <Route path="/" element={<Navigate to="/markets" replace />} />
               <Route path="/markets" element={<Markets />} />
               <Route path="/markets/:ticker" element={<MarketDetail />} />
               <Route path="/activity" element={<Activity />} />

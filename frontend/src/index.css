@@ -1,62 +1,43 @@
-/* Meridian - minimal global styles, scoped to elements, no classes */
+/* Meridian - bare dark semantic reset. First-principles starting point. */
 :root {
-  --bg: #0a0a0f;
-  --bg-card: #111118;
-  --border: #222233;
-  --text: #d4d4d8;
-  --text-muted: #71717a;
-  --text-heading: #fafafa;
-  --accent: #facc15;
-  --green: #4ade80;
-  --red: #f87171;
-  --blue: #60a5fa;
-  --mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  --sans: Inter, system-ui, -apple-system, sans-serif;
+  --bg: #111;
+  --text: #ccc;
+  --muted: #777;
+  --border: #333;
+  --mono: "SF Mono", Menlo, Consolas, monospace;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; }
 html { color-scheme: dark; }
-body {
-  font-family: var(--sans);
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--text);
-  background: var(--bg);
-  min-height: 100vh;
-}
-a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
-h1, h2, h3 { color: var(--text-heading); font-weight: 600; line-height: 1.2; }
-h1 { font-size: 1.5rem; }
-h2 { font-size: 1.25rem; }
-h3 { font-size: 1rem; }
-nav { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
-nav a[aria-current="page"] { color: var(--text-heading); border-bottom: 2px solid var(--accent); }
-header, footer { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
-main { padding: 1rem; max-width: 1400px; margin: 0 auto; }
-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.8125rem; }
-th { text-align: left; color: var(--text-muted); font-weight: 400; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.5rem; border-bottom: 1px solid var(--border); }
+body { font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.5; color: var(--text); background: var(--bg); }
+a { color: inherit; }
+h1, h2, h3 { font-weight: 600; }
+header { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); gap: 1rem; flex-wrap: wrap; }
+header > div { display: flex; gap: 0.75rem; align-items: center; }
+nav { display: flex; gap: 1rem; align-items: center; }
+nav a[aria-current="page"] { text-decoration: underline; }
+main { padding: 1rem; max-width: 1200px; margin: 0 auto; }
+main > * + * { margin-top: 1rem; }
+section { padding: 1rem; }
+section + section { margin-top: 1rem; }
+article { border: 1px solid var(--border); padding: 1rem; }
+article > * + * { margin-top: 0.5rem; }
+table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
+th { text-align: left; color: var(--muted); font-weight: 400; font-size: 11px; text-transform: uppercase; padding: 0.5rem; border-bottom: 1px solid var(--border); }
 td { padding: 0.5rem; border-bottom: 1px solid var(--border); }
-tr:hover { background: rgba(255,255,255,0.02); }
-input, select { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.5rem; color: var(--text); font: inherit; }
-input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
-button { background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: 0.5rem 1rem; color: var(--text); font: inherit; cursor: pointer; }
-button:hover { border-color: var(--accent); color: var(--text-heading); }
+input, select { background: var(--bg); border: 1px solid var(--border); padding: 0.5rem; color: var(--text); font: inherit; }
+button { background: none; border: 1px solid var(--border); padding: 0.5rem 1rem; color: var(--text); font: inherit; cursor: pointer; }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
-button[data-active="true"] { background: var(--accent); color: var(--bg); border-color: var(--accent); }
-output { font-family: var(--mono); }
-kbd { font-family: var(--mono); font-size: 0.8125rem; color: var(--text-heading); }
-small { color: var(--text-muted); font-size: 0.75rem; }
-mark[data-tone="green"] { background: none; color: var(--green); }
-mark[data-tone="red"] { background: none; color: var(--red); }
-mark[data-tone="blue"] { background: none; color: var(--blue); }
-mark[data-tone="muted"] { background: none; color: var(--text-muted); }
+button[data-active="true"] { border-color: var(--text); color: white; }
+small { color: var(--muted); font-size: 12px; }
 dl { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 1rem; }
-dt { color: var(--text-muted); font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.05em; }
+dt { color: var(--muted); font-size: 11px; text-transform: uppercase; }
 dd { font-family: var(--mono); }
-/* wallet adapter overrides */
-.wallet-adapter-button { background-color: var(--accent) !important; color: var(--bg) !important; border-radius: 4px !important; font-family: inherit !important; }
-.wallet-adapter-button:hover { filter: brightness(1.1) !important; }
+output, kbd { font-family: var(--mono); }
+mark { background: none; color: var(--text); }
+mark[data-tone="green"] { color: #4a4; }
+mark[data-tone="red"] { color: #a44; }
+mark[data-tone="muted"] { color: var(--muted); }
+/* wallet adapter - minimal overrides */
+.wallet-adapter-button { font-family: inherit !important; }
 .wallet-adapter-dropdown { position: relative; z-index: 30; }
-.wallet-adapter-dropdown-list { z-index: 40; }
 .wallet-adapter-modal, .wallet-adapter-modal-overlay, .wallet-adapter-modal-wrapper { z-index: 50; }

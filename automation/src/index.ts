@@ -23,8 +23,8 @@ const SETTLEMENT_SCHEDULE = "5 17 * * 1-5"; // 5:05 PM ET
 
 function main(): void {
   console.log("[automation] Meridian automation service starting...");
-  console.log(`[automation] Morning job scheduled:    ${MORNING_SCHEDULE} (UTC)`);
-  console.log(`[automation] Settlement job scheduled: ${SETTLEMENT_SCHEDULE} (UTC)`);
+  console.log(`[automation] Morning job scheduled:    ${MORNING_SCHEDULE} (ET)`);
+  console.log(`[automation] Settlement job scheduled: ${SETTLEMENT_SCHEDULE} (ET)`);
   console.log("[automation] Waiting for next trigger...\n");
 
   cron.schedule(

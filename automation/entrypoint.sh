@@ -22,7 +22,8 @@ echo "Meridian Bot Runner"
 echo "  RPC: $ANCHOR_PROVIDER_URL"
 echo "  USDC: $USDC_MINT"
 echo "  Demo ticker: $DEMO_TICKER"
-echo "  Wallet: $(npx tsx -e "const {getDevWallet}=require('./scripts/dev-wallets');console.log(getDevWallet('bot-a').publicKey.toString())" 2>/dev/null || echo 'bot-a')"
+echo "  bot-a: 48xYES8qxE1vvHPVJKJCdKRhDMbueeWmJhGHKQ3gWGhh"
+echo "  bot-b: RSG4qia3Dp9pGPzsMnFS9AzsRPKyJxJ75iyoSubwQ5W"
 
 echo "Running seed-bots (auto-skips if already seeded)..."
 npx tsx scripts/seed-bots.ts

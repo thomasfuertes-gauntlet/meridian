@@ -210,24 +210,13 @@ export async function createMarket(
   return pdas;
 }
 
-export async function initOrderBookForMarket(
+// create_strike_market creates the order book inline; this is just PDA derivation.
+export function initOrderBookForMarket(
   ctx: TestContext,
   marketPda: PublicKey,
-  yesMintPda: PublicKey
+  _yesMintPda?: PublicKey
 ) {
-  const obPdas = deriveOrderBookPdas(ctx, marketPda);
-  const existing = await ctx.program.account.orderBook.fetchNullable(obPdas.orderBookPda);
-  if (existing) return obPdas;
-  await ctx.methods
-    .initializeOrderBook()
-    .accountsPartial({
-      admin: ctx.admin.publicKey,
-      market: marketPda,
-      yesMint: yesMintPda,
-      usdcMint: ctx.usdcMint,
-    })
-    .rpc();
-  return obPdas;
+  return deriveOrderBookPdas(ctx, marketPda);
 }
 
 // ── Token account helpers ────────────────────────────────────────

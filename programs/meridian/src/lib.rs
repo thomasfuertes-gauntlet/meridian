@@ -86,10 +86,6 @@ pub mod meridian {
         instructions::unpause::handler(ctx)
     }
 
-    pub fn initialize_order_book(ctx: Context<InitializeOrderBook>) -> Result<()> {
-        instructions::initialize_order_book::handler(ctx)
-    }
-
     pub fn place_order<'info>(
         ctx: Context<'_, '_, 'info, 'info, PlaceOrder<'info>>,
         side: OrderSide,

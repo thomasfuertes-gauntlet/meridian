@@ -257,6 +257,7 @@ railway-sync: railway-env-check
 		"VITE_USDC_MINT=$(DEVNET_USDC_MINT)" \
 		"VITE_DEV_WALLET=$(VITE_DEV_WALLET)" \
 		"VITE_SIGNAL_URL=$(RAILWAY_BOTS_URL)" \
+		"RAILWAY_DOCKERFILE_PATH=frontend.Dockerfile" \
 	| xargs railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)"
 	@printf '%s\n' \
 		"ANCHOR_PROVIDER_URL=$(DEVNET_URL)" \

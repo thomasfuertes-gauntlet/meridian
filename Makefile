@@ -260,6 +260,7 @@ railway-sync: railway-env-check
 	| xargs railway variable set -s "$(RAILWAY_FRONTEND_SERVICE)"
 	@printf '%s\n' \
 		"ANCHOR_PROVIDER_URL=$(DEVNET_URL)" \
+		"RPC_URL=$(DEVNET_URL)" \
 		"USDC_MINT=$(DEVNET_USDC_MINT)" \
 		"DEMO_TICKER=$(DEMO_TICKER)" \
 	| xargs railway variable set -s "$(RAILWAY_BOTS_SERVICE)"

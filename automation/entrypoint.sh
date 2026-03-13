@@ -25,6 +25,10 @@ echo "  Demo ticker: $DEMO_TICKER"
 echo "  bot-a: 48xYES8qxE1vvHPVJKJCdKRhDMbueeWmJhGHKQ3gWGhh"
 echo "  bot-b: RSG4qia3Dp9pGPzsMnFS9AzsRPKyJxJ75iyoSubwQ5W"
 
+echo "Starting automation cron (morning 8AM ET + settlement 5:05PM ET)..."
+npx tsx automation/src/index.ts &
+AUTOMATION_PID=$!
+
 echo "Starting signal server on :${PORT:-8080}..."
 npx tsx scripts/signal-server.ts &
 SIGNAL_PID=$!
@@ -43,7 +47,7 @@ echo "Starting strategy bots..."
 npx tsx scripts/strategy-bots.ts &
 STRAT_PID=$!
 
-# Exit container if either bot dies (Railway will restart)
-wait -n $LIVE_PID $STRAT_PID
+# Exit container if any process dies (Railway will restart)
+wait -n $AUTOMATION_PID $LIVE_PID $STRAT_PID
 echo "FATAL: a bot process died, exiting for container restart"
 exit 1

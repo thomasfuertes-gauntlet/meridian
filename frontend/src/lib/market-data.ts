@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { connection, getReadOnlyProgram } from "./anchor";
-import { IS_REMOTE_RPC, MAG7, MARKET_POLL_MS, PROGRAM_ID, READ_API_URL, USDC_PER_PAIR, type Ticker } from "./constants";
+import { MAG7, MARKET_POLL_MS, PROGRAM_ID, READ_API_URL, USDC_PER_PAIR, type Ticker } from "./constants";
 import { parseOrderBook, type ParsedOrderBook } from "./orderbook";
 import { fetchPrices } from "./pyth";
 
@@ -212,7 +212,7 @@ export async function fetchMarketUniverse(): Promise<MarketUniverse> {
   if (marketUniverseInflight) return marketUniverseInflight;
 
   marketUniverseInflight = (async () => {
-  if (IS_REMOTE_RPC && READ_API_URL) {
+  if (READ_API_URL) {
     try {
       return await fetchRemoteMarketUniverse();
     } catch (error) {

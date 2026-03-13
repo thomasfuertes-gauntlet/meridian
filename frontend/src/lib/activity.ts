@@ -13,7 +13,6 @@ import {
   ACTIVITY_LIMIT,
   ACTIVITY_POLL_MS,
   ACTIVITY_SIGNATURES_PER_MARKET,
-  IS_REMOTE_RPC,
   MAG7,
   PROGRAM_ID,
   READ_API_URL,
@@ -247,7 +246,7 @@ export async function fetchActivityFeed(limit = ACTIVITY_LIMIT): Promise<Activit
   if (inflight) return inflight;
 
   const request = (async () => {
-  if (IS_REMOTE_RPC && READ_API_URL) {
+  if (READ_API_URL) {
     try {
       const response = await fetch(`${READ_API_URL}/activity?limit=${limit}`);
       if (!response.ok) {

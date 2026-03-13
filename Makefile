@@ -264,6 +264,7 @@ railway-sync: railway-env-check
 		"RPC_URL=$(DEVNET_URL)" \
 		"USDC_MINT=$(DEVNET_USDC_MINT)" \
 		"DEMO_TICKER=$(DEMO_TICKER)" \
+		"RAILWAY_DOCKERFILE_PATH=automation/Dockerfile" \
 	| xargs railway variable set -s "$(RAILWAY_BOTS_SERVICE)"
 
 railway-deploy-frontend: railway-env-check

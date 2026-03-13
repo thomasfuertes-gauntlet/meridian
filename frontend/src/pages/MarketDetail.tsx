@@ -19,13 +19,10 @@ function statusTone(status: string): "green" | "blue" | "muted" {
 
 export function MarketDetail() {
   const { ticker } = useParams<{ ticker: string }>();
+  const routeTicker = MAG7.find((entry) => entry.ticker === ticker)?.ticker ?? null;
   const { data, error, loading } = useMarketUniverse(IS_LOCAL_RPC ? 10_000 : MARKET_POLL_MS);
-  const { data: activity } = useActivityFeed(IS_LOCAL_RPC ? 60 : 20);
+  const { data: activity } = useActivityFeed(IS_LOCAL_RPC ? 60 : 20, routeTicker ?? undefined);
   const [selectedMarketAddress, setSelectedMarketAddress] = useState<string | null>(null);
-  const routeTicker = useMemo(
-    () => MAG7.find((entry) => entry.ticker === ticker)?.ticker ?? null,
-    [ticker]
-  );
 
   const snapshot = useMemo(
     () => data?.tickerSnapshots.find((entry) => entry.ticker === routeTicker),

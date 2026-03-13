@@ -234,26 +234,29 @@ async function fetchRelevantSignatures(
   return [...new Set(signatureGroups.flat().map((item) => item.signature))];
 }
 
-const activityCache = new Map<number, { records: ActivityRecord[]; at: number }>();
-const activityInflight = new Map<number, Promise<ActivityRecord[]>>();
+const activityCache = new Map<string, { records: ActivityRecord[]; at: number }>();
+const activityInflight = new Map<string, Promise<ActivityRecord[]>>();
 
-export async function fetchActivityFeed(limit = ACTIVITY_LIMIT): Promise<ActivityRecord[]> {
-  const cached = activityCache.get(limit);
+export async function fetchActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: Ticker): Promise<ActivityRecord[]> {
+  const cacheKey = `${limit}:${filterTicker ?? "all"}`;
+  const cached = activityCache.get(cacheKey);
   if (cached && Date.now() - cached.at < Math.max(10_000, ACTIVITY_POLL_MS / 2)) {
     return cached.records;
   }
-  const inflight = activityInflight.get(limit);
+  const inflight = activityInflight.get(cacheKey);
   if (inflight) return inflight;
 
   const request = (async () => {
   if (READ_API_URL) {
     try {
-      const response = await fetch(`${READ_API_URL}/activity?limit=${limit}`);
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (filterTicker) params.set("ticker", filterTicker);
+      const response = await fetch(`${READ_API_URL}/activity?${params}`);
       if (!response.ok) {
         throw new Error(`Read API returned ${response.status} for /activity`);
       }
       const next = await response.json() as ActivityRecord[];
-      activityCache.set(limit, { records: next, at: Date.now() });
+      activityCache.set(cacheKey, { records: next, at: Date.now() });
       return next;
     } catch (error) {
       console.warn("Read API /activity failed, falling back to direct RPC:", error);
@@ -284,6 +287,7 @@ export async function fetchActivityFeed(limit = ACTIVITY_LIMIT): Promise<Activit
     const ticker = item.account.ticker as Ticker;
     const date = item.account.date.toNumber() as number;
     if (latestDates.get(ticker) !== date) continue;
+    if (filterTicker && ticker !== filterTicker) continue;
 
     const address = (item.publicKey as PublicKey).toBase58();
     marketLookup.set(address, {
@@ -327,19 +331,19 @@ export async function fetchActivityFeed(limit = ACTIVITY_LIMIT): Promise<Activit
   });
 
     const next = activity.slice(0, limit);
-    activityCache.set(limit, { records: next, at: Date.now() });
+    activityCache.set(cacheKey, { records: next, at: Date.now() });
     return next;
   })();
 
-  activityInflight.set(limit, request);
+  activityInflight.set(cacheKey, request);
   try {
     return await request;
   } finally {
-    activityInflight.delete(limit);
+    activityInflight.delete(cacheKey);
   }
 }
 
-export function useActivityFeed(limit = ACTIVITY_LIMIT) {
+export function useActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: Ticker) {
   const [data, setData] = useState<ActivityRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -350,7 +354,7 @@ export function useActivityFeed(limit = ACTIVITY_LIMIT) {
       if (document.visibilityState === "hidden") return;
       setLoading(true);
       try {
-        const next = await fetchActivityFeed(limit);
+        const next = await fetchActivityFeed(limit, filterTicker);
         if (!alive) return;
         setData(next);
         setError(null);
@@ -368,7 +372,7 @@ export function useActivityFeed(limit = ACTIVITY_LIMIT) {
       alive = false;
       window.clearInterval(interval);
     };
-  }, [limit]);
+  }, [limit, filterTicker]);
 
   return { data, loading, error };
 }

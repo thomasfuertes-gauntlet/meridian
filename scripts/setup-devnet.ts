@@ -200,10 +200,14 @@ async function main() {
   const refPrices = await fetchStockPrices();
   let totalMarkets = 0;
 
-  // close_time = today's market close (4:05 PM ET) as Unix timestamp
+  // close_time = today's market close (4:00 PM ET) as Unix timestamp
+  // EST = UTC-5, EDT = UTC-4. Rough DST: March(2)-November(10).
   const now = new Date();
-  const etStr = now.toLocaleDateString("en-US", { timeZone: "America/New_York" });
-  const closeET = new Date(`${etStr} 16:05:00 EDT`);
+  const month = now.getUTCMonth(); // 0-indexed
+  const etOffset = (month >= 2 && month <= 10) ? 4 : 5;
+  const closeET = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 16 + etOffset, 0, 0)
+  );
   // If market already closed today, use tomorrow
   if (closeET.getTime() < Date.now()) {
     closeET.setDate(closeET.getDate() + 1);

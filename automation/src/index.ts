@@ -2,8 +2,8 @@
  * Automation service entry point.
  *
  * Schedules two jobs via node-cron on weekdays (Mon-Fri):
- *   - Morning job: 13:00 UTC (~8:00 AM ET) - seeds daily strike markets
- *   - Settlement job: 21:05 UTC (~4:05 PM ET) - settles markets after close
+ *   - Morning job: 8:00 AM ET - seeds daily strike markets
+ *   - Settlement job: 5:05 PM ET - settles markets (1hr admin delay after 4:00 PM close)
  *
  * Also supports one-shot execution via --now (morning) and --settle (settlement).
  */
@@ -14,13 +14,12 @@ import "dotenv/config";
 import { runMorningJob } from "./morning-job.js";
 import { runSettlementJob } from "./settlement-job.js";
 
-// 8:00 AM ET = 13:00 UTC (EST) or 12:00 UTC (EDT)
-// We schedule at 13:00 UTC and let the job handle DST edge cases.
-const MORNING_SCHEDULE = "0 13 * * 1-5";
+// Schedules use America/New_York timezone so DST is handled automatically.
+const MORNING_SCHEDULE = "0 8 * * 1-5"; // 8:00 AM ET
 
-// 4:05 PM ET = 21:05 UTC (EST) or 20:05 UTC (EDT)
-// We schedule at 21:05 UTC; the 5-minute buffer after close gives Pyth time to publish.
-const SETTLEMENT_SCHEDULE = "5 21 * * 1-5";
+// admin_settle requires close_time + 3600s (1hr delay). Markets close at 4:00 PM ET,
+// so admin_settle is first eligible at 5:00 PM ET. Schedule 5 minutes after.
+const SETTLEMENT_SCHEDULE = "5 17 * * 1-5"; // 5:05 PM ET
 
 function main(): void {
   console.log("[automation] Meridian automation service starting...");
@@ -38,7 +37,7 @@ function main(): void {
       }
     },
     {
-      timezone: "UTC",
+      timezone: "America/New_York",
     }
   );
 
@@ -52,7 +51,7 @@ function main(): void {
       }
     },
     {
-      timezone: "UTC",
+      timezone: "America/New_York",
     }
   );
 }

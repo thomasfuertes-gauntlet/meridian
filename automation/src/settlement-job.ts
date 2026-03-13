@@ -7,7 +7,7 @@
  * 4. Retries on oracle confidence failures for up to 15 minutes
  * 5. Unpauses after all settlements complete
  *
- * Intended to run at ~4:05 PM ET on weekdays via cron.
+ * Intended to run at ~5:05 PM ET on weekdays via cron (1hr admin delay after 4:00 PM close).
  */
 
 import * as anchor from "@coral-xyz/anchor";

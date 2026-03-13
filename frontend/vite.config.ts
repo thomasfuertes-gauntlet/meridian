@@ -5,6 +5,8 @@ import * as fs from 'fs'
 
 const ACTIVE_MARKET_FILE = '/tmp/meridian-active-market.txt'
 
+const READ_API_TARGET = process.env.VITE_READ_API_URL || 'http://localhost:8080'
+
 export default defineConfig({
   plugins: [
     react(),
@@ -24,6 +26,13 @@ export default defineConfig({
       },
     },
   ],
+  server: {
+    proxy: {
+      '/api/markets': READ_API_TARGET,
+      '/api/activity': READ_API_TARGET,
+      '/api/health': READ_API_TARGET,
+    },
+  },
   define: {
     'process.env': {},
   },

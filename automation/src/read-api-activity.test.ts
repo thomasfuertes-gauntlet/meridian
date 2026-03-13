@@ -3,6 +3,7 @@
  * Tests ticker validation, cache key generation, and limit clamping
  * without requiring an RPC connection.
  *
+ * Routes are now under /api/* prefix (e.g., /api/activity?limit=12&ticker=NVDA).
  * Run with: npx tsx --test automation/src/read-api-activity.test.ts
  */
 

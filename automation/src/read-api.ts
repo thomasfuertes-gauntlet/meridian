@@ -2,7 +2,8 @@ import "dotenv/config";
 
 import { BorshInstructionCoder, AnchorProvider, type Idl, Program } from "@coral-xyz/anchor";
 import { createServer } from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync, statSync, createReadStream } from "node:fs";
+import { join, extname } from "node:path";
 import { PublicKey, Connection, type ParsedInstruction, type ParsedTransactionWithMeta, type PartiallyDecodedInstruction } from "@solana/web3.js";
 import bs58 from "bs58";
 
@@ -645,16 +646,16 @@ async function cached<T>(state: CachedState<T>, ttlMs: number, builder: () => Pr
 }
 
 async function handle(url: URL) {
-  if (url.pathname === "/health") {
+  if (url.pathname === "/api/health") {
     return json({ ok: true, asOf: Date.now(), rpcUrl: RPC_URL });
   }
 
-  if (url.pathname === "/markets") {
+  if (url.pathname === "/api/markets") {
     const payload = await cached(marketState, MARKET_TTL_MS, buildMarketUniverse);
     return json(payload);
   }
 
-  if (url.pathname === "/activity") {
+  if (url.pathname === "/api/activity") {
     const rawLimit = Number(url.searchParams.get("limit") || "12");
     const limit = Math.max(1, Math.min(MAX_ACTIVITY_LIMIT, Number.isFinite(rawLimit) ? rawLimit : 12));
     const tickerParam = url.searchParams.get("ticker")?.toUpperCase();
@@ -667,7 +668,44 @@ async function handle(url: URL) {
     return json(payload);
   }
 
-  return json({ error: "Not found" }, 404);
+  return null; // not an API route
+}
+
+const MIME_TYPES: Record<string, string> = {
+  ".html": "text/html",
+  ".js": "application/javascript",
+  ".css": "text/css",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".woff2": "font/woff2",
+  ".woff": "font/woff",
+};
+
+const STATIC_DIR = join(new URL(".", import.meta.url).pathname, "../../frontend/dist");
+const HAS_STATIC = existsSync(join(STATIC_DIR, "index.html"));
+
+function serveStatic(pathname: string, res: import("node:http").ServerResponse): boolean {
+  if (!HAS_STATIC) return false;
+  let filePath = join(STATIC_DIR, pathname);
+  // SPA fallback: non-file paths serve index.html
+  if (!extname(filePath) || !existsSync(filePath)) {
+    filePath = join(STATIC_DIR, "index.html");
+  }
+  try {
+    const stat = statSync(filePath);
+    const ext = extname(filePath);
+    res.writeHead(200, {
+      "content-type": MIME_TYPES[ext] || "application/octet-stream",
+      "content-length": stat.size,
+      "cache-control": ext === ".html" ? "no-cache" : "public, max-age=31536000, immutable",
+    });
+    createReadStream(filePath).pipe(res);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 createServer(async (req, res) => {
@@ -693,9 +731,18 @@ createServer(async (req, res) => {
   }
 
   try {
-    const out = await handle(new URL(req.url, `http://${req.headers.host || "localhost"}`));
-    res.writeHead(out.statusCode, out.headers);
-    res.end(out.body);
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const out = await handle(url);
+    if (out) {
+      res.writeHead(out.statusCode, out.headers);
+      res.end(out.body);
+      return;
+    }
+    // Not an API route - try static files
+    if (serveStatic(url.pathname, res)) return;
+    const notFound = json({ error: "Not found" }, 404);
+    res.writeHead(notFound.statusCode, notFound.headers);
+    res.end(notFound.body);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[read-api] request failed:", error);
@@ -706,5 +753,6 @@ createServer(async (req, res) => {
 }).listen(PORT, "0.0.0.0", () => {
   console.log(`[read-api] listening on 0.0.0.0:${PORT}`);
   console.log(`[read-api] RPC: ${RPC_URL}`);
+  console.log(`[read-api] static: ${HAS_STATIC ? STATIC_DIR : "disabled (no frontend/dist)"}`);
   console.log(`[read-api] global RPC queue gap: ${RPC_GAP_MS}ms`);
 });

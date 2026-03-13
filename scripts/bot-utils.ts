@@ -90,10 +90,44 @@ export function getBotTickerFilter(): string {
   return ticker || "NVDA";
 }
 
-/** Discover all active (pending) markets and derive their PDAs. */
+const READ_API_BASE = process.env.READ_API_URL || "http://localhost:8080";
+
+function marketRecordToCtx(m: { address: string; ticker: string; strikePrice: number; closeTime: number }, pid: PublicKey): MarketCtx {
+  const pk = new PublicKey(m.address);
+  return {
+    pubkey: pk,
+    ticker: m.ticker,
+    strikePrice: m.strikePrice,
+    closeTime: m.closeTime,
+    yesMint: PublicKey.findProgramAddressSync([Buffer.from("yes_mint"), pk.toBuffer()], pid)[0],
+    noMint: PublicKey.findProgramAddressSync([Buffer.from("no_mint"), pk.toBuffer()], pid)[0],
+    vault: PublicKey.findProgramAddressSync([Buffer.from("vault"), pk.toBuffer()], pid)[0],
+    orderBook: PublicKey.findProgramAddressSync([Buffer.from("orderbook"), pk.toBuffer()], pid)[0],
+    obUsdcVault: PublicKey.findProgramAddressSync([Buffer.from("ob_usdc_vault"), pk.toBuffer()], pid)[0],
+    obYesVault: PublicKey.findProgramAddressSync([Buffer.from("ob_yes_vault"), pk.toBuffer()], pid)[0],
+  };
+}
+
+/** Discover all active (pending) markets - tries read-api first, falls back to direct RPC. */
 export async function discoverMarkets(program: Program<Meridian>): Promise<MarketCtx[]> {
   const pid = program.programId;
   const demoTicker = getBotTickerFilter();
+
+  // Try read-api first (reuses cached data, saves an RPC call)
+  try {
+    const res = await fetch(`${READ_API_BASE}/api/markets`);
+    if (res.ok) {
+      const data = await res.json() as { marketsByTicker: Record<string, Array<{ address: string; ticker: string; strikePrice: number; closeTime: number; status: string; outcome: string }>> };
+      const all = Object.values(data.marketsByTicker).flat();
+      return all
+        .filter((m) => m.outcome === "pending" && m.status === "created")
+        .filter((m) => !demoTicker || m.ticker.toUpperCase() === demoTicker)
+        .map((m) => marketRecordToCtx(m, pid));
+    }
+  } catch {
+    // read-api not available, fall back to direct RPC
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allMarkets = await (program.account as any).strikeMarket.all();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -103,21 +137,7 @@ export async function discoverMarkets(program: Program<Meridian>): Promise<Marke
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .filter((m: any) => !demoTicker || (m.account.ticker as string).toUpperCase() === demoTicker)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((m: any) => {
-      const pk: PublicKey = m.publicKey;
-      return {
-        pubkey: pk,
-        ticker: m.account.ticker as string,
-        strikePrice: m.account.strikePrice.toNumber(),
-        closeTime: m.account.closeTime.toNumber(),
-        yesMint: PublicKey.findProgramAddressSync([Buffer.from("yes_mint"), pk.toBuffer()], pid)[0],
-        noMint: PublicKey.findProgramAddressSync([Buffer.from("no_mint"), pk.toBuffer()], pid)[0],
-        vault: PublicKey.findProgramAddressSync([Buffer.from("vault"), pk.toBuffer()], pid)[0],
-        orderBook: PublicKey.findProgramAddressSync([Buffer.from("orderbook"), pk.toBuffer()], pid)[0],
-        obUsdcVault: PublicKey.findProgramAddressSync([Buffer.from("ob_usdc_vault"), pk.toBuffer()], pid)[0],
-        obYesVault: PublicKey.findProgramAddressSync([Buffer.from("ob_yes_vault"), pk.toBuffer()], pid)[0],
-      };
-    });
+    .map((m: any) => marketRecordToCtx({ address: m.publicKey.toBase58(), ticker: m.account.ticker, strikePrice: m.account.strikePrice.toNumber(), closeTime: m.account.closeTime.toNumber() }, pid));
 }
 
 // --- Config loading ---

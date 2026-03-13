@@ -14,7 +14,6 @@ import {
   ACTIVITY_POLL_MS,
   MAG7,
   PROGRAM_ID,
-  READ_API_URL,
   USDC_PER_PAIR,
   type Ticker,
 } from "./constants";
@@ -241,20 +240,18 @@ export async function fetchActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: T
   if (inflight) return inflight;
 
   const request = (async () => {
-  if (READ_API_URL) {
-    try {
-      const params = new URLSearchParams({ limit: String(limit) });
-      if (filterTicker) params.set("ticker", filterTicker);
-      const response = await fetch(`${READ_API_URL}/activity?${params}`);
-      if (!response.ok) {
-        throw new Error(`Read API returned ${response.status} for /activity`);
-      }
-      const next = await response.json() as ActivityRecord[];
-      activityCache.set(cacheKey, { records: next, at: Date.now() });
-      return next;
-    } catch (error) {
-      console.warn("Read API /activity failed, falling back to direct RPC:", error);
+  try {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (filterTicker) params.set("ticker", filterTicker);
+    const response = await fetch(`/api/activity?${params}`);
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status} for /api/activity`);
     }
+    const next = await response.json() as ActivityRecord[];
+    activityCache.set(cacheKey, { records: next, at: Date.now() });
+    return next;
+  } catch (error) {
+    console.warn("/api/activity failed, falling back to direct RPC:", error);
   }
 
   const program = getReadOnlyProgram();

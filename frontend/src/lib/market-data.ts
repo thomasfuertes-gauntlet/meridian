@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { connection, getReadOnlyProgram } from "./anchor";
-import { MAG7, MARKET_POLL_MS, PROGRAM_ID, READ_API_URL, USDC_PER_PAIR, type Ticker } from "./constants";
+import { MAG7, MARKET_POLL_MS, PROGRAM_ID, USDC_PER_PAIR, type Ticker } from "./constants";
 import { parseOrderBook, type ParsedOrderBook } from "./orderbook";
 import { fetchPrices } from "./pyth";
 
@@ -166,7 +166,7 @@ function deserializeOrderBook(book: {
 }
 
 async function fetchRemoteMarketUniverse(): Promise<MarketUniverse> {
-  const response = await fetch(`${READ_API_URL}/markets`);
+  const response = await fetch("/api/markets");
   if (!response.ok) {
     throw new Error(`Read API returned ${response.status} for /markets`);
   }
@@ -212,12 +212,10 @@ export async function fetchMarketUniverse(): Promise<MarketUniverse> {
   if (marketUniverseInflight) return marketUniverseInflight;
 
   marketUniverseInflight = (async () => {
-  if (READ_API_URL) {
-    try {
-      return await fetchRemoteMarketUniverse();
-    } catch (error) {
-      console.warn("Read API /markets failed, falling back to direct RPC:", error);
-    }
+  try {
+    return await fetchRemoteMarketUniverse();
+  } catch (error) {
+    console.warn("/api/markets failed, falling back to direct RPC:", error);
   }
 
   const program = getReadOnlyProgram();

@@ -50,6 +50,7 @@ export function TradePanel({
   const [price, setPrice] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [balanceMap, setBalanceMap] = useState<Map<string, number>>(new Map());
+  const [balanceTick, setBalanceTick] = useState(0);
 
   // Fetch user token balances for position constraint checking
   useEffect(() => {
@@ -68,7 +69,7 @@ export function TradePanel({
       setBalanceMap(map);
     }
     loadBalances();
-  }, [wallet, connection, market]);
+  }, [wallet, connection, market, balanceTick]);
 
   const conflict = wallet
     ? getPositionConflict(balanceMap, yesMint, noMint, action)
@@ -124,6 +125,7 @@ export function TradePanel({
       await connection.confirmTransaction(sig, "confirmed");
 
       setStatus(`Confirmed: ${sig.slice(0, 8)}...`);
+      setBalanceTick((t) => t + 1);
     } catch (err: unknown) {
       console.error("Trade failed:", err);
       const msg = err instanceof Error ? err.message : String(err);

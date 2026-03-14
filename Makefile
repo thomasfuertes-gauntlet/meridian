@@ -29,6 +29,8 @@ LOCAL_VALIDATOR_LOG ?= $(LOCAL_STATE_DIR)/validator.log
 LOCAL_VALIDATOR_PID ?= $(LOCAL_STATE_DIR)/validator.pid
 LOCAL_BOT_LOG ?= $(LOCAL_STATE_DIR)/bots.log
 LOCAL_VALIDATOR_BOOT_WAIT ?= 30
+# KEY-DECISION 2026-03-13: use 'node --import tsx' not the 'tsx' CLI.
+# The tsx CLI opens an IPC pipe that hits EPERM in sandboxed/non-interactive shells.
 TSX ?= node --import tsx
 
 DEVNET_URL ?= $(DEVNET_RPC_URL)

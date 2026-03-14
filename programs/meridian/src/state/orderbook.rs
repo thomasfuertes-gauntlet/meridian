@@ -18,7 +18,7 @@ pub struct Order {
     pub quantity: u64,     // 8, offset 40
     pub timestamp: i64,    // 8, offset 48
     pub order_id: u64,     // 8, offset 56
-    pub is_active: u8,     // 1, offset 64
+    pub is_active: u8,     // 1, offset 64  (u8 not bool: Pod/bytemuck requires Pod-safe types for #[zero_copy])
     pub _padding: [u8; 7], // 7, offset 65 -> total 72
 }
 

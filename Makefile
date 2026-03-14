@@ -1,5 +1,5 @@
 .PHONY: \
-	build wallets \
+	build wallets bootstrap-fresh \
 	local local-full local-validator local-validator-stop local-validator-reset \
 	local-rpc-check local-bootstrap local-validator-live \
 	local-deploy local-setup local-bots local-live local-strategy local-ui-ready local-ui \
@@ -16,9 +16,10 @@ export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.c
 
 -include config/devnet.env
 
-ADMIN_WALLET := .wallets/admin.json
-BOT_A_WALLET := .wallets/bot-a.json
-BOT_B_WALLET := .wallets/bot-b.json
+ADMIN_WALLET ?= .wallets/admin.json
+BOT_A_WALLET ?= .wallets/bot-a.json
+BOT_B_WALLET ?= .wallets/bot-b.json
+PROGRAM_KEYPAIR ?= target/deploy/meridian-keypair.json
 APP_IDL_PATH := frontend/src/idl/meridian.json
 
 LOCAL_STATE_DIR ?= .localnet
@@ -73,6 +74,27 @@ endef
 
 wallets:
 	@$(TSX) scripts/dev-wallets.ts
+
+bootstrap-fresh:
+	@echo "=== Meridian Fresh Bootstrap ==="
+	@echo "Generating fresh keypairs..."
+	WALLET_MODE=generate $(TSX) scripts/dev-wallets.ts
+	@echo "Patching program ID..."
+	$(TSX) scripts/patch-program-id.ts
+	@echo "Building..."
+	@$(MAKE) build
+	@echo "Starting local validator..."
+	@$(MAKE) local-validator
+	@echo "Deploying..."
+	anchor deploy --provider.cluster localnet --provider.wallet "$(ADMIN_WALLET)" --no-idl
+	@echo "Running setup..."
+	OFFLINE=1 ANCHOR_PROVIDER_URL="$(LOCAL_RPC_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" $(TSX) scripts/setup-local.ts
+	@echo "Seeding order books..."
+	OFFLINE=1 ANCHOR_PROVIDER_URL="$(LOCAL_RPC_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" $(TSX) scripts/seed-bots.ts
+	@echo ""
+	@echo "=== Bootstrap Complete ==="
+	@echo "Program ID: $$($(TSX) -e 'import{Keypair}from\"@solana/web3.js\";import*as fs from\"fs\";const kp=Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fs.readFileSync(\"$(PROGRAM_KEYPAIR)\",\"utf-8\"))));console.log(kp.publicKey.toString())')"
+	@echo "Admin: $$(solana-keygen pubkey $(ADMIN_WALLET))"
 
 build:
 	anchor build

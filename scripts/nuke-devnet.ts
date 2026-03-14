@@ -11,7 +11,8 @@
  *
  * Flags:
  *   --yes, -y       Skip interactive confirmation prompt
- *   --hard          Also close the program account after draining (recovers program rent)
+ *   --hard          PERMANENTLY close the program account (recovers rent but program ID
+ *                   can NEVER be redeployed). Only use for final teardown, not iteration.
  *   --skip-settle   Skip step 1 (settle markets) - use when markets already settled or pre-CLOB
  *   --skip-close    Skip step 2 (close markets) - use when only draining wallets
  */
@@ -59,6 +60,7 @@ async function main() {
   const HARD_MODE = args.includes("--hard");
   const SKIP_SETTLE = args.includes("--skip-settle");
   const SKIP_CLOSE = args.includes("--skip-close");
+  let HARD_MODE_SKIPPED = false;
   const totalSteps = HARD_MODE ? 5 : 4;
 
   // Step 1: Refuse localhost (check before provider init to fail fast)
@@ -390,10 +392,19 @@ async function main() {
     );
   }
 
-  // Step 8 (--hard only): Close program account
+  // Step 8 (--hard only): Close program account - PERMANENT, cannot redeploy to same ID
   if (HARD_MODE) {
-    console.log(`\n[5/${totalSteps}] Closing program...`);
-    try {
+    console.log(`\n[5/${totalSteps}] Closing program (PERMANENT - cannot redeploy to this ID)...`);
+    if (!SKIP_CONFIRM) {
+      const yes = await confirm(
+        `\n  WARNING: This permanently destroys program ID ${program.programId.toString()}.\n  You will NEVER be able to deploy to this address again.\n  Are you sure? [y/N] `
+      );
+      if (!yes) {
+        console.log("  Skipped program close.");
+        HARD_MODE_SKIPPED = true;
+      }
+    }
+    if (!HARD_MODE_SKIPPED) try {
       const { execFileSync } = await import("child_process");
       const programId = program.programId.toString();
       const keypairPath = process.env.ANCHOR_WALLET || ".wallets/admin.json";

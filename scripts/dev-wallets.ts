@@ -15,8 +15,10 @@ import { Keypair } from "@solana/web3.js";
 import * as fs from "fs";
 import * as path from "path";
 
-const WALLET_NAMES = ["admin", "bot-a", "bot-b", "trader-1", "trader-2", "trader-3", "trader-4", "trader-5"] as const;
-export type WalletName = (typeof WALLET_NAMES)[number];
+const CORE_WALLETS = ["admin", "bot-a", "bot-b"] as const;
+const TRADER_WALLETS = Array.from({ length: 20 }, (_, i) => `trader-${i + 1}`) as string[];
+const WALLET_NAMES = [...CORE_WALLETS, ...TRADER_WALLETS] as const;
+export type WalletName = (typeof CORE_WALLETS)[number] | `trader-${number}`;
 
 const WALLETS_DIR = path.join(import.meta.dirname, "../.wallets");
 const PROGRAM_KEYPAIR_PATH = process.env.PROGRAM_KEYPAIR_PATH

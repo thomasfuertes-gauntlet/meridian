@@ -22,8 +22,7 @@ import {
 import { getDevWallet } from "./dev-wallets";
 import { fairValue, computeLevels, fetchStockPrices } from "./fair-value";
 import { getBotTickerFilter } from "./bot-utils";
-
-const USDC_PER_PAIR = 1_000_000;
+import { USDC_PER_PAIR } from "./constants";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {

@@ -27,38 +27,11 @@ import {
 import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
 import { calculateStrikes } from "../automation/src/strikes.js";
-
-const MAG7_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"];
+import { MAG7_TICKERS, USDC_DECIMALS, USDC_PER_PAIR } from "./constants";
+import { accountExists, withRetry } from "./market-ops";
 
 const DEVNET_DELAY_MS = 1500; // throttle to stay under devnet rate limits
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Retry an async fn with exponential backoff (handles 429s and transient failures) */
-async function withRetry<T>(fn: () => Promise<T>, label: string, retries = 3): Promise<T> {
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (i === retries - 1) throw err;
-      const delay = DEVNET_DELAY_MS * (i + 1);
-      console.log(`    Retry ${i + 1}/${retries} for ${label} (${delay}ms): ${msg.slice(0, 80)}`);
-      await sleep(delay);
-    }
-  }
-  throw new Error("unreachable");
-}
-
-const USDC_DECIMALS = 6;
-const USDC_PER_PAIR = 1_000_000;
-
-async function accountExists(
-  connection: anchor.web3.Connection,
-  pubkey: PublicKey
-): Promise<boolean> {
-  const info = await connection.getAccountInfo(pubkey);
-  return info !== null;
-}
 
 /** Request airdrop with retry (devnet rate-limits to 2 SOL/request) */
 async function airdropWithRetry(

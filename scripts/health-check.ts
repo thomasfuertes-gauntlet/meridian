@@ -14,8 +14,7 @@ import { getAssociatedTokenAddressSync, getAccount } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import * as fs from "fs";
 import * as path from "path";
-
-const USDC_DECIMALS = 6;
+import { USDC_DECIMALS } from "./constants";
 const WARN_SOL = 0.5;
 const CRIT_SOL = 0.1;
 const WARN_USDC = 500;

@@ -24,11 +24,7 @@ import {
 import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
 import { calculateStrikes } from "../automation/src/strikes.js";
-
-const MAG7_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"];
-
-const USDC_DECIMALS = 6;
-const USDC_PER_PAIR = 1_000_000;
+import { MAG7_TICKERS, USDC_DECIMALS, USDC_PER_PAIR } from "./constants";
 // Use a recent past unix timestamp so admin_settle works immediately while
 // still satisfying close_time > date.
 const pastCloseTime = new BN(Math.floor(Date.now() / 1000) - 7200);

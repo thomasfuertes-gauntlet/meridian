@@ -279,7 +279,6 @@ railway-env-check:
 railway-sync: railway-env-check
 	@printf '%s\n' \
 		"ANCHOR_PROVIDER_URL=$(DEVNET_URL)" \
-		"RPC_URL=$(DEVNET_URL)" \
 		"USDC_MINT=$(DEVNET_USDC_MINT)" \
 		"VITE_RPC_URL=$(DEVNET_URL)" \
 		"VITE_USDC_MINT=$(DEVNET_USDC_MINT)" \

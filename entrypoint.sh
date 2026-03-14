@@ -6,6 +6,9 @@ set -euo pipefail
 # Deterministic wallets are pre-generated in Dockerfile (dev-wallets.ts).
 # USDC_MINT and ANCHOR_PROVIDER_URL must be set as Railway env vars.
 #
+# RPC_URL is derived from ANCHOR_PROVIDER_URL so automation scripts don't need a
+# separate Railway variable.
+#
 # Feature flags (set to "false" to disable; any other value or unset = enabled):
 #   ENABLE_AUTOMATION    - automation cron (market setup + settlement)
 #   ENABLE_LIQUIDITY_BOT - live-bots market maker
@@ -24,6 +27,10 @@ if [ -z "${ANCHOR_PROVIDER_URL:-}" ]; then
   echo "ERROR: ANCHOR_PROVIDER_URL env var not set."
   exit 1
 fi
+
+# Automation scripts (morning-job.ts, settlement-job.ts) read RPC_URL.
+# Derive it from ANCHOR_PROVIDER_URL so Railway only needs one variable.
+export RPC_URL="${RPC_URL:-$ANCHOR_PROVIDER_URL}"
 
 echo "Meridian (unified container)"
 echo "  RPC: $ANCHOR_PROVIDER_URL"

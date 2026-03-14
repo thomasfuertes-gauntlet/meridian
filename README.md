@@ -286,8 +286,9 @@ The built-in CLOB is the right demo choice (shows depth of understanding, avoids
 ### Performance & Scalability
 
 - [ ] **Compute unit budgeting** - Profile each instruction's CU consumption. `buy_yes` with 32-order book iteration currently uses ~100k CU; at scale this needs to stay under 200k to leave room for priority fees and Solana's 1.4M CU per-tx limit.
-- [ ] **Transaction pipelining** - Bot infrastructure needs to preflight transactions, manage nonce accounts for guaranteed inclusion, and handle Solana's per-block write-lock contention when multiple takers hit the same order book.
-- [ ] **RPC infrastructure** - Move from shared Helius free tier (10 req/s, 5 WS subs) to dedicated RPC nodes. Production market makers need sub-100ms RPC latency.
+- [x] **RPC credit optimization** - Helius free tier (1M credits/mo) was burning ~248k credits/day. Fixed with three standard Solana bot practices: (a) `getBlockhashCached` with 30s TTL (blockhashes valid ~90s, was fetching per-tx - 54k credits/day wasted), (b) `skipPreflight: true` on all bot txs (simulation reads were 55k credits/day), (c) fire-and-forget `sendRawTransaction` + batch `getSignatureStatuses` instead of per-tx WS confirmation (25k WEBSOCKET_CONNECT credits/day). Provider monkey-patch in live-bots/strategy-bots applies to all `.rpc()` calls without per-site changes. Production would own the full tx lifecycle instead of patching Anchor's provider.
+- [ ] **Transaction pipelining** - Combine sequenced operations (cancel+replace, mint+place) into single atomic transactions. Current fire-and-forget pattern accepts that sequenced ops occasionally fail when the first tx doesn't land - bot retries on next tick. Production needs: nonce accounts for guaranteed inclusion, atomic cancel+replace instructions, and per-block write-lock contention handling when multiple takers hit the same order book.
+- [ ] **RPC infrastructure** - Move from shared Helius free tier (10 req/s, 5 WS subs) to dedicated RPC nodes. Production market makers need sub-100ms RPC latency. Jito bundles for MEV-protected settlement transactions.
 - [ ] **Event indexing** - Replace frontend `onLogs` polling with a dedicated indexer (Helius webhooks, or a custom Geyser plugin) for reliable trade history and analytics.
 
 ### Monitoring & Operations

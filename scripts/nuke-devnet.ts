@@ -409,6 +409,7 @@ async function main() {
           keypairPath,
           "--recipient",
           adminKeypair.publicKey.toString(),
+          "--bypass-warning",
         ],
         { stdio: "inherit", timeout: 30_000 }
       );

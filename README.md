@@ -129,29 +129,27 @@ Meridian runs as a single Railway service `meridian`: one container serves the f
 
 ### Setup
 
-Copy and fill the devnet config:
-
 ```bash
+# 1. Fill in .env (copy from .env.example if first time)
 cp .env.example .env
-```
+# Edit: DEVNET_RPC_URL, DEVNET_USDC_MINT, RAILWAY_SERVICE=meridian
 
-Fill in all vars:
+# 2. Create Railway project + service (one-time)
+railway init                # creates project, links to current dir
+railway add -s meridian     # creates the service
 
-```bash
-DEVNET_RPC_URL=...
-DEVNET_USDC_MINT=...
-RAILWAY_SERVICE=meridian
-VITE_DEV_WALLET=true
-DEMO_TICKER=NVDA
+# 3. Push env vars and deploy
+make railway-sync           # pushes .env vars to Railway service
+make railway-deploy         # builds + deploys container
 ```
 
 `.env` is the single operator config source for devnet deploys and Railway syncs. `RAILWAY_SERVICE` is the Railway service name used by `make railway-sync` to target the right service via the Railway CLI.
 
-### Deploy
+### Redeployment
 
 ```bash
-make railway-sync     # push env vars from devnet.env to Railway service
-make railway-deploy   # deploy the service
+make railway-sync     # if env vars changed
+make railway-deploy   # rebuild + deploy
 ```
 
 Demo bot flow can be concentrated to a single ticker via `DEMO_TICKER`; current recommended demo default is `NVDA`.

@@ -27,7 +27,7 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
-import { calculateStrikes } from "../automation/src/strikes.js";
+import { calculateStrikes } from "./strikes";
 
 const USDC_DECIMALS = 6;
 const USDC_PER_PAIR = 1_000_000;
@@ -81,16 +81,27 @@ async function main() {
   // =========================================================================
   // Step 1: Setup
   // =========================================================================
-  console.log("[1/7] Setup: SOL airdrop, USDC mint, wallet funding, config...");
+  console.log("[1/7] Setup: SOL funding, USDC mint, wallet funding, config...");
   let usdcMint: PublicKey;
 
   try {
-    // Airdrop SOL to admin
-    const sig = await connection.requestAirdrop(
-      adminKeypair.publicKey,
-      10 * LAMPORTS_PER_SOL
-    );
-    await connection.confirmTransaction(sig, "confirmed");
+    // Fund admin with SOL if needed (local validator mints to admin via --mint,
+    // so airdrop is only needed in anchor-test environments with faucet enabled)
+    const adminBalance = await connection.getBalance(adminKeypair.publicKey);
+    if (adminBalance < 10 * LAMPORTS_PER_SOL) {
+      try {
+        const sig = await connection.requestAirdrop(
+          adminKeypair.publicKey,
+          10 * LAMPORTS_PER_SOL
+        );
+        await connection.confirmTransaction(sig, "confirmed");
+      } catch {
+        // Faucet disabled (--faucet-port 0) - admin should already be funded via --mint
+        if (adminBalance < LAMPORTS_PER_SOL) {
+          throw new Error(`Admin has only ${adminBalance / LAMPORTS_PER_SOL} SOL and faucet is unavailable`);
+        }
+      }
+    }
 
     // Create USDC mint
     usdcMint = await createMint(
@@ -207,9 +218,12 @@ async function main() {
   try {
     // Use past close time so admin_settle works immediately.
     // admin_settle requires: now >= close_time + admin_settle_delay_secs (3600).
-    // Setting close_time = now - 7200 means: now >= now - 7200 + 3600 = now - 3600 (true).
+    // On-chain requires: close_time > date.
+    // Setting date = now - 86400 (yesterday), close_time = now - 7200 (2hrs ago):
+    //   close_time > date: (now-7200) > (now-86400) ✓
+    //   admin_settle eligible: now >= (now-7200) + 3600 = now - 3600 ✓
     const nowSecs = Math.floor(Date.now() / 1000);
-    const dateSeed = new BN(nowSecs);
+    const dateSeed = new BN(nowSecs - 86400);
     const closeTime = new BN(nowSecs - 7200);
 
     const stockPrices = await fetchStockPrices();

@@ -275,6 +275,7 @@ The built-in CLOB is the right demo choice (shows depth of understanding, avoids
 - [ ] **Circuit breakers** - The `pause` instruction exists but is admin-triggered. Production needs automated circuit breakers: halt trading if oracle price moves >10% intraday, or if order book spread exceeds threshold.
 - [ ] **Insurance fund** - Collect protocol fees (currently zero) into an insurance vault to cover edge cases where the $1 payout invariant could be stressed by program bugs or oracle failures.
 - [ ] **MEV protection** - Solana validators can reorder transactions. Production needs: priority fee management for time-sensitive settlements, and potentially a fair-ordering mechanism (Jito bundles or a sequenced inbox) to prevent front-running of large taker orders.
+- [ ] **ZKP proof-of-performance ("Brag")** - Previously prototyped (`1754e0d`): Groth16 circuit via snarkjs/circom proving "I won >= N markets" against a Poseidon Merkle tree of settled positions, without revealing wallet address. Removed due to ~300MB dep weight from snarkjs. Revisit with a lighter ZK stack (e.g., SP1, Risc0) or move proof generation server-side to keep the frontend lean.
 
 ### Key Management
 

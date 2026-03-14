@@ -14,7 +14,7 @@ import * as anchor from "@coral-xyz/anchor";
 import BN from "bn.js";
 import { Program } from "@coral-xyz/anchor";
 import { Meridian } from "../target/types/meridian";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, Transaction } from "@solana/web3.js";
 import {
   getAssociatedTokenAddressSync,
   createAssociatedTokenAccountIdempotentInstruction,
@@ -22,7 +22,7 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
-import { MarketCtx, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveMarket, getBotTickerFilter, defaultTxDelay, discoverMarkets, type Order } from "./bot-utils";
+import { MarketCtx, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveMarket, getBotTickerFilter, defaultTxDelay, discoverMarkets, type Order, getBlockhashCached, sendNoConfirm } from "./bot-utils";
 import { loadSharedBooks } from "./ws-cache";
 
 const TICK_MS = 45_000;
@@ -203,6 +203,21 @@ async function main() {
   const program = anchor.workspace.Meridian as Program<Meridian>;
   const connection = provider.connection;
 
+  // KEY-DECISION 2026-03-14: Monkey-patch provider for credit efficiency.
+  // Cached blockhash + skipPreflight + no WS confirm = ~1 credit/tx vs ~3.
+  (provider as any).sendAndConfirm = async (tx: Transaction, signers?: anchor.web3.Signer[]) => {
+    const bh = await getBlockhashCached(connection);
+    tx.recentBlockhash = bh.blockhash;
+    tx.lastValidBlockHeight = bh.lastValidBlockHeight;
+    tx.feePayer = provider.wallet.publicKey;
+    if (signers?.length) tx.partialSign(...signers);
+    tx = await provider.wallet.signTransaction(tx);
+    return connection.sendRawTransaction(tx.serialize(), {
+      skipPreflight: true,
+      maxRetries: 2,
+    });
+  };
+
   const usdcMint = loadUsdcMint();
 
   // Strategy bots use bot-b (frontend dev wallet) so trades appear in Portfolio
@@ -374,7 +389,7 @@ async function main() {
         .instruction();
 
       const tx = new anchor.web3.Transaction().add(mintIx, sellIx);
-      await anchor.web3.sendAndConfirmTransaction(connection, tx, [bot]);
+      await sendNoConfirm(connection, tx, [bot]);
 
       console.log(`  [${stratName}] BUY NO  ${mkt.ticker}>$${mkt.strikeDollars} @ $${((USDC_PER_PAIR - mkt.bestBid) / USDC_PER_PAIR).toFixed(2)} x${signal.qty} (${signal.reason})`);
       return true;

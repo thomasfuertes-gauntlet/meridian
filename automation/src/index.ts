@@ -13,6 +13,7 @@ import "dotenv/config";
 
 import { runMorningJob } from "./morning-job.js";
 import { runSettlementJob } from "./settlement-job.js";
+import { sendAlert } from "./alert.js";
 
 // Schedules use America/New_York timezone so DST is handled automatically.
 const MORNING_SCHEDULE = "0 8 * * 1-5"; // 8:00 AM ET
@@ -34,6 +35,7 @@ function main(): void {
         await runMorningJob();
       } catch (err) {
         console.error("[automation] Morning job failed:", err);
+        await sendAlert("morning-job", `Unhandled exception: ${err}`);
       }
     },
     {
@@ -48,6 +50,7 @@ function main(): void {
         await runSettlementJob();
       } catch (err) {
         console.error("[automation] Settlement job failed:", err);
+        await sendAlert("settlement-job", `Unhandled exception: ${err}`);
       }
     },
     {

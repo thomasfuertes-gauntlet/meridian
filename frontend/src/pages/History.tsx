@@ -23,24 +23,32 @@ function sideTone(side: "yes" | "no" | null): "green" | "red" | "muted" {
   return "muted";
 }
 
-export function Activity() {
+export function History() {
   const wallet = useAnchorWallet();
   const { data, loading, error } = useActivityFeed(ACTIVITY_LIMIT);
   const [tickerFilter, setTickerFilter] = useState<Ticker | "all">("all");
+  const [viewMode, setViewMode] = useState<"mine" | "all">("mine");
   const desks = useMemo(() => getDeskWallets(wallet?.publicKey), [wallet]);
   const [deskFilter, setDeskFilter] = useState<string>("all");
 
-  const selectedDesk = deskFilter === "all"
-    ? null
-    : desks.find((entry) => entry.id === deskFilter) ?? null;
+  const walletKey = wallet?.publicKey.toBase58() ?? null;
+
+  const selectedDesk =
+    viewMode === "all" && deskFilter !== "all"
+      ? (desks.find((entry) => entry.id === deskFilter) ?? null)
+      : null;
 
   const filtered = useMemo(() => {
     return data.filter((item) => {
       if (tickerFilter !== "all" && item.ticker !== tickerFilter) return false;
-      if (selectedDesk && item.user !== selectedDesk.publicKey.toBase58()) return false;
+      if (viewMode === "mine") {
+        if (walletKey && item.user !== walletKey) return false;
+      } else {
+        if (selectedDesk && item.user !== selectedDesk.publicKey.toBase58()) return false;
+      }
       return true;
     });
-  }, [data, selectedDesk, tickerFilter]);
+  }, [data, tickerFilter, viewMode, walletKey, selectedDesk]);
 
   const stats = useMemo(() => {
     return filtered.reduce(
@@ -58,8 +66,8 @@ export function Activity() {
   return (
     <>
       <section>
-        <h1>Activity tape</h1>
-        <p>Confirmed Meridian transactions decoded from on-chain instructions. Filter by ticker for the market tape or switch to any deterministic desk wallet for the account view.</p>
+        <h1>History</h1>
+        <p>Confirmed Meridian transactions decoded from on-chain instructions.</p>
         <dl>
           <dt>Events</dt>
           <dd>{compact.format(stats.total)}</dd>
@@ -70,6 +78,23 @@ export function Activity() {
           <dt>Success</dt>
           <dd>{stats.total === 0 ? "--" : `${Math.round((stats.success / stats.total) * 100)}%`}</dd>
         </dl>
+
+        <nav>
+          <button
+            data-view="mine"
+            data-active={viewMode === "mine" ? "true" : undefined}
+            onClick={() => setViewMode("mine")}
+          >
+            My Trades
+          </button>
+          <button
+            data-view="all"
+            data-active={viewMode === "all" ? "true" : undefined}
+            onClick={() => setViewMode("all")}
+          >
+            All Activity
+          </button>
+        </nav>
 
         <nav>
           <button
@@ -89,28 +114,34 @@ export function Activity() {
           ))}
         </nav>
 
-        <nav>
-          <button
-            data-active={deskFilter === "all" ? "true" : undefined}
-            onClick={() => setDeskFilter("all")}
-          >
-            All desks
-          </button>
-          <DeskSelector
-            desks={desks}
-            selectedDeskId={selectedDesk?.id ?? desks[0]?.id ?? "all"}
-            onChange={setDeskFilter}
-            label="Wallet"
-          />
-        </nav>
+        {viewMode === "all" && (
+          <nav>
+            <button
+              data-active={deskFilter === "all" ? "true" : undefined}
+              onClick={() => setDeskFilter("all")}
+            >
+              All desks
+            </button>
+            <DeskSelector
+              desks={desks}
+              selectedDeskId={selectedDesk?.id ?? desks[0]?.id ?? "all"}
+              onChange={setDeskFilter}
+              label="Wallet"
+            />
+          </nav>
+        )}
       </section>
 
       <section>
         {error && <p><mark data-tone="red">{error}</mark></p>}
 
+        {viewMode === "mine" && !walletKey && (
+          <p><mark data-tone="muted">Connect wallet to see your trade history.</mark></p>
+        )}
+
         {loading && filtered.length === 0 ? (
           <p><mark data-tone="muted">Loading confirmed activity...</mark></p>
-        ) : filtered.length === 0 ? (
+        ) : filtered.length === 0 && (viewMode !== "mine" || walletKey) ? (
           <p><mark data-tone="muted">No activity matched the current filters.</mark></p>
         ) : (
           <table>

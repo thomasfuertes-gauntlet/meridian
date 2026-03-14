@@ -11,10 +11,11 @@ import { IS_LOCAL_RPC, PROGRAM_ID, RPC_MODE_LABEL, RPC_URL } from "./lib/constan
 import { LocalDevWalletAdapter } from "./lib/local-wallet";
 import { MarketDataProvider } from "./lib/ws-market-data";
 import { WalletButton } from "./components/WalletButton";
+import { FaucetButton } from "./components/FaucetButton";
 import { Markets } from "./pages/Markets";
 import { MarketDetail } from "./pages/MarketDetail";
 import { Portfolio } from "./pages/Portfolio";
-import { Activity } from "./pages/Activity";
+import { History } from "./pages/History";
 
 function NavLink({ to, label }: { to: string; label: string }) {
   const { pathname } = useLocation();
@@ -44,13 +45,14 @@ export default function App() {
             <nav>
               <strong>Meridian</strong>
               <NavLink to="/markets" label="Markets" />
-              <NavLink to="/activity" label="Activity" />
+              <NavLink to="/history" label="History" />
               <NavLink to="/portfolio" label="Portfolio" />
             </nav>
             <div>
               <small>{RPC_MODE_LABEL}</small>
               <small>{PROGRAM_ID.toBase58().slice(0, 8)}</small>
               <SettlementCountdown />
+              <FaucetButton />
               <WalletButton />
             </div>
           </header>
@@ -59,7 +61,7 @@ export default function App() {
               <Route path="/" element={<Navigate to="/markets" replace />} />
               <Route path="/markets" element={<Markets />} />
               <Route path="/markets/:ticker" element={<MarketDetail />} />
-              <Route path="/activity" element={<Activity />} />
+              <Route path="/history" element={<History />} />
               <Route path="/portfolio" element={<Portfolio />} />
             </Routes>
           </main>

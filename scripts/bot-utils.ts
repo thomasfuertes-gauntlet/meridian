@@ -4,7 +4,7 @@
  */
 import { Program } from "@coral-xyz/anchor";
 import { Meridian } from "../target/types/meridian";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, Connection, Transaction, Keypair } from "@solana/web3.js";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -154,9 +154,10 @@ export function isRemoteRpc(): boolean {
 }
 
 /**
- * Default TX delay based on RPC target.
- * Remote RPCs (Helius free: 10 req/s) need wider spacing since
- * both live-bots and strategy-bots share the same endpoint.
+ * Default TX delay based on RPC target. Single source of truth for all scripts.
+ * Helius free tier enforces ~1s debounce per transaction. We use 2500ms to leave
+ * headroom when multiple scripts share the same endpoint (live-bots + strategy-bots).
+ * Override with TX_DELAY_MS env var. Local validator needs no delay.
  */
 export function defaultTxDelay(): number {
   return Number(process.env.TX_DELAY_MS ?? (isRemoteRpc() ? 2500 : 0));
@@ -213,6 +214,95 @@ export function getActiveTicker(): string | null {
  * If active market is ticker-only: 80% weight on all markets for that ticker.
  * Falls back to uniform random if no signal or no matching markets.
  */
+// --- RPC credit optimization helpers ---
+// KEY-DECISION 2026-03-14: Helius free tier = 1M credits/mo. Each
+// sendAndConfirmTransaction costs ~3 credits (blockhash + send + confirm).
+// Caching blockhash + fire-and-forget + batch confirm cuts to ~1 credit/tx.
+
+let _cachedBlockhash: { blockhash: string; lastValidBlockHeight: number; fetchedAt: number } | null = null;
+const BLOCKHASH_CACHE_MS = 30_000; // 30s (valid ~60-90s on-chain)
+
+/**
+ * Cached getLatestBlockhash. Reuses for 30s to avoid 1 credit per tx.
+ * Single biggest optimization: 54k credits/day → ~2k.
+ */
+export async function getBlockhashCached(
+  connection: Connection,
+): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
+  if (_cachedBlockhash && Date.now() - _cachedBlockhash.fetchedAt < BLOCKHASH_CACHE_MS) {
+    return _cachedBlockhash;
+  }
+  const bh = await connection.getLatestBlockhash();
+  _cachedBlockhash = { ...bh, fetchedAt: Date.now() };
+  return bh;
+}
+
+/**
+ * Send a signed transaction without simulation or confirmation.
+ * 1 RPC call instead of 3. Callers collect sigs and batch-confirm later.
+ */
+export async function sendNoConfirm(
+  connection: Connection,
+  tx: Transaction,
+  signers: Keypair[],
+  blockhashInfo?: { blockhash: string; lastValidBlockHeight: number },
+): Promise<string> {
+  const bh = blockhashInfo ?? await getBlockhashCached(connection);
+  tx.recentBlockhash = bh.blockhash;
+  tx.lastValidBlockHeight = bh.lastValidBlockHeight;
+  tx.feePayer = signers[0].publicKey;
+  tx.sign(...signers);
+  return connection.sendRawTransaction(tx.serialize(), {
+    skipPreflight: true,
+    maxRetries: 2,
+  });
+}
+
+/**
+ * Batch-confirm an array of signatures. Polls getSignatureStatuses
+ * (up to 256 sigs per call, 1 credit each) until all resolve or timeout.
+ */
+export async function batchConfirm(
+  connection: Connection,
+  sigs: string[],
+  opts: { timeoutMs?: number; pollIntervalMs?: number } = {},
+): Promise<{ confirmed: number; failed: number }> {
+  if (sigs.length === 0) return { confirmed: 0, failed: 0 };
+  const { timeoutMs = 60_000, pollIntervalMs = 3000 } = opts;
+  const startMs = Date.now();
+  const resolved = new Map<number, boolean>(); // index -> success
+
+  while (resolved.size < sigs.length && Date.now() - startMs < timeoutMs) {
+    const unresolved = sigs
+      .map((sig, i) => ({ sig, i }))
+      .filter(({ i }) => !resolved.has(i));
+
+    for (let batch = 0; batch < unresolved.length; batch += 256) {
+      const chunk = unresolved.slice(batch, batch + 256);
+      const statuses = await connection.getSignatureStatuses(
+        chunk.map((c) => c.sig),
+      );
+      for (let j = 0; j < chunk.length; j++) {
+        const status = statuses.value[j];
+        if (!status) continue; // not yet processed
+        resolved.set(chunk[j].i, !status.err);
+      }
+    }
+
+    if (resolved.size < sigs.length) {
+      await sleep(pollIntervalMs);
+    }
+  }
+
+  let confirmed = 0;
+  let failed = 0;
+  for (let i = 0; i < sigs.length; i++) {
+    if (resolved.get(i)) confirmed++;
+    else failed++;
+  }
+  return { confirmed, failed };
+}
+
 export function weightedMarketSelect(markets: MarketCtx[], count: number): MarketCtx[] {
   const activeMarket = getActiveMarket();
   if (!activeMarket || count >= markets.length) {

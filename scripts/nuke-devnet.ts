@@ -3,6 +3,9 @@
  * Recovers ~70% of rent (StrikeMarket + OrderBook accounts). Mints and vault
  * PDAs are orphaned (authority was market PDA, now closed).
  *
+ * Uses fire-and-forget pattern (sendNoConfirm + batchConfirm) to minimize
+ * Helius credit usage: ~1 credit/tx instead of ~3.
+ *
  * Usage:
  *   ANCHOR_PROVIDER_URL=https://... ANCHOR_WALLET=.wallets/admin.json npx tsx scripts/nuke-devnet.ts
  *
@@ -12,6 +15,7 @@
  */
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
+import BN from "bn.js";
 import { Meridian } from "../target/types/meridian";
 import {
   PublicKey,
@@ -21,20 +25,17 @@ import {
 } from "@solana/web3.js";
 import { getDevWallet, type WalletName } from "./dev-wallets";
 import { USDC_PER_PAIR } from "./constants";
-import { sleep } from "./bot-utils";
+import { sleep, defaultTxDelay, sendNoConfirm, batchConfirm } from "./bot-utils";
 import {
   TOKEN_PROGRAM_ID,
-  closeAccount,
   getAssociatedTokenAddressSync,
   createAssociatedTokenAccountIdempotentInstruction,
-  transfer,
+  createTransferInstruction,
+  createCloseAccountInstruction,
 } from "@solana/spl-token";
 import * as readline from "readline";
-import { adminSettleMarket, closeMarketAccount } from "./market-ops";
 
-const TX_DELAY = 1500; // devnet rate-limit spacing
-const RETRY_DELAY_MS = 10_000;
-const MAX_SETTLE_WAIT_MS = 90 * 60 * 1000;
+const SEND_DELAY = defaultTxDelay();
 
 async function confirm(question: string): Promise<boolean> {
   const rl = readline.createInterface({
@@ -99,7 +100,6 @@ async function main() {
   for (const m of allMarkets) {
     if ("pending" in m.account.outcome) pendingCount++;
     else if ("settled" in m.account.status) settledCount++;
-    // Frozen markets have pending outcome but frozen status
     if ("frozen" in m.account.status) frozenCount++;
   }
 
@@ -142,7 +142,7 @@ async function main() {
     }
   }
 
-  // Step 4: Force-settle all pending/frozen markets via admin_settle
+  // Step 4: Fire-and-forget settle all pending/frozen markets
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const unsettled = allMarkets.filter(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -151,16 +151,15 @@ async function main() {
 
   if (unsettled.length > 0) {
     console.log(
-      `\n[1/${totalSteps}] Settling ${unsettled.length} unsettled markets...`
+      `\n[1/${totalSteps}] Settling ${unsettled.length} unsettled markets (fire-and-forget)...`
     );
-    let settledOk = 0;
-    let settleErrors = 0;
+    const settleSigs: string[] = [];
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const m of unsettled) {
+    for (let i = 0; i < unsettled.length; i++) {
+      const m = unsettled[i];
       const ticker = m.account.ticker as string;
       const strikeDollars = m.account.strikePrice.toNumber() / USDC_PER_PAIR;
-      // Synthetic price: $1 above strike -> YesWins
       const syntheticPrice = m.account.strikePrice.toNumber() + 1_000_000;
 
       const [orderBookPda] = PublicKey.findProgramAddressSync(
@@ -168,73 +167,45 @@ async function main() {
         program.programId
       );
 
-      const startMs = Date.now();
-      let success = false;
+      try {
+        const ix = await program.methods
+          .adminSettle(new BN(syntheticPrice))
+          .accountsPartial({ admin: adminKeypair.publicKey, market: m.publicKey })
+          .remainingAccounts([{ pubkey: orderBookPda, isSigner: false, isWritable: true }])
+          .instruction();
 
-      while (Date.now() - startMs < MAX_SETTLE_WAIT_MS) {
-        const result = await adminSettleMarket(
-          program,
-          adminKeypair,
-          m.publicKey,
-          orderBookPda,
-          syntheticPrice,
-          [adminKeypair]
+        const tx = new Transaction().add(ix);
+        const sig = await sendNoConfirm(connection, tx, [adminKeypair]);
+        settleSigs.push(sig);
+        process.stdout.write(
+          `\r  Sent ${i + 1}/${unsettled.length}: ${ticker} > $${strikeDollars}    `
         );
-
-        if (result === "settled") {
-          console.log(`  Settled: ${ticker} > $${strikeDollars}`);
-          settledOk++;
-          success = true;
-          await sleep(TX_DELAY);
-          break;
-        } else if (result === "already_settled") {
-          console.log(`  Already settled: ${ticker} > $${strikeDollars}`);
-          settledOk++;
-          success = true;
-          break;
-        } else if (result === "too_early") {
-          console.log(
-            `  ${ticker} > $${strikeDollars}: admin_settle_delay not met, retrying in ${RETRY_DELAY_MS / 1000}s...`
-          );
-          await sleep(RETRY_DELAY_MS);
-          continue;
-        } else {
-          console.warn(
-            `  Warning: settle failed for ${ticker} > $${strikeDollars}`
-          );
-          settleErrors++;
-          break;
-        }
-      }
-
-      if (!success && settleErrors === 0) {
-        console.warn(
-          `  Warning: timed out settling ${ticker} > $${strikeDollars}`
+      } catch {
+        process.stdout.write(
+          `\r  Skip ${i + 1}/${unsettled.length}: ${ticker} > $${strikeDollars} (build failed)    `
         );
-        settleErrors++;
       }
+      await sleep(SEND_DELAY);
     }
+
+    console.log(`\n  Confirming ${settleSigs.length} settle txs...`);
+    const settleResult = await batchConfirm(connection, settleSigs);
     console.log(
-      `  Settle complete: ${settledOk} ok, ${settleErrors} errors`
+      `  Settle: ${settleResult.confirmed} confirmed, ${settleResult.failed} failed`
     );
   } else {
     console.log(`\n[1/${totalSteps}] No unsettled markets.`);
   }
 
-  // Step 5: Close all settled markets (force=true)
-  console.log(`\n[2/${totalSteps}] Closing settled markets...`);
-  // Re-fetch to include newly settled ones
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const refreshed = await (program.account as any).strikeMarket.all();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const toClose = refreshed.filter(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (m: any) => "settled" in m.account.status
-  );
+  // Step 5: Fire-and-forget close all markets
+  // Skip re-fetch - just try to close everything from original list.
+  // Unsettled markets that failed to settle will fail to close (fine).
+  console.log(`\n[2/${totalSteps}] Closing ${allMarkets.length} markets (fire-and-forget)...`);
+  const closeSigs: string[] = [];
 
-  let closedCount = 0;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const m of toClose) {
+  for (let i = 0; i < allMarkets.length; i++) {
+    const m = allMarkets[i];
     const ticker = m.account.ticker as string;
     const strikeDollars = m.account.strikePrice.toNumber() / USDC_PER_PAIR;
 
@@ -243,30 +214,35 @@ async function main() {
       program.programId
     );
 
-    const ok = await closeMarketAccount(
-      program,
-      adminKeypair,
-      m.publicKey,
-      orderBookPda,
-      true, // force=true: skip unclaimed credits check
-      [adminKeypair]
-    );
-    if (ok) {
-      console.log(`  Closed: ${ticker} > $${strikeDollars}`);
-      closedCount++;
-      await sleep(TX_DELAY);
-    } else {
-      console.warn(
-        `  Warning: close failed for ${ticker} > $${strikeDollars}`
+    try {
+      const ix = await program.methods
+        .closeMarket(true) // force=true
+        .accountsPartial({ admin: adminKeypair.publicKey, market: m.publicKey, orderBook: orderBookPda })
+        .instruction();
+
+      const tx = new Transaction().add(ix);
+      const sig = await sendNoConfirm(connection, tx, [adminKeypair]);
+      closeSigs.push(sig);
+      process.stdout.write(
+        `\r  Sent ${i + 1}/${allMarkets.length}: ${ticker} > $${strikeDollars}    `
+      );
+    } catch {
+      process.stdout.write(
+        `\r  Skip ${i + 1}/${allMarkets.length}: ${ticker} > $${strikeDollars} (build failed)    `
       );
     }
+    await sleep(SEND_DELAY);
   }
-  console.log(`  Closed ${closedCount} markets.`);
 
-  // Step 6: Close wallet token accounts
+  console.log(`\n  Confirming ${closeSigs.length} close txs...`);
+  const closeResult = await batchConfirm(connection, closeSigs);
+  console.log(
+    `  Close: ${closeResult.confirmed} confirmed, ${closeResult.failed} failed`
+  );
+
+  // Step 6: Close wallet token accounts (fire-and-forget with batched ops)
   console.log(`\n[3/${totalSteps}] Closing wallet token accounts...`);
-
-  let tokenAccountsClosed = 0;
+  const tokenSigs: string[] = [];
 
   for (const bot of ALL_WALLETS) {
     try {
@@ -275,9 +251,7 @@ async function main() {
         { programId: TOKEN_PROGRAM_ID }
       );
 
-      if (tokenAccounts.value.length === 0) {
-        continue;
-      }
+      if (tokenAccounts.value.length === 0) continue;
 
       console.log(
         `  ${bot.name}: ${tokenAccounts.value.length} token accounts`
@@ -285,62 +259,48 @@ async function main() {
 
       for (const ta of tokenAccounts.value) {
         try {
-          // Parse balance from account data (offset 64, 8 bytes LE)
           const balance = ta.account.data.readBigUInt64LE(64);
+          const mint = new PublicKey(ta.account.data.subarray(0, 32));
+          const tx = new Transaction();
 
           if (balance > 0n) {
-            // Try to transfer tokens to admin's ATA before closing
-            // Parse mint from token account data (first 32 bytes)
-            const mint = new PublicKey(ta.account.data.subarray(0, 32));
-            try {
-              const adminAta = getAssociatedTokenAddressSync(
-                mint,
-                adminKeypair.publicKey
-              );
-              // Create admin ATA if needed
-              const createAtaIx =
-                createAssociatedTokenAccountIdempotentInstruction(
-                  adminKeypair.publicKey,
-                  adminAta,
-                  adminKeypair.publicKey,
-                  mint
-                );
-              const tx = new Transaction().add(createAtaIx);
-              await anchor.web3.sendAndConfirmTransaction(connection, tx, [
-                adminKeypair,
-              ]);
-              await sleep(TX_DELAY);
-
-              // Transfer tokens
-              await transfer(
-                connection,
-                adminKeypair, // payer
-                ta.pubkey, // source
-                adminAta, // destination
-                bot.kp, // owner/authority
+            // Combine: create admin ATA + transfer + close in one tx
+            const adminAta = getAssociatedTokenAddressSync(
+              mint,
+              adminKeypair.publicKey
+            );
+            tx.add(
+              createAssociatedTokenAccountIdempotentInstruction(
+                adminKeypair.publicKey,
+                adminAta,
+                adminKeypair.publicKey,
+                mint
+              )
+            );
+            tx.add(
+              createTransferInstruction(
+                ta.pubkey,       // source
+                adminAta,        // destination
+                bot.kp.publicKey, // authority
                 balance
-              );
-              await sleep(TX_DELAY);
-            } catch {
-              // Token transfer may fail (e.g., mint closed). That's fine.
-            }
+              )
+            );
           }
 
-          // Close the token account (rent goes to bot wallet owner)
-          await closeAccount(
-            connection,
-            adminKeypair, // payer
-            ta.pubkey, // account to close
-            bot.kp.publicKey, // destination for rent
-            bot.kp // owner
+          // Close the token account (rent → bot wallet)
+          tx.add(
+            createCloseAccountInstruction(
+              ta.pubkey,         // account to close
+              bot.kp.publicKey,  // destination for rent
+              bot.kp.publicKey   // authority
+            )
           );
-          tokenAccountsClosed++;
-          await sleep(TX_DELAY);
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.warn(
-            `    Warning: failed to close token account ${ta.pubkey.toString().slice(0, 12)}...: ${msg.slice(0, 80)}`
-          );
+
+          const sig = await sendNoConfirm(connection, tx, [adminKeypair, bot.kp]);
+          tokenSigs.push(sig);
+          await sleep(SEND_DELAY);
+        } catch {
+          // Token ops may fail (e.g., mint closed). That's fine.
         }
       }
     } catch (err: unknown) {
@@ -350,19 +310,26 @@ async function main() {
       );
     }
   }
-  console.log(`  Closed ${tokenAccountsClosed} token accounts.`);
 
-  // Step 7: Drain wallet SOL to admin
+  if (tokenSigs.length > 0) {
+    console.log(`  Confirming ${tokenSigs.length} token close txs...`);
+    const tokenResult = await batchConfirm(connection, tokenSigs);
+    console.log(
+      `  Token accounts: ${tokenResult.confirmed} closed, ${tokenResult.failed} failed`
+    );
+  } else {
+    console.log("  No token accounts to close.");
+  }
+
+  // Step 7: Drain wallet SOL to admin (fire-and-forget)
   console.log(`\n[4/${totalSteps}] Draining wallet SOL to admin...`);
-  let solDrained = 0;
+  const drainSigs: { sig: string; name: string; amount: number }[] = [];
 
   for (const bot of ALL_WALLETS) {
     try {
       const bal = await connection.getBalance(bot.kp.publicKey);
       const transferAmount = bal - 5000; // keep 5000 lamports for rent-exempt minimum
-      if (transferAmount <= 0) {
-        continue;
-      }
+      if (transferAmount <= 0) continue;
 
       const tx = new Transaction().add(
         SystemProgram.transfer({
@@ -371,17 +338,24 @@ async function main() {
           lamports: transferAmount,
         })
       );
-      await anchor.web3.sendAndConfirmTransaction(connection, tx, [bot.kp]);
-      const drained = transferAmount / LAMPORTS_PER_SOL;
-      solDrained += drained;
-      console.log(`  ${bot.name}: drained ${drained.toFixed(6)} SOL`);
-      await sleep(TX_DELAY);
+      const sig = await sendNoConfirm(connection, tx, [bot.kp]);
+      drainSigs.push({ sig, name: bot.name, amount: transferAmount / LAMPORTS_PER_SOL });
+      console.log(`  ${bot.name}: draining ${(transferAmount / LAMPORTS_PER_SOL).toFixed(6)} SOL`);
+      await sleep(SEND_DELAY);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(
         `  Warning: failed to drain ${bot.name}: ${msg.slice(0, 80)}`
       );
     }
+  }
+
+  if (drainSigs.length > 0) {
+    console.log(`  Confirming ${drainSigs.length} drain txs...`);
+    const drainResult = await batchConfirm(connection, drainSigs.map((d) => d.sig));
+    console.log(
+      `  Drain: ${drainResult.confirmed} confirmed, ${drainResult.failed} failed`
+    );
   }
 
   // Step 8 (--hard only): Close program account
@@ -419,7 +393,6 @@ async function main() {
   const adminBalAfter = await connection.getBalance(adminKeypair.publicKey);
   const totalRecovered =
     (adminBalAfter - adminBalBefore) / LAMPORTS_PER_SOL;
-  const orphanedAccounts = closedCount * 5; // yes_mint, no_mint, vault, ob_usdc_vault, ob_yes_vault
 
   console.log("\n=== Nuke Complete ===");
   console.log(
@@ -429,11 +402,8 @@ async function main() {
     `Admin SOL after:  ${(adminBalAfter / LAMPORTS_PER_SOL).toFixed(4)}`
   );
   console.log(`Total SOL recovered: ${totalRecovered.toFixed(4)}`);
-  console.log(`Markets closed: ${closedCount}`);
-  console.log(`Token accounts closed: ${tokenAccountsClosed}`);
-  console.log(
-    `Orphaned accounts: ${orphanedAccounts} (${closedCount} markets x 5: yes_mint, no_mint, vault, ob_usdc_vault, ob_yes_vault)`
-  );
+  console.log(`Markets closed: ${closeResult.confirmed}`);
+  console.log(`Token accounts closed: ${tokenSigs.length}`);
 }
 
 main().catch((err) => {

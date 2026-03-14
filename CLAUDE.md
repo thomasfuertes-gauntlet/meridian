@@ -63,7 +63,7 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - Escrow vaults (`ob_usdc_vault`, `ob_yes_vault`) are separate from the market vault. CLOB never touches market vault.
 - **Credit/claim model**: Taker fills (`buy_yes`/`sell_yes`) do one CPI transfer to the taker, then credit maker balances in OrderBook zero_copy memory. No `remaining_accounts` needed. Makers withdraw via `claim_fills` (permissionless, any market state). OrderBook SPACE: 7800 bytes (was 4728). Breaking layout change per deploy.
 - `placeOrder` validates user's Yes ATA exists for both bid and ask sides. Create ATAs with `createAssociatedTokenAccountIdempotentInstruction` before any orders - don't rely on `mintPair` side effects.
-- **Two local validator contexts**: `anchor test` starts its own ephemeral validator (faucet enabled, used by test helpers). `make local` starts a persistent validator (`--faucet-port 0`, admin funds via transfer). Don't mix them - run `make local-test-anchor` for the test suite, `make local` for interactive dev.
+- **Two local validator contexts**: `anchor test` starts its own ephemeral validator (faucet enabled, used by test helpers). `make local` starts a persistent validator (`--faucet-port 0`, admin funds via transfer). Don't mix them - run `make test` for the test suite, `make local` for interactive dev.
 - `seed-bots` on a non-empty order book can fail (new asks cross existing bids, triggering fills). For a fresh local start, prefer `make local-validator-reset && make local`.
 
 ## WebSocket Architecture
@@ -101,6 +101,6 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 
 - Devnet operator config: `config/devnet.env` (copy from `config/devnet.env.example`). Treat `DEVNET_RPC_URL` and `DEVNET_USDC_MINT` there as the repo deploy source of truth - not hardcoded Makefile defaults.
 - Bot scripts accept `USDC_MINT` env var (falls back to `local-config.json`). Airdrop only on localhost (devnet faucets rate-limit).
-- `make nuke` tears down all devnet state: force-settles markets, closes them (recovering ~70% of rent), drains bot wallets to admin. Interactive y/N confirmation.
+- `make nuke` tears down all devnet state: force-settles markets, closes them (recovering ~70% of rent), drains all 22 wallets to admin. `NUKE_FLAGS="--yes"` skips prompt, `NUKE_FLAGS="--hard --yes"` also closes program account.
 - Frontend `?debug` query param logs all Solana RPC calls and Pyth Hermes fetches to browser console.
 - See README `## Railway Deployment` for full Railway setup, env var table, and service architecture.

@@ -38,7 +38,7 @@ make local              # validator → deploy → 12-min markets → seeded boo
 make local-cycle        # rotate to fresh markets (settles old ones first)
 make local-settle       # settle + close all current markets
 make local-seed         # re-seed order books with bot liquidity
-make local-test-anchor  # run Anchor/TS test suite
+make test               # run Anchor/TS test suite (or: make test GREP='pattern')
 make uat                # E2E lifecycle test: create → mint → trade → settle → redeem
 cd frontend && npm run dev
 ```
@@ -48,7 +48,7 @@ cd frontend && npm run dev
 Dev wallets are derived deterministically from `sha256("meridian-dev-{name}")` - every clone produces the same keys. Wallets: `admin`, `bot-a`, `bot-b`, `trader-1` through `trader-5`. Files live in `.wallets/` (gitignored), generated at runtime.
 
 ```bash
-make wallets             # write .wallets/*.json from deterministic seed
+make _wallets            # write .wallets/*.json from deterministic seed (internal; called automatically by other targets)
 ```
 
 Then fund admin with devnet SOL (needed before any on-chain ops):
@@ -192,9 +192,9 @@ What they do:
 - `make local-settle` - settle + close all current markets
 - `make local-seed` - re-seed order books with bot liquidity
 - `make local-smart-deploy` - hash-compare redeploy (settles/closes first if program changed)
-- `make local-test-anchor` - broader Anchor/TS test suite
+- `make test` - Anchor/TS test suite (`make test GREP='pattern'` for filtered runs)
 - `make uat` - automated E2E lifecycle: create → mint → trade → settle → redeem (~3 min)
-- `make nuke` - devnet only: settle all, close all, drain SOL to admin (y/N confirmation)
+- `make nuke` - devnet only: settle all, close all, drain all wallets to admin. `NUKE_FLAGS="--yes"` skips prompt, `NUKE_FLAGS="--hard --yes"` also closes program
 - `cd frontend && npm run dev` - starts the frontend against localhost RPC
 
 Quickstart:
@@ -206,7 +206,7 @@ cd frontend && npm run dev  # in a second terminal
 
 Notes:
 
-- `make local` manages its own background validator. For a foreground validator, use `make local-validator-live` in one terminal, then `make local-deploy local-cycle local-seed` in another.
+- `make local` manages its own background validator. For a foreground validator, run `solana-test-validator --bind-address 127.0.0.1 --mint $(solana-keygen pubkey .wallets/admin.json) --reset --ledger .localnet/ledger --limit-ledger-size 50000000` in one terminal, then `make local-deploy local-cycle local-seed` in another.
 - Frontend startup and chain/bootstrap are intentionally separate so you can restart the UI without recreating local markets.
 - A local `frontend/.env.local` with `VITE_RPC_URL=http://127.0.0.1:8899` is the preferred explicit override for frontend-only local work.
 

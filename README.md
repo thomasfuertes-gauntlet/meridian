@@ -273,9 +273,16 @@ The built-in CLOB is the right demo choice (shows depth of understanding, avoids
 
 - [ ] **On-chain position limits** - Current position constraints are frontend-only UX guardrails. Production needs program-enforced per-wallet and per-market limits to prevent concentration risk.
 - [ ] **Circuit breakers** - The `pause` instruction exists but is admin-triggered. Production needs automated circuit breakers: halt trading if oracle price moves >10% intraday, or if order book spread exceeds threshold.
-- [ ] **Insurance fund** - Collect protocol fees (currently zero) into an insurance vault to cover edge cases where the $1 payout invariant could be stressed by program bugs or oracle failures.
 - [ ] **MEV protection** - Solana validators can reorder transactions. Production needs: priority fee management for time-sensitive settlements, and potentially a fair-ordering mechanism (Jito bundles or a sequenced inbox) to prevent front-running of large taker orders.
 - [ ] **ZKP proof-of-performance ("Brag")** - Previously prototyped (`1754e0d`): Groth16 circuit via snarkjs/circom proving "I won >= N markets" against a Poseidon Merkle tree of settled positions, without revealing wallet address. Removed due to ~300MB dep weight from snarkjs. Revisit with a lighter ZK stack (e.g., SP1, Risc0) or move proof generation server-side to keep the frontend lean.
+
+### Monetization
+
+Protocol fees are currently zero. Revenue models used by comparable platforms:
+
+- [ ] **Payout fee on winning redemptions (Polymarket model)** - Charge 1-2% in `redeem` only when the redeemed token matches the winning outcome. Losers pay nothing. Psychologically gentle, doesn't suppress trading volume. Implementation: ~10 lines in `redeem` - check settlement outcome, deduct fee to a `protocol_vault` PDA before USDC transfer. Note: traders can exit via CLOB sell at ~$0.98 to dodge the redemption fee; apply fee in `auto_credit_resting_orders` too to close the leak, or accept it as a liquidity incentive.
+- [ ] **Maker-taker fee schedule (Kalshi model)** - Taker fee (2-5 bps) on `buy_yes`/`sell_yes` fills, negative maker fee (rebate) credited via `CreditEntry`. Standard exchange model. Requires sufficient organic volume to justify complexity.
+- [ ] **Insurance fund** - Route protocol fees into an insurance vault to cover edge cases where the $1 payout invariant could be stressed by program bugs or oracle failures. Already referenced in Risk & Compliance above.
 
 ### Key Management
 

@@ -5,7 +5,7 @@ import { TradePanel } from "../components/TradePanel";
 import { compact, formatContracts, formatRelativePublishTime, formatTimestamp, formatUsdcBaseUnits, money } from "../lib/format";
 import { formatActivityNotional, formatActivityPrice, useActivityFeed } from "../lib/activity";
 import { flipToNoPerspective } from "../lib/orderbook";
-import { MAG7, type Ticker } from "../lib/constants";
+import { MAG7, USDC_PER_PAIR, type Ticker } from "../lib/constants";
 import { useMarketData } from "../lib/use-market-data";
 import { getConfiguredUsdcMint } from "../lib/usdc-mint";
 
@@ -17,12 +17,21 @@ function statusTone(status: string): "green" | "blue" | "muted" {
   }
 }
 
+function formatCountdown(secs: number): string {
+  if (secs <= 0) return "Settlement pending";
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  return `Settles in ${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
 export function MarketDetail() {
   const { ticker } = useParams<{ ticker: string }>();
   const routeTicker = MAG7.find((entry) => entry.ticker === ticker)?.ticker ?? null;
   const { data, error, loading } = useMarketData();
   const { data: activity } = useActivityFeed(20, routeTicker ?? undefined);
   const [selectedMarketAddress, setSelectedMarketAddress] = useState<string | null>(null);
+  const [secsToClose, setSecsToClose] = useState<number | null>(null);
 
   const snapshot = useMemo(
     () => data?.tickerSnapshots.find((entry) => entry.ticker === routeTicker),
@@ -59,6 +68,18 @@ export function MarketDetail() {
       : `/api/active-ticker?ticker=${featuredTicker}&market=${featuredAddress}`;
     fetch(url).catch(() => {});
   }, [featuredAddress, featuredTicker]);
+
+  const closeTime = featured?.closeTime ?? null;
+  useEffect(() => {
+    if (closeTime == null) { setSecsToClose(null); return; }
+    const ct = closeTime;
+    function tick() {
+      setSecsToClose(ct - Math.floor(Date.now() / 1000));
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [closeTime]);
 
   const noBook = featured?.orderBook ? flipToNoPerspective(featured.orderBook) : null;
   const usdcMint = getConfiguredUsdcMint();
@@ -113,6 +134,12 @@ export function MarketDetail() {
               <dd>{formatContracts(featured.totalDepth)}</dd>
               <dt>Close time</dt>
               <dd>{formatTimestamp(featured.closeTime)}</dd>
+              {secsToClose != null && (
+                <>
+                  <dt>Settlement</dt>
+                  <dd><mark data-tone={secsToClose <= 0 ? "muted" : "blue"}>{formatCountdown(secsToClose)}</mark></dd>
+                </>
+              )}
             </dl>
           )}
         </header>
@@ -138,7 +165,12 @@ export function MarketDetail() {
                   <mark data-tone={statusTone(market.status)}>{market.status}</mark>
                   <dl style={{ marginTop: "0.25rem" }}>
                     <dt>Yes</dt>
-                    <dd>{formatUsdcBaseUnits(market.yesMid)}</dd>
+                    <dd>
+                      {formatUsdcBaseUnits(market.yesMid)}
+                      {market.yesMid != null && (
+                        <> <mark data-tone="blue">{(market.yesMid / USDC_PER_PAIR * 100).toFixed(0)}%</mark></>
+                      )}
+                    </dd>
                     <dt>No</dt>
                     <dd>{formatUsdcBaseUnits(noMid)}</dd>
                     <dt>Liq</dt>

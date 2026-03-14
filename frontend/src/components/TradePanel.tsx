@@ -99,13 +99,6 @@ export function TradePanel({
   // Sell No limit can't be atomic (bid + redeem requires async fill)
   const sellNoLimitBlocked = action === "sellNo" && isResting;
 
-  const payoff =
-    effectivePrice != null
-      ? action === "buyYes" || action === "sellNo"
-        ? USDC_PER_PAIR - effectivePrice
-        : effectivePrice
-      : null;
-
   const handleTrade = useCallback(async () => {
     if (!wallet || effectivePrice == null || sellNoLimitBlocked) return;
 
@@ -237,14 +230,21 @@ export function TradePanel({
           action === "buyYes" || action === "sellYes"
             ? effectivePrice
             : USDC_PER_PAIR - effectivePrice;
+        const perContractDollars = (netPerContract / USDC_PER_PAIR).toFixed(2);
         const totalNet = (netPerContract / USDC_PER_PAIR) * qty;
         return (
           <output>
-            {isBuy
-              ? <>You pay <mark data-tone="blue">${totalNet.toFixed(2)}</mark> USDC for {qty} {action === "buyYes" ? "Yes" : "No"} contract{qty > 1 ? "s" : ""}. Win <mark data-tone="green">${qty.toFixed(2)}</mark> if {ticker} closes {action === "buyYes" ? "above" : "below"} ${strikeDollars}.</>
-              : <>You receive <mark data-tone="green">${totalNet.toFixed(2)}</mark> USDC for {qty} {action === "sellYes" ? "Yes" : "No"} contract{qty > 1 ? "s" : ""}.</>}
-            {isBuy && payoff != null && (
-              <> Max profit: <mark data-tone="green">${((payoff / USDC_PER_PAIR) * qty).toFixed(2)}</mark></>
+            {isBuy ? (
+              <>
+                You pay <mark data-tone="blue">${perContractDollars}</mark>.{" "}
+                You win <mark data-tone="green">$1.00</mark> if {ticker} closes {action === "buyYes" ? "above" : "below"} ${strikeDollars}.
+                {qty > 1 && <> ({qty} contracts: <mark data-tone="blue">${totalNet.toFixed(2)}</mark> total)</>}
+              </>
+            ) : (
+              <>
+                You receive <mark data-tone="green">${perContractDollars}</mark> per {action === "sellYes" ? "Yes" : "No"} token sold.
+                {qty > 1 && <> ({qty} contracts: <mark data-tone="green">${totalNet.toFixed(2)}</mark> total)</>}
+              </>
             )}
           </output>
         );

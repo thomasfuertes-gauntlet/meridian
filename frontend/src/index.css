@@ -36,6 +36,7 @@ output, kbd { font-family: var(--mono); }
 mark { background: none; color: var(--text); }
 mark[data-tone="green"] { color: #4a4; }
 mark[data-tone="red"] { color: #a44; }
+mark[data-tone="blue"] { color: #4af; }
 mark[data-tone="muted"] { color: var(--muted); }
 /* wallet adapter - minimal overrides */
 .wallet-adapter-button { font-family: inherit !important; }

@@ -10,7 +10,8 @@
 	wallet-pubkeys clean \
 	alpha-cycle alpha-settle alpha-seed \
 	dev dev-validator deploy setup bots live strategy-bots test check \
-	deploy-devnet setup-devnet health settle morning reset
+	deploy-devnet setup-devnet health settle morning reset \
+	alpha-nuke alpha-full-reset
 
 # Toolchain from the Solana installer plus cargo.
 export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.cargo/bin:$(PATH)
@@ -375,3 +376,10 @@ health: devnet-health
 settle: devnet-settle
 morning: devnet-morning
 reset: devnet-reset
+
+alpha-nuke: wallets
+	@echo "=== ALPHA Nuke: settle all + close all + redeploy program ==="
+	$(LOCAL_TS_ENV) $(TSX) scripts/smart-deploy.ts
+
+alpha-full-reset: wallets local-validator-reset local-deploy local-setup local-bots
+	@echo "=== ALPHA Full Reset Complete ==="

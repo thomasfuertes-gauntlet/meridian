@@ -3,7 +3,7 @@
  *
  * Schedules two jobs via node-cron on weekdays (Mon-Fri):
  *   - Morning job: 8:00 AM ET - seeds daily strike markets
- *   - Settlement job: 5:05 PM ET - settles markets (1hr admin delay after 4:00 PM close)
+ *   - Settlement job: 4:07 PM ET - tries settle_market (oracle), falls back to admin_settle
  *
  * Also supports one-shot execution via --now (morning) and --settle (settlement).
  */
@@ -18,9 +18,12 @@ import { sendAlert } from "./alert.js";
 // Schedules use America/New_York timezone so DST is handled automatically.
 const MORNING_SCHEDULE = "0 8 * * 1-5"; // 8:00 AM ET
 
-// admin_settle requires close_time + 3600s (1hr delay). Markets close at 4:00 PM ET,
-// so admin_settle is first eligible at 5:00 PM ET. Schedule 5 minutes after.
-const SETTLEMENT_SCHEDULE = "5 17 * * 1-5"; // 5:05 PM ET
+// Settlement: try settle_market (oracle, no 1hr delay) first, then fall back to
+// admin_settle (requires close_time + 3600s). Markets close at 4:00 PM ET.
+// Running at 4:07 PM ET gives Pyth 7 minutes to publish a price after close.
+// If the oracle path fails (e.g., publish_time outside 5-min window), admin_settle
+// handles it at the same run - it will retry until 5:00 PM when the delay clears.
+const SETTLEMENT_SCHEDULE = "7 16 * * 1-5"; // 4:07 PM ET
 
 function main(): void {
   console.log("[automation] Meridian automation service starting...");

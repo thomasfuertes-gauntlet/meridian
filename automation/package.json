@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.0",
+    "@pythnetwork/pyth-solana-receiver": "^0.14.0",
     "@solana/web3.js": "^1.95.0",
     "dotenv": "^16.4.0",
     "node-cron": "^3.0.3"

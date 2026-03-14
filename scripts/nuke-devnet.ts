@@ -8,7 +8,6 @@
  */
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import BN from "bn.js";
 import { Meridian } from "../target/types/meridian";
 import {
   PublicKey,
@@ -27,6 +26,7 @@ import {
   transfer,
 } from "@solana/spl-token";
 import * as readline from "readline";
+import { adminSettleMarket, closeMarketAccount } from "./market-ops";
 
 const TX_DELAY = 1500; // devnet rate-limit spacing
 const RETRY_DELAY_MS = 10_000;
@@ -143,44 +143,35 @@ async function main() {
       let success = false;
 
       while (Date.now() - startMs < MAX_SETTLE_WAIT_MS) {
-        try {
-          await program.methods
-            .adminSettle(new BN(syntheticPrice))
-            .accountsPartial({
-              admin: adminKeypair.publicKey,
-              market: m.publicKey,
-            })
-            .remainingAccounts([
-              { pubkey: orderBookPda, isSigner: false, isWritable: true },
-            ])
-            .signers([adminKeypair])
-            .rpc();
+        const result = await adminSettleMarket(
+          program,
+          adminKeypair,
+          m.publicKey,
+          orderBookPda,
+          syntheticPrice,
+          [adminKeypair]
+        );
+
+        if (result === "settled") {
           console.log(`  Settled: ${ticker} > $${strikeDollars}`);
           settledOk++;
           success = true;
           await sleep(TX_DELAY);
           break;
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (
-            msg.includes("AlreadySettled") ||
-            msg.includes("already settled") ||
-            msg.includes("MarketAlreadySettled")
-          ) {
-            console.log(`  Already settled: ${ticker} > $${strikeDollars}`);
-            settledOk++;
-            success = true;
-            break;
-          }
-          if (msg.includes("AdminSettleTooEarly")) {
-            console.log(
-              `  ${ticker} > $${strikeDollars}: admin_settle_delay not met, retrying in ${RETRY_DELAY_MS / 1000}s...`
-            );
-            await sleep(RETRY_DELAY_MS);
-            continue;
-          }
+        } else if (result === "already_settled") {
+          console.log(`  Already settled: ${ticker} > $${strikeDollars}`);
+          settledOk++;
+          success = true;
+          break;
+        } else if (result === "too_early") {
+          console.log(
+            `  ${ticker} > $${strikeDollars}: admin_settle_delay not met, retrying in ${RETRY_DELAY_MS / 1000}s...`
+          );
+          await sleep(RETRY_DELAY_MS);
+          continue;
+        } else {
           console.warn(
-            `  Warning: settle failed for ${ticker} > $${strikeDollars}: ${msg.slice(0, 120)}`
+            `  Warning: settle failed for ${ticker} > $${strikeDollars}`
           );
           settleErrors++;
           break;
@@ -217,28 +208,27 @@ async function main() {
   for (const m of toClose) {
     const ticker = m.account.ticker as string;
     const strikeDollars = m.account.strikePrice.toNumber() / USDC_PER_PAIR;
-    try {
-      const [orderBookPda] = PublicKey.findProgramAddressSync(
-        [Buffer.from("orderbook"), m.publicKey.toBuffer()],
-        program.programId
-      );
 
-      await program.methods
-        .closeMarket(true) // force=true: skip unclaimed credits check
-        .accountsPartial({
-          admin: adminKeypair.publicKey,
-          market: m.publicKey,
-          orderBook: orderBookPda,
-        })
-        .signers([adminKeypair])
-        .rpc();
+    const [orderBookPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("orderbook"), m.publicKey.toBuffer()],
+      program.programId
+    );
+
+    const ok = await closeMarketAccount(
+      program,
+      adminKeypair,
+      m.publicKey,
+      orderBookPda,
+      true, // force=true: skip unclaimed credits check
+      [adminKeypair]
+    );
+    if (ok) {
       console.log(`  Closed: ${ticker} > $${strikeDollars}`);
       closedCount++;
       await sleep(TX_DELAY);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
+    } else {
       console.warn(
-        `  Warning: close failed for ${ticker} > $${strikeDollars}: ${msg.slice(0, 100)}`
+        `  Warning: close failed for ${ticker} > $${strikeDollars}`
       );
     }
   }

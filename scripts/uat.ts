@@ -4,9 +4,9 @@
  * Exits 0 on success, 1 on failure.
  *
  * Uses past close times so admin_settle works immediately (no hour-long delay).
- * The on-chain admin_settle_delay_secs defaults to 3600s and there is no
- * instruction to change it, so we set closeTime far enough in the past that
- * now >= closeTime + 3600.
+ * The on-chain admin_settle_delay_secs defaults to 3600s; update_config can
+ * change it but this script avoids that dependency by setting closeTime far
+ * enough in the past that now >= closeTime + 3600.
  *
  * Usage:
  *   ANCHOR_PROVIDER_URL=http://localhost:8899 ANCHOR_WALLET=.wallets/admin.json \
@@ -227,8 +227,10 @@ async function main() {
         [
           Buffer.from("market"),
           Buffer.from(ticker),
-          strikePrice.toArrayLike(Buffer, "le", 8),
-          dateSeed.toArrayLike(Buffer, "le", 8),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (strikePrice as any).toArrayLike(Buffer, "le", 8),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (dateSeed as any).toArrayLike(Buffer, "le", 8),
         ],
         program.programId
       );

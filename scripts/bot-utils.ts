@@ -155,12 +155,12 @@ export function isRemoteRpc(): boolean {
 
 /**
  * Default TX delay based on RPC target. Single source of truth for all scripts.
- * Helius free tier enforces ~1s debounce per transaction. We use 2500ms to leave
- * headroom when multiple scripts share the same endpoint (live-bots + strategy-bots).
- * Override with TX_DELAY_MS env var. Local validator needs no delay.
+ * Helius Developer plan ($49/mo): 50 req/s, 10M credits/mo. With fire-and-forget
+ * (1 RPC call/tx), 500ms spacing = 2 tx/s, well under 50 req/s even with
+ * concurrent bot processes. Override with TX_DELAY_MS env var.
  */
 export function defaultTxDelay(): number {
-  return Number(process.env.TX_DELAY_MS ?? (isRemoteRpc() ? 2500 : 0));
+  return Number(process.env.TX_DELAY_MS ?? (isRemoteRpc() ? 500 : 0));
 }
 
 const ACTIVE_MARKET_FILE = "/tmp/meridian-active-market.txt";

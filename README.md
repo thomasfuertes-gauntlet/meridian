@@ -87,7 +87,7 @@ cd frontend && VITE_RPC_URL=https://api.devnet.solana.com npm run dev
 
 **Prerequisites:** Rust + Solana CLI + Anchor toolchain (see [Solana install docs](https://docs.solana.com/cli/install-solana-cli-tools)). The devnet faucet provides ~10 SOL for the deploy.
 
-> For faster RPC, set `DEVNET_RPC_URL` in `config/devnet.env` (copy from `config/devnet.env.example`). [Helius](https://helius.dev) free tier recommended.
+> Set `DEVNET_RPC_URL` in `config/devnet.env` (copy from `config/devnet.env.example`). [Helius](https://helius.dev) Developer plan ($49/mo) recommended - 50 req/s, 10M credits/mo. Free tier (10 req/s, 1M credits) works but bots burn through credits fast.
 
 ## RPC Provider Requirements
 
@@ -98,11 +98,11 @@ cd frontend && VITE_RPC_URL=https://api.devnet.solana.com npm run dev
 | Bots (`live-bots`) | 1 | `onAccountChange` for the active market's orderbook only; rotates every 10s |
 | Frontend (activity feed) | 1 | `onLogs` for the program; cleaned up on page unmount |
 | Frontend (market data) | 0 | Pure RPC polling via `getMultipleAccountsInfo` every 10s |
-| **Total** | **2** | Well within Helius free-tier limit of 5 |
+| **Total** | **2** | Well within Helius WS limits |
 
 ### Provider compatibility
 
-- **Helius** (recommended): reliable WS, 5-sub free-tier limit, 10 req/s HTTP. Use for devnet and production.
+- **Helius** (recommended): reliable WS, 50 req/s on Developer plan (10 req/s free tier). Use for devnet and production.
 - **Public devnet RPC** (`api.devnet.solana.com`): silently drops WS connections and aggressively rate-limits HTTP. Not suitable for bot operation.
 - **Alchemy / QuickNode**: not tested; both support WS. Minimum 2 concurrent WS subs required.
 
@@ -165,7 +165,7 @@ Demo bot flow can be concentrated to a single ticker via `DEMO_TICKER`; current 
   - signal-server (`scripts/signal-server.ts`, listens on `PORT`) - serves frontend SPA static files AND receives active-market signals
   - seed-bots (one-shot order book seeding)
   - live-bots (market maker, bot-a wallet)
-  - strategy-bots (4 directional strategies, bot-b wallet) - starts **90s after live-bots** to avoid Helius rate-limit burst
+  - strategy-bots (4 directional strategies, bot-b wallet) - starts **90s after live-bots** to stagger initial market discovery
 
 Frontend SPA POSTs to `/active-market` (same origin, same port) when the user navigates to a market. The signal-server writes the active market to `/tmp/meridian-active-market.txt`. Bots weight 80% of activity toward the strike the user is viewing. Signal is considered stale after 5 minutes.
 
@@ -286,9 +286,9 @@ The built-in CLOB is the right demo choice (shows depth of understanding, avoids
 ### Performance & Scalability
 
 - [ ] **Compute unit budgeting** - Profile each instruction's CU consumption. `buy_yes` with 32-order book iteration currently uses ~100k CU; at scale this needs to stay under 200k to leave room for priority fees and Solana's 1.4M CU per-tx limit.
-- [x] **RPC credit optimization** - Helius free tier (1M credits/mo) was burning ~248k credits/day. Fixed with three standard Solana bot practices: (a) `getBlockhashCached` with 30s TTL (blockhashes valid ~90s, was fetching per-tx - 54k credits/day wasted), (b) `skipPreflight: true` on all bot txs (simulation reads were 55k credits/day), (c) fire-and-forget `sendRawTransaction` + batch `getSignatureStatuses` instead of per-tx WS confirmation (25k WEBSOCKET_CONNECT credits/day). Provider monkey-patch in live-bots/strategy-bots applies to all `.rpc()` calls without per-site changes. Production would own the full tx lifecycle instead of patching Anchor's provider.
+- [x] **RPC credit optimization** - On Helius free tier (1M credits/mo) bots burned ~248k credits/day. Fixed with three standard Solana bot practices: (a) `getBlockhashCached` with 30s TTL (blockhashes valid ~90s, was fetching per-tx - 54k credits/day wasted), (b) `skipPreflight: true` on all bot txs (simulation reads were 55k credits/day), (c) fire-and-forget `sendRawTransaction` + batch `getSignatureStatuses` instead of per-tx WS confirmation (25k WEBSOCKET_CONNECT credits/day). Provider monkey-patch in live-bots/strategy-bots applies to all `.rpc()` calls without per-site changes. Now on Developer plan ($49/mo, 50 req/s, 10M credits) - TX delay dropped from 2500ms to 500ms. Production would own the full tx lifecycle instead of patching Anchor's provider.
 - [ ] **Transaction pipelining** - Combine sequenced operations (cancel+replace, mint+place) into single atomic transactions. Current fire-and-forget pattern accepts that sequenced ops occasionally fail when the first tx doesn't land - bot retries on next tick. Production needs: nonce accounts for guaranteed inclusion, atomic cancel+replace instructions, and per-block write-lock contention handling when multiple takers hit the same order book.
-- [ ] **RPC infrastructure** - Move from shared Helius free tier (10 req/s, 5 WS subs) to dedicated RPC nodes. Production market makers need sub-100ms RPC latency. Jito bundles for MEV-protected settlement transactions.
+- [ ] **RPC infrastructure** - Current Helius Developer plan (50 req/s, 10M credits/mo) is sufficient for devnet demo. Production market makers need dedicated RPC nodes with sub-100ms latency. Jito bundles for MEV-protected settlement transactions.
 - [ ] **Event indexing** - Replace frontend `onLogs` polling with a dedicated indexer (Helius webhooks, or a custom Geyser plugin) for reliable trade history and analytics.
 
 ### Monitoring & Operations

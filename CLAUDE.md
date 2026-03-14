@@ -69,8 +69,8 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 ## WebSocket Architecture
 
 - Bots use Solana WS subscriptions (single active-market sub). Frontend uses RPC polling (no WS subs in MarketDataProvider). No read-api.
-- `scripts/ws-cache.ts`: shared WS cache. `createWsCache(connection, program)` subscribes to only the active market's orderbook (1 WS sub, fits Helius free-tier 5-sub limit). Writes parsed book state to `/tmp/meridian-ws-books.json`. Live-bots owns the cache; strategy-bots reads the shared file via `loadSharedBooks()`. Rotates sub every 10s based on active-market signal.
-- Frontend: `frontend/src/lib/ws-market-data.tsx` provides `MarketDataProvider` context. Cold-loads via `getProgramAccounts`, then polls orderbooks + market status via `getMultipleAccountsInfo` every 10s. No per-market WS subs (Helius free tier caps at 5). Pyth prices refresh every 30s via HTTP (not Solana RPC). Activity feed uses a single `onLogs` WS sub, cleaned up on page unmount.
+- `scripts/ws-cache.ts`: shared WS cache. `createWsCache(connection, program)` subscribes to only the active market's orderbook (1 WS sub). Writes parsed book state to `/tmp/meridian-ws-books.json`. Live-bots owns the cache; strategy-bots reads the shared file via `loadSharedBooks()`. Rotates sub every 10s based on active-market signal.
+- Frontend: `frontend/src/lib/ws-market-data.tsx` provides `MarketDataProvider` context. Cold-loads via `getProgramAccounts`, then polls orderbooks + market status via `getMultipleAccountsInfo` every 10s. No per-market WS subs (polling is more credit-efficient). Pyth prices refresh every 30s via HTTP (not Solana RPC). Activity feed uses a single `onLogs` WS sub, cleaned up on page unmount.
 
 ## Frontend Dev Notes
 

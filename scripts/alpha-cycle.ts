@@ -16,8 +16,7 @@ import { PublicKey } from "@solana/web3.js";
 import { fetchStockPrices } from "./fair-value";
 import { calculateStrikes } from "../automation/src/strikes.js";
 import { loadUsdcMint, USDC_PER_PAIR, sleep, isRemoteRpc } from "./bot-utils";
-
-const MAG7_TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"];
+import { MAG7_TICKERS } from "./constants";
 const ALPHA_CYCLE_MINUTES = Number(process.env.ALPHA_CYCLE_MINUTES || "12");
 const TX_DELAY = isRemoteRpc() ? 1500 : 0;
 

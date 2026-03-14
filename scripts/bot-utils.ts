@@ -141,7 +141,7 @@ export function loadUsdcMint(): PublicKey {
 
 // --- Common helpers ---
 
-export const USDC_PER_PAIR = 1_000_000;
+export { USDC_PER_PAIR } from "./constants";
 
 export function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));

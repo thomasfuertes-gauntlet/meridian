@@ -33,21 +33,28 @@ import { sleep, defaultTxDelay } from "./bot-utils";
 
 const DEVNET_DELAY_MS = defaultTxDelay();
 
-/** Request airdrop with retry (devnet rate-limits to 2 SOL/request) */
-async function airdropWithRetry(
+/** Fund a wallet with SOL from admin (devnet airdrops are heavily rate-limited) */
+async function fundFromAdmin(
   connection: anchor.web3.Connection,
-  pubkey: PublicKey,
+  admin: anchor.web3.Keypair,
+  recipient: PublicKey,
   lamports: number
 ): Promise<void> {
   const maxRetries = 3;
   for (let i = 0; i < maxRetries; i++) {
     try {
-      const sig = await connection.requestAirdrop(pubkey, lamports);
-      await connection.confirmTransaction(sig, "confirmed");
+      const tx = new anchor.web3.Transaction().add(
+        anchor.web3.SystemProgram.transfer({
+          fromPubkey: admin.publicKey,
+          toPubkey: recipient,
+          lamports,
+        })
+      );
+      await anchor.web3.sendAndConfirmTransaction(connection, tx, [admin]);
       return;
     } catch (err) {
       if (i === maxRetries - 1) throw err;
-      console.log(`  Airdrop retry ${i + 1}/${maxRetries}...`);
+      console.log(`  Transfer retry ${i + 1}/${maxRetries}...`);
       await new Promise((r) => setTimeout(r, 2000));
     }
   }
@@ -78,16 +85,18 @@ async function main() {
   console.log(`\nBalances: admin=${(adminBal / LAMPORTS_PER_SOL).toFixed(2)} SOL, bot-a=${(botABal / LAMPORTS_PER_SOL).toFixed(2)} SOL, bot-b=${(botBBal / LAMPORTS_PER_SOL).toFixed(2)} SOL`);
 
   if (adminBal < 2 * LAMPORTS_PER_SOL) {
-    console.log("Admin needs more SOL. Requesting airdrop...");
-    await airdropWithRetry(connection, adminKeypair.publicKey, 2 * LAMPORTS_PER_SOL);
+    console.error("Admin SOL too low (<2). Fund admin wallet via faucet.solana.com or solana airdrop.");
+    process.exit(1);
   }
   if (botABal < 1 * LAMPORTS_PER_SOL) {
-    console.log("Bot-A needs SOL. Requesting airdrop...");
-    await airdropWithRetry(connection, botA.publicKey, 2 * LAMPORTS_PER_SOL);
+    console.log("Bot-A needs SOL. Transferring 2 SOL from admin...");
+    await fundFromAdmin(connection, adminKeypair, botA.publicKey, 2 * LAMPORTS_PER_SOL);
+    await sleep(DEVNET_DELAY_MS);
   }
   if (botBBal < 1 * LAMPORTS_PER_SOL) {
-    console.log("Bot-B needs SOL. Requesting airdrop...");
-    await airdropWithRetry(connection, botB.publicKey, 2 * LAMPORTS_PER_SOL);
+    console.log("Bot-B needs SOL. Transferring 2 SOL from admin...");
+    await fundFromAdmin(connection, adminKeypair, botB.publicKey, 2 * LAMPORTS_PER_SOL);
+    await sleep(DEVNET_DELAY_MS);
   }
 
   // Check if USDC mint already exists (from previous run)

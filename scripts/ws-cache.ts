@@ -31,6 +31,9 @@ export interface WsCache {
 const STATE_FILE = "/tmp/meridian-ws-books.json";
 const ROTATE_INTERVAL_MS = 10_000;
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+// If no WS callback fires within this window, treat the subscription as silently dead
+// and re-subscribe. Public devnet RPC silently drops WS connections; Helius is reliable.
+const WS_LIVENESS_MS = 2 * 60 * 1000;
 
 interface SerializedOrder {
   owner: string;
@@ -99,6 +102,7 @@ export function createWsCache(connection: Connection, program: Program<Meridian>
   const books = new Map<string, Book>();
   let activeSubId: number | null = null;
   let activeObKey: string | null = null;
+  let lastWsCallbackAt: number = Date.now();
 
   function subscribeOrderBook(mkt: MarketCtx) {
     const obKey = mkt.orderBook.toBase58();
@@ -111,14 +115,33 @@ export function createWsCache(connection: Connection, program: Program<Meridian>
     }
 
     activeObKey = obKey;
+    lastWsCallbackAt = Date.now();
     activeSubId = connection.onAccountChange(
       mkt.orderBook,
       (accountInfo) => {
+        lastWsCallbackAt = Date.now();
         books.set(obKey, parseBook(accountInfo.data as Buffer));
         writeState(books);
       },
       "confirmed",
     );
+  }
+
+  /**
+   * Re-subscribe if WS has been silent too long. Public devnet RPC silently drops
+   * WS connections after a period; this detects the stale sub and forces a new one.
+   * Clearing activeObKey bypasses the dedup guard so subscribeOrderBook re-registers.
+   */
+  function checkWsLiveness() {
+    if (activeObKey !== null && Date.now() - lastWsCallbackAt > WS_LIVENESS_MS) {
+      console.warn("[ws-cache] WS subscription silent for >2min, re-subscribing");
+      if (activeSubId !== null) {
+        connection.removeAccountChangeListener(activeSubId).catch(() => {});
+        activeSubId = null;
+      }
+      activeObKey = null;
+      rotateActiveSubscription();
+    }
   }
 
   function rotateActiveSubscription() {
@@ -155,8 +178,12 @@ export function createWsCache(connection: Connection, program: Program<Meridian>
 
   const ready = bootstrap();
 
-  // Rotate WS sub when active market signal changes
-  const rotateInterval = setInterval(rotateActiveSubscription, ROTATE_INTERVAL_MS);
+  // Rotate WS sub when active market signal changes; also check liveness to detect
+  // silently dropped WS connections (common on public devnet RPC).
+  const rotateInterval = setInterval(() => {
+    checkWsLiveness();
+    rotateActiveSubscription();
+  }, ROTATE_INTERVAL_MS);
 
   // Discover new markets periodically
   const refreshInterval = setInterval(async () => {

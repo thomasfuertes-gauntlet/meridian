@@ -16,10 +16,10 @@ import { Meridian } from "../target/types/meridian";
 import { PublicKey } from "@solana/web3.js";
 import { USDC_PER_PAIR } from "./constants";
 import { closeAllSettled } from "./market-ops";
-import { sleep, isRemoteRpc } from "./bot-utils";
+import { sleep, defaultTxDelay } from "./bot-utils";
 import { fetchStockPrices } from "./fair-value";
 
-const TX_DELAY = isRemoteRpc() ? 1500 : 0;
+const TX_DELAY = defaultTxDelay();
 const RETRY_DELAY_MS = 10_000; // 10s between AdminSettleTooEarly retries
 const MAX_SETTLE_WAIT_MS = 90 * 60 * 1000; // 90 minutes max wait
 

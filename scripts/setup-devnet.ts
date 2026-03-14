@@ -29,9 +29,9 @@ import { fetchStockPrices } from "./fair-value";
 import { calculateStrikes } from "./strikes";
 import { MAG7_TICKERS, USDC_DECIMALS, USDC_PER_PAIR } from "./constants";
 import { accountExists, withRetry } from "./market-ops";
+import { sleep, defaultTxDelay } from "./bot-utils";
 
-const DEVNET_DELAY_MS = 1500; // throttle to stay under devnet rate limits
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const DEVNET_DELAY_MS = defaultTxDelay();
 
 /** Request airdrop with retry (devnet rate-limits to 2 SOL/request) */
 async function airdropWithRetry(

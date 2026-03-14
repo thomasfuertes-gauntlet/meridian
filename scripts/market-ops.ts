@@ -19,11 +19,11 @@ import * as fs from "fs";
 import * as path from "path";
 import { getDevWallet } from "./dev-wallets";
 import { USDC_PER_PAIR, USDC_DECIMALS, MAG7_TICKERS } from "./constants";
-import { isRemoteRpc, sleep } from "./bot-utils";
+import { sleep, defaultTxDelay } from "./bot-utils";
 import { calculateStrikes } from "./strikes";
 import { fetchStockPrices } from "./fair-value";
 
-const TX_DELAY = () => (isRemoteRpc() ? 1500 : 0);
+const TX_DELAY = defaultTxDelay;
 
 // --- Utility helpers ---
 

@@ -20,11 +20,11 @@ import { Program } from "@coral-xyz/anchor";
 import BN from "bn.js";
 import { Meridian } from "../target/types/meridian";
 import { PublicKey } from "@solana/web3.js";
-import { USDC_PER_PAIR, sleep, isRemoteRpc } from "./bot-utils";
+import { USDC_PER_PAIR, sleep, defaultTxDelay } from "./bot-utils";
 
 const ROOT = path.join(import.meta.dirname, "..");
 const PROGRAM_SO_PATH = path.join(ROOT, "target/deploy/meridian.so");
-const TX_DELAY = isRemoteRpc() ? 1500 : 0;
+const TX_DELAY = defaultTxDelay();
 
 function hashFile(filePath: string): string {
   const data = fs.readFileSync(filePath);

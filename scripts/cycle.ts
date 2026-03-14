@@ -23,11 +23,11 @@ import {
   closeAllSettled,
   createMarketsForTickers,
 } from "./market-ops";
-import { loadUsdcMint, sleep, isRemoteRpc } from "./bot-utils";
+import { loadUsdcMint, sleep, defaultTxDelay } from "./bot-utils";
 import { fetchStockPrices } from "./fair-value";
 
 const CYCLE_MINUTES = Number(process.env.CYCLE_MINUTES || "12");
-const TX_DELAY = isRemoteRpc() ? 1500 : 0;
+const TX_DELAY = defaultTxDelay();
 
 async function main() {
   const provider = anchor.AnchorProvider.env();

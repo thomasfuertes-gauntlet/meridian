@@ -21,18 +21,16 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fairValue, computeLevels, fetchStockPrices } from "./fair-value";
-import { getBotTickerFilter } from "./bot-utils";
+import { getBotTickerFilter, sleep, defaultTxDelay, isRemoteRpc } from "./bot-utils";
 import { USDC_PER_PAIR } from "./constants";
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
   const program = anchor.workspace.Meridian as Program<Meridian>;
   const connection = provider.connection;
-  const isLocalhost =
-    connection.rpcEndpoint.includes("localhost") || connection.rpcEndpoint.includes("127.0.0.1");
-  const txDelayMs = Number(process.env.TX_DELAY_MS ?? (isLocalhost ? 0 : 1200));
+  const txDelayMs = defaultTxDelay();
+  const isLocalhost = !isRemoteRpc();
 
   // Use deterministic dev wallets
   const bot = getDevWallet("bot-a");

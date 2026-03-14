@@ -197,10 +197,10 @@ local-ui-ready: local local-setup local-bots
 	@echo ""
 	@echo "Local UI environment is ready."
 	@echo "Start the frontend with:"
-	@echo "  cd frontend && npm run dev:local"
+	@echo "  cd frontend && npm run dev"
 
 local-ui:
-	cd frontend && npm run dev:local
+	cd frontend && npm run dev
 
 local-live: wallets
 	@echo "Starting local live bot..."

@@ -10,8 +10,10 @@
  *   ANCHOR_PROVIDER_URL=https://... ANCHOR_WALLET=.wallets/admin.json npx tsx scripts/nuke-devnet.ts
  *
  * Flags:
- *   --yes, -y   Skip interactive confirmation prompt
- *   --hard      Also close the program account after draining (recovers program rent)
+ *   --yes, -y       Skip interactive confirmation prompt
+ *   --hard          Also close the program account after draining (recovers program rent)
+ *   --skip-settle   Skip step 1 (settle markets) - use when markets already settled or pre-CLOB
+ *   --skip-close    Skip step 2 (close markets) - use when only draining wallets
  */
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
@@ -55,6 +57,8 @@ async function main() {
   const args = process.argv.slice(2);
   const SKIP_CONFIRM = args.includes("--yes") || args.includes("-y");
   const HARD_MODE = args.includes("--hard");
+  const SKIP_SETTLE = args.includes("--skip-settle");
+  const SKIP_CLOSE = args.includes("--skip-close");
   const totalSteps = HARD_MODE ? 5 : 4;
 
   // Step 1: Refuse localhost (check before provider init to fail fast)
@@ -149,7 +153,9 @@ async function main() {
     (m: any) => "pending" in m.account.outcome
   );
 
-  if (unsettled.length > 0) {
+  if (SKIP_SETTLE) {
+    console.log(`\n[1/${totalSteps}] Skipping settle (--skip-settle)`);
+  } else if (unsettled.length > 0) {
     console.log(
       `\n[1/${totalSteps}] Settling ${unsettled.length} unsettled markets (fire-and-forget)...`
     );
@@ -200,45 +206,51 @@ async function main() {
   // Step 5: Fire-and-forget close all markets
   // Skip re-fetch - just try to close everything from original list.
   // Unsettled markets that failed to settle will fail to close (fine).
-  console.log(`\n[2/${totalSteps}] Closing ${allMarkets.length} markets (fire-and-forget)...`);
   const closeSigs: string[] = [];
+  let closeResult = { confirmed: 0, failed: 0 };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (let i = 0; i < allMarkets.length; i++) {
-    const m = allMarkets[i];
-    const ticker = m.account.ticker as string;
-    const strikeDollars = m.account.strikePrice.toNumber() / USDC_PER_PAIR;
+  if (SKIP_CLOSE) {
+    console.log(`\n[2/${totalSteps}] Skipping close (--skip-close)`);
+  } else {
+    console.log(`\n[2/${totalSteps}] Closing ${allMarkets.length} markets (fire-and-forget)...`);
 
-    const [orderBookPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("orderbook"), m.publicKey.toBuffer()],
-      program.programId
-    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (let i = 0; i < allMarkets.length; i++) {
+      const m = allMarkets[i];
+      const ticker = m.account.ticker as string;
+      const strikeDollars = m.account.strikePrice.toNumber() / USDC_PER_PAIR;
 
-    try {
-      const ix = await program.methods
-        .closeMarket(true) // force=true
-        .accountsPartial({ admin: adminKeypair.publicKey, market: m.publicKey, orderBook: orderBookPda })
-        .instruction();
-
-      const tx = new Transaction().add(ix);
-      const sig = await sendNoConfirm(connection, tx, [adminKeypair]);
-      closeSigs.push(sig);
-      process.stdout.write(
-        `\r  Sent ${i + 1}/${allMarkets.length}: ${ticker} > $${strikeDollars}    `
+      const [orderBookPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("orderbook"), m.publicKey.toBuffer()],
+        program.programId
       );
-    } catch {
-      process.stdout.write(
-        `\r  Skip ${i + 1}/${allMarkets.length}: ${ticker} > $${strikeDollars} (build failed)    `
-      );
+
+      try {
+        const ix = await program.methods
+          .closeMarket(true) // force=true
+          .accountsPartial({ admin: adminKeypair.publicKey, market: m.publicKey, orderBook: orderBookPda })
+          .instruction();
+
+        const tx = new Transaction().add(ix);
+        const sig = await sendNoConfirm(connection, tx, [adminKeypair]);
+        closeSigs.push(sig);
+        process.stdout.write(
+          `\r  Sent ${i + 1}/${allMarkets.length}: ${ticker} > $${strikeDollars}    `
+        );
+      } catch {
+        process.stdout.write(
+          `\r  Skip ${i + 1}/${allMarkets.length}: ${ticker} > $${strikeDollars} (build failed)    `
+        );
+      }
+      await sleep(SEND_DELAY);
     }
-    await sleep(SEND_DELAY);
-  }
 
-  console.log(`\n  Confirming ${closeSigs.length} close txs...`);
-  const closeResult = await batchConfirm(connection, closeSigs);
-  console.log(
-    `  Close: ${closeResult.confirmed} confirmed, ${closeResult.failed} failed`
-  );
+    console.log(`\n  Confirming ${closeSigs.length} close txs...`);
+    closeResult = await batchConfirm(connection, closeSigs);
+    console.log(
+      `  Close: ${closeResult.confirmed} confirmed, ${closeResult.failed} failed`
+    );
+  }
 
   // Step 6: Close wallet token accounts (fire-and-forget with batched ops)
   console.log(`\n[3/${totalSteps}] Closing wallet token accounts...`);
@@ -253,14 +265,22 @@ async function main() {
 
       if (tokenAccounts.value.length === 0) continue;
 
+      let withBalance = 0;
+      let empty = 0;
+      for (const ta of tokenAccounts.value) {
+        const bal = ta.account.data.readBigUInt64LE(64);
+        if (bal > 0n) withBalance++;
+        else empty++;
+      }
       console.log(
-        `  ${bot.name}: ${tokenAccounts.value.length} token accounts`
+        `  ${bot.name}: ${tokenAccounts.value.length} token accounts (${withBalance} with balance, ${empty} empty)`
       );
 
       for (const ta of tokenAccounts.value) {
         try {
           const balance = ta.account.data.readBigUInt64LE(64);
           const mint = new PublicKey(ta.account.data.subarray(0, 32));
+          const mintStr = mint.toString().slice(0, 8);
           const tx = new Transaction();
 
           if (balance > 0n) {
@@ -285,6 +305,9 @@ async function main() {
                 balance
               )
             );
+            console.log(`    ${mintStr}... transfer ${balance} + close`);
+          } else {
+            console.log(`    ${mintStr}... close (empty)`);
           }
 
           // Close the token account (rent → bot wallet)
@@ -299,8 +322,9 @@ async function main() {
           const sig = await sendNoConfirm(connection, tx, [adminKeypair, bot.kp]);
           tokenSigs.push(sig);
           await sleep(SEND_DELAY);
-        } catch {
-          // Token ops may fail (e.g., mint closed). That's fine.
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.log(`    failed: ${msg.slice(0, 60)}`);
         }
       }
     } catch (err: unknown) {
@@ -324,12 +348,16 @@ async function main() {
   // Step 7: Drain wallet SOL to admin (fire-and-forget)
   console.log(`\n[4/${totalSteps}] Draining wallet SOL to admin...`);
   const drainSigs: { sig: string; name: string; amount: number }[] = [];
+  let skippedWallets = 0;
 
   for (const bot of ALL_WALLETS) {
     try {
       const bal = await connection.getBalance(bot.kp.publicKey);
       const transferAmount = bal - 5000; // keep 5000 lamports for rent-exempt minimum
-      if (transferAmount <= 0) continue;
+      if (transferAmount <= 0) {
+        skippedWallets++;
+        continue;
+      }
 
       const tx = new Transaction().add(
         SystemProgram.transfer({
@@ -339,8 +367,9 @@ async function main() {
         })
       );
       const sig = await sendNoConfirm(connection, tx, [bot.kp]);
-      drainSigs.push({ sig, name: bot.name, amount: transferAmount / LAMPORTS_PER_SOL });
-      console.log(`  ${bot.name}: draining ${(transferAmount / LAMPORTS_PER_SOL).toFixed(6)} SOL`);
+      const solAmount = transferAmount / LAMPORTS_PER_SOL;
+      drainSigs.push({ sig, name: bot.name, amount: solAmount });
+      console.log(`  ${bot.name}: ${solAmount.toFixed(6)} SOL → admin`);
       await sleep(SEND_DELAY);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -348,6 +377,9 @@ async function main() {
         `  Warning: failed to drain ${bot.name}: ${msg.slice(0, 80)}`
       );
     }
+  }
+  if (skippedWallets > 0) {
+    console.log(`  (${skippedWallets} wallets empty, skipped)`);
   }
 
   if (drainSigs.length > 0) {

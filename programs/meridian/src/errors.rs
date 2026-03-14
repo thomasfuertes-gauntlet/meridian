@@ -76,4 +76,6 @@ pub enum MeridianError {
     CreditLedgerFull,
     #[msg("Nothing to claim")]
     NothingToClaim,
+    #[msg("Market has unclaimed credits; claim all fills before closing")]
+    UnclaimedCredits,
 }

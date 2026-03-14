@@ -965,6 +965,99 @@ export type Meridian = {
       "args": []
     },
     {
+      "name": "closeMarket",
+      "discriminator": [
+        88,
+        154,
+        248,
+        186,
+        48,
+        14,
+        123,
+        244
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.ticker",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.strike_price",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.date",
+                "account": "strikeMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "orderBook",
+          "docs": [
+            "OrderBook to close. AccountLoader validates zero_copy discriminator.",
+            "Key match to market.order_book validated in handler body."
+          ],
+          "writable": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "force",
+          "type": "bool"
+        }
+      ]
+    },
+    {
       "name": "createStrikeMarket",
       "discriminator": [
         21,
@@ -2715,6 +2808,11 @@ export type Meridian = {
       "code": 6036,
       "name": "nothingToClaim",
       "msg": "Nothing to claim"
+    },
+    {
+      "code": 6037,
+      "name": "unclaimedCredits",
+      "msg": "Market has unclaimed credits; claim all fills before closing"
     }
   ],
   "types": [

@@ -102,4 +102,8 @@ pub mod meridian {
     pub fn unwind_order(ctx: Context<UnwindOrder>, order_id: u64) -> Result<()> {
         instructions::unwind_order::handler(ctx, order_id)
     }
+
+    pub fn close_market(ctx: Context<CloseMarket>, force: bool) -> Result<()> {
+        instructions::close_market::handler(ctx, force)
+    }
 }

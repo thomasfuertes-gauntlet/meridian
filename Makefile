@@ -8,6 +8,7 @@
 	railway-deploy-frontend railway-deploy-bots railway-deploy railway-release \
 	devnet-deploy devnet-setup devnet-health devnet-settle devnet-morning devnet-reset \
 	wallet-pubkeys clean \
+	alpha-cycle alpha-settle alpha-seed \
 	dev dev-validator deploy setup bots live strategy-bots test check \
 	deploy-devnet setup-devnet health settle morning reset
 
@@ -337,6 +338,26 @@ clean: local-validator-stop
 		pkill -f "/$$script" 2>/dev/null || true; \
 	done
 	@echo "Stopped tracked local validator and local bot processes"
+
+# --- ALPHA mode (rapid short-cycle UAT) ---
+# Creates fresh markets with short close times, settles + closes them, repeat.
+# ALPHA_CYCLE_MINUTES controls market lifetime (default: 12).
+# admin_settle_delay in GlobalConfig must be short for fast cycles (default is 1hr).
+
+ALPHA_TS_ENV = ALPHA=1 $(LOCAL_TS_ENV)
+DEVNET_ALPHA_TS_ENV = ALPHA=1 $(DEVNET_TS_ENV)
+
+alpha-cycle: wallets
+	@echo "=== ALPHA Cycle: creating fresh short-lived markets ==="
+	$(ALPHA_TS_ENV) $(TSX) scripts/alpha-cycle.ts
+
+alpha-settle: wallets
+	@echo "=== ALPHA Settle: settling + closing all markets ==="
+	$(ALPHA_TS_ENV) $(TSX) scripts/alpha-settle.ts
+
+alpha-seed: wallets
+	@echo "=== ALPHA Seed: seeding order books ==="
+	$(ALPHA_TS_ENV) $(TSX) scripts/seed-bots.ts
 
 # Compatibility aliases. Keep the old names, but point them at the safer layout.
 dev: local-full

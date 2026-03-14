@@ -167,6 +167,13 @@ async function settleMarketWithRetry(
       console.warn(
         `[oracle] ${ticker} @ $${strikeDollars} - oracle path failed, falling back to admin_settle: ${oracleErrMsg.slice(0, 160)}`
       );
+      // Alert so operators know the oracle path is failing and why.
+      // Expected during devnet setup (before HERMES_URL=hermes-beta and post-market feeds);
+      // should NOT fire on a properly configured environment.
+      await sendAlert(
+        "settlement-job",
+        `settle_market failed for ${ticker} @ $${strikeDollars}, falling back to admin_settle: ${oracleErrMsg.slice(0, 200)}`
+      );
     }
   }
 

@@ -1,6 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import { expect } from "chai";
-import { Keypair, PublicKey } from "@solana/web3.js";
+import { Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import {
   createAssociatedTokenAccount,
   getAssociatedTokenAddressSync,
@@ -34,6 +34,9 @@ import {
   expectDecrease,
   createFundedUser,
   getCurrentUnixTimestamp,
+  createEmptyPriceUpdateAccount,
+  PYTH_RECEIVER_PROGRAM_ID,
+  buildMockPriceUpdateV2Data,
 } from "./helpers";
 
 // ─────────────────────────────────────────────────────────────────
@@ -522,4 +525,175 @@ describe("settlement unwind flow", () => {
     expect(vault).to.equal(0);
     expect(market.totalPairsMinted.toNumber()).to.equal(0);
   });
+});
+
+// ─────────────────────────────────────────────────────────────────
+//  ORACLE SETTLEMENT (settle_market)
+//
+//  settle_market reads a Pyth PriceUpdateV2 account on-chain. Full
+//  end-to-end testing requires the Pyth Receiver and Wormhole
+//  programs cloned onto the test validator. The tests below cover
+//  the error paths that DO work in the standard test environment.
+//
+//  TO ENABLE FULL ORACLE TESTS, add to Anchor.toml:
+//    [test.validator]
+//    [[test.validator.clone]]
+//    address = "rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ"  # Pyth Receiver
+//    [[test.validator.clone]]
+//    address = "HDwcJBJXjL9FpJ7UBsYBtaDjsBUhuLCUYoz3zr8SWWaQ"  # Wormhole Core Bridge
+//    url = "https://api.devnet.solana.com"
+//  Then replace the stub below with PythSolanaReceiver.buildPostPriceUpdateInstructions
+//  + a live VAA from https://hermes-beta.pyth.network at close_time + 30s.
+//  The buildMockPriceUpdateV2Data helper in helpers.ts documents the exact
+//  PriceUpdateV2 Borsh layout for reference.
+// ─────────────────────────────────────────────────────────────────
+
+describe("oracle settlement (settle_market)", () => {
+  let ctx: TestContext;
+  let oracleIdx = 1590000000;
+
+  function nextOracleDate() {
+    return new anchor.BN(oracleIdx++);
+  }
+
+  before(async () => {
+    ctx = await setupTestContext();
+  });
+
+  it("rejects settle_market when price_update is owned by the wrong program", async () => {
+    // Create a market past its close_time so prepare_for_settlement passes.
+    const closedAt = await getCurrentUnixTimestamp(ctx);
+    const pdas = await createMarket(
+      ctx,
+      "NVDA",
+      new anchor.BN(300_000_000),
+      nextOracleDate(),
+      new anchor.BN(closedAt - 10) // close_time 10s ago
+    );
+
+    // Create a regular keypair account owned by the System Program.
+    // settle_market's Account<'info, PriceUpdateV2> constraint will reject it
+    // because the owner is not the Pyth Receiver program.
+    const wrongOwnerAccount = Keypair.generate();
+    const lamports =
+      await ctx.provider.connection.getMinimumBalanceForRentExemption(133);
+    const tx = new Transaction().add(
+      SystemProgram.createAccount({
+        fromPubkey: ctx.admin.publicKey,
+        newAccountPubkey: wrongOwnerAccount.publicKey,
+        lamports,
+        space: 133,
+        programId: SystemProgram.programId, // wrong owner
+      })
+    );
+    await ctx.provider.sendAndConfirm(tx, [ctx.admin.payer, wrongOwnerAccount]);
+
+    const [orderBookPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("orderbook"), pdas.marketPda.toBuffer()],
+      ctx.program.programId
+    );
+
+    try {
+      await ctx.methods
+        .settleMarket()
+        .accountsPartial({
+          settler: ctx.admin.publicKey,
+          market: pdas.marketPda,
+          priceUpdate: wrongOwnerAccount.publicKey,
+        })
+        .remainingAccounts([
+          { pubkey: orderBookPda, isSigner: false, isWritable: true },
+        ])
+        .rpc();
+      expect.fail("Should have thrown AccountOwnedByWrongProgram");
+    } catch (err: any) {
+      // Anchor rejects accounts not owned by the expected program.
+      expect(err.toString()).to.satisfy((msg: string) =>
+        msg.includes("AccountOwnedByWrongProgram") ||
+        msg.includes("owned by") ||
+        msg.includes("OwnerMismatch")
+      );
+    }
+  });
+
+  it("rejects settle_market when price_update has wrong discriminator", async () => {
+    // Create a market past its close_time.
+    const closedAt = await getCurrentUnixTimestamp(ctx);
+    const pdas = await createMarket(
+      ctx,
+      "NVDA",
+      new anchor.BN(300_500_000),
+      nextOracleDate(),
+      new anchor.BN(closedAt - 10)
+    );
+
+    // Create an account owned by the Pyth Receiver program but with all-zero
+    // data (no valid discriminator). settle_market should reject with
+    // AccountDiscriminatorMismatch.
+    const zeroedPriceAccount = Keypair.generate();
+    await createEmptyPriceUpdateAccount(ctx, zeroedPriceAccount);
+
+    const [orderBookPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("orderbook"), pdas.marketPda.toBuffer()],
+      ctx.program.programId
+    );
+
+    try {
+      await ctx.methods
+        .settleMarket()
+        .accountsPartial({
+          settler: ctx.admin.publicKey,
+          market: pdas.marketPda,
+          priceUpdate: zeroedPriceAccount.publicKey,
+        })
+        .remainingAccounts([
+          { pubkey: orderBookPda, isSigner: false, isWritable: true },
+        ])
+        .rpc();
+      expect.fail("Should have thrown AccountDiscriminatorMismatch");
+    } catch (err: any) {
+      expect(err.toString()).to.satisfy((msg: string) =>
+        msg.includes("AccountDiscriminatorMismatch") ||
+        msg.includes("discriminator") ||
+        msg.includes("InvalidAccountData")
+      );
+    }
+  });
+
+  // buildMockPriceUpdateV2Data demonstrates the exact PriceUpdateV2 Borsh
+  // layout. Confirm the helper builds a correctly-sized buffer.
+  it("buildMockPriceUpdateV2Data produces 133-byte correctly-structured buffer", () => {
+    const NVDA_FEED_ID = Array.from(
+      Buffer.from(
+        "b1073854ed24cbc755dc527418f52b7d271f6cc967bbf8d8129112b18860a593",
+        "hex"
+      )
+    );
+    const data = buildMockPriceUpdateV2Data({
+      writeAuthority: ctx.admin.publicKey,
+      feedId: NVDA_FEED_ID,
+      priceDollars: 150.0,
+      exponent: -8,
+      publishTime: Math.floor(Date.now() / 1000),
+    });
+
+    expect(data.length).to.equal(133);
+
+    // Check discriminator bytes
+    expect([...data.slice(0, 8)]).to.deep.equal([34, 241, 35, 99, 157, 126, 244, 205]);
+
+    // VerificationLevel::Full = 0x01 at byte 40
+    expect(data.readUInt8(40)).to.equal(1);
+
+    // NVDA feed_id starts at byte 41
+    expect([...data.slice(41, 73)]).to.deep.equal(NVDA_FEED_ID);
+  });
+
+  // TODO(oracle-full-test): Once Anchor.toml includes Pyth Receiver + Wormhole
+  // program clones (see header comment), add a test here that:
+  //   1. Creates a market with close_time = now - 30
+  //   2. Calls PythSolanaReceiver.buildPostPriceUpdateInstructions with a VAA
+  //      from hermes-beta.pyth.network at targetTimestamp = close_time + 30
+  //   3. Calls settle_market with the resulting PriceUpdateV2 account
+  //   4. Asserts market.outcome != Pending and vault empties after redeem
 });

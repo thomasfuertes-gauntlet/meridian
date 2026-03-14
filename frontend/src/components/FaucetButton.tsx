@@ -24,8 +24,8 @@ const ADMIN_SEED = new Uint8Array([
 ]);
 const ADMIN_KEYPAIR = Keypair.fromSeed(ADMIN_SEED);
 
-// 10,000 USDC in base units (6 decimals)
-const FAUCET_AMOUNT = BigInt(10_000 * 1_000_000);
+// 10,000,000 USDC in base units (6 decimals)
+const FAUCET_AMOUNT = BigInt(10_000_000 * 1_000_000);
 
 export function FaucetButton() {
   const { publicKey } = useWallet();
@@ -78,7 +78,7 @@ export function FaucetButton() {
         "confirmed"
       );
 
-      setStatus(`Minted 10,000 USDC (${signature.slice(0, 8)}...)`);
+      setStatus(`Minted 10M USDC (${signature.slice(0, 8)}...)`);
     } catch (err) {
       setStatus(
         `Error: ${err instanceof Error ? err.message : String(err)}`

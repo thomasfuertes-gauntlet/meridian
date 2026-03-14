@@ -86,6 +86,10 @@ pub mod meridian {
         instructions::unpause::handler(ctx)
     }
 
+    pub fn update_config(ctx: Context<UpdateConfig>, admin_settle_delay_secs: i64) -> Result<()> {
+        instructions::update_config::handler(ctx, admin_settle_delay_secs)
+    }
+
     pub fn place_order<'info>(
         ctx: Context<'_, '_, 'info, 'info, PlaceOrder<'info>>,
         side: OrderSide,

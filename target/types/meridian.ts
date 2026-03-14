@@ -2567,6 +2567,53 @@ export type Meridian = {
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "updateConfig",
+      "discriminator": [
+        29,
+        158,
+        252,
+        191,
+        10,
+        83,
+        219,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "adminSettleDelaySecs",
+          "type": "i64"
+        }
+      ]
     }
   ],
   "accounts": [

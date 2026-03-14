@@ -20,6 +20,7 @@ pub mod sell_yes;
 pub mod settle_market;
 pub mod shared;
 pub mod unpause;
+pub mod update_config;
 pub mod unwind_order;
 
 pub use admin_settle::*;
@@ -39,4 +40,5 @@ pub use sell_yes::*;
 pub use settle_market::*;
 pub use shared::*;
 pub use unpause::*;
+pub use update_config::*;
 pub use unwind_order::*;

@@ -96,8 +96,7 @@ export async function updateConfigDelay(
   admin: PublicKey,
   delaySecs: number,
 ): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (program.methods as any)
+  await program.methods
     .updateConfig(new BN(delaySecs))
     .accountsPartial({ admin })
     .rpc();

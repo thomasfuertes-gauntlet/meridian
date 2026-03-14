@@ -17,7 +17,8 @@ import {
   LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
 import { getDevWallet } from "./dev-wallets";
-import { USDC_PER_PAIR, sleep, isRemoteRpc } from "./bot-utils";
+import { USDC_PER_PAIR } from "./constants";
+import { sleep } from "./bot-utils";
 import {
   TOKEN_PROGRAM_ID,
   closeAccount,

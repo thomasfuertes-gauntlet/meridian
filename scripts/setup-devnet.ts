@@ -10,7 +10,7 @@
  *   ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=.wallets/admin.json \
  *     npx tsx scripts/setup-devnet.ts
  *
- * Outputs USDC mint address to stdout for Railway env var configuration.
+ * Outputs USDC mint address for config/devnet.env.
  */
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
@@ -259,12 +259,7 @@ async function main() {
   console.log("\n=== Devnet Setup Complete ===");
   console.log(`USDC Mint: ${usdcMint.toString()}`);
   console.log(`Markets created: ${totalMarkets}`);
-  console.log(`\nSet these Railway env vars:`);
-  console.log(`  USDC_MINT=${usdcMint.toString()}`);
-  console.log(`  ANCHOR_PROVIDER_URL=https://api.devnet.solana.com`);
-  console.log(`  VITE_RPC_URL=https://api.devnet.solana.com`);
-  console.log(`  VITE_USDC_MINT=${usdcMint.toString()}`);
-  console.log(`  VITE_DEV_WALLET=true`);
+  console.log(`\nEnsure config/devnet.env has: DEVNET_USDC_MINT=${usdcMint.toString()}`);
 }
 
 main().catch((err) => {

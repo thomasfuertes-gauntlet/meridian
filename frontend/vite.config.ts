@@ -8,7 +8,7 @@ const ACTIVE_MARKET_FILE = '/tmp/meridian-active-market.txt'
 export default defineConfig({
   plugins: [
     react(),
-    nodePolyfills(),
+    nodePolyfills(), // Required: @solana/web3.js uses Buffer/crypto which don't exist in browser
     {
       name: 'active-ticker-api',
       configureServer(server) {

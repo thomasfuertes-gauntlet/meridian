@@ -87,7 +87,7 @@ cd frontend && VITE_RPC_URL=https://api.devnet.solana.com npm run dev
 
 **Prerequisites:** Rust + Solana CLI + Anchor toolchain (see [Solana install docs](https://docs.solana.com/cli/install-solana-cli-tools)). The devnet faucet provides ~10 SOL for the deploy.
 
-> Set `DEVNET_RPC_URL` in `config/devnet.env` (copy from `config/devnet.env.example`). [Helius](https://helius.dev) Developer plan ($49/mo) recommended - 50 req/s, 10M credits/mo. Free tier (10 req/s, 1M credits) works but bots burn through credits fast.
+> Set `DEVNET_RPC_URL` in `.env` (copy from `.env.example`). [Helius](https://helius.dev) Developer plan ($49/mo) recommended - 50 req/s, 10M credits/mo. Free tier (10 req/s, 1M credits) works but bots burn through credits fast.
 
 ## RPC Provider Requirements
 
@@ -117,7 +117,7 @@ cd frontend && VITE_RPC_URL=https://api.devnet.solana.com npm run dev
 If you're working with an already-deployed program and USDC mint:
 
 ```bash
-cp config/devnet.env.example config/devnet.env
+cp .env.example .env
 # Fill in DEVNET_RPC_URL, DEVNET_USDC_MINT
 make devnet-setup    # create markets + fund bots
 make devnet-health   # verify deployment
@@ -132,7 +132,7 @@ Meridian runs as a single Railway service `meridian`: one container serves the f
 Copy and fill the devnet config:
 
 ```bash
-cp config/devnet.env.example config/devnet.env
+cp .env.example .env
 ```
 
 Fill in all vars:
@@ -145,7 +145,7 @@ VITE_DEV_WALLET=true
 DEMO_TICKER=NVDA
 ```
 
-`config/devnet.env` is the single operator config source for devnet deploys and Railway syncs. `RAILWAY_SERVICE` is the Railway service name used by `make railway-sync` to target the right service via the Railway CLI.
+`.env` is the single operator config source for devnet deploys and Railway syncs. `RAILWAY_SERVICE` is the Railway service name used by `make railway-sync` to target the right service via the Railway CLI.
 
 ### Deploy
 

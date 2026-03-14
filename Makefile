@@ -12,7 +12,7 @@
 
 export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.cargo/bin:$(PATH)
 
--include config/devnet.env
+-include .env
 
 ADMIN_WALLET ?= .wallets/admin.json
 BOT_A_WALLET ?= .wallets/bot-a.json
@@ -48,9 +48,9 @@ SMOKE_TEST_GREP = roundtrips create -> freeze -> settle-with-proof -> redeem aga
 define require_var
 	@if [ -z "$($1)" ]; then \
 		echo "Missing required config: $1"; \
-		echo "Set it in config/devnet.env, export it in your shell, or pass it inline."; \
-		if [ -f config/devnet.env.example ]; then \
-			echo "Start from: cp config/devnet.env.example config/devnet.env"; \
+		echo "Set it in .env, export it in your shell, or pass it inline."; \
+		if [ -f .env.example ]; then \
+			echo "Start from: cp .env.example .env"; \
 		fi; \
 		exit 1; \
 	fi
@@ -59,9 +59,9 @@ endef
 define require_any_var
 	@if [ -z "$($1)" ] && [ -z "$($2)" ]; then \
 		echo "Missing required config: $1 or $2"; \
-		echo "Set one of them in config/devnet.env, export it in your shell, or pass it inline."; \
-		if [ -f config/devnet.env.example ]; then \
-			echo "Start from: cp config/devnet.env.example config/devnet.env"; \
+		echo "Set one of them in .env, export it in your shell, or pass it inline."; \
+		if [ -f .env.example ]; then \
+			echo "Start from: cp .env.example .env"; \
 		fi; \
 		exit 1; \
 	fi

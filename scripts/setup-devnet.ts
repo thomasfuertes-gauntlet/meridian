@@ -259,7 +259,7 @@ async function main() {
   console.log("\n=== Devnet Setup Complete ===");
   console.log(`USDC Mint: ${usdcMint.toString()}`);
   console.log(`Markets created: ${totalMarkets}`);
-  console.log(`\nEnsure config/devnet.env has: DEVNET_USDC_MINT=${usdcMint.toString()}`);
+  console.log(`\nEnsure .env has: DEVNET_USDC_MINT=${usdcMint.toString()}`);
 }
 
 main().catch((err) => {

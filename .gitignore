@@ -5,7 +5,6 @@ spec.md
 .env.*
 *.local.*
 .dev.vars
-config/devnet.env
 frontend/.env.local
 
 # TypeScript build artifacts (tsc -b emits in-place without outDir)

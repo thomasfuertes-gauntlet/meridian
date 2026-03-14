@@ -71,7 +71,7 @@ export function MarketDetail() {
 
   const closeTime = featured?.closeTime ?? null;
   useEffect(() => {
-    if (closeTime == null) { setSecsToClose(null); return; }
+    if (closeTime == null) return;
     const ct = closeTime;
     function tick() {
       setSecsToClose(ct - Math.floor(Date.now() / 1000));
@@ -80,6 +80,8 @@ export function MarketDetail() {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [closeTime]);
+  // Reset countdown when no close time (outside effect to avoid lint violation)
+  const resolvedSecsToClose = closeTime == null ? null : secsToClose;
 
   const noBook = featured?.orderBook ? flipToNoPerspective(featured.orderBook) : null;
   const usdcMint = getConfiguredUsdcMint();
@@ -134,10 +136,10 @@ export function MarketDetail() {
               <dd>{formatContracts(featured.totalDepth)}</dd>
               <dt>Close time</dt>
               <dd>{formatTimestamp(featured.closeTime)}</dd>
-              {secsToClose != null && (
+              {resolvedSecsToClose != null && (
                 <>
                   <dt>Settlement</dt>
-                  <dd><mark data-tone={secsToClose <= 0 ? "muted" : "blue"}>{formatCountdown(secsToClose)}</mark></dd>
+                  <dd><mark data-tone={resolvedSecsToClose <= 0 ? "muted" : "blue"}>{formatCountdown(resolvedSecsToClose)}</mark></dd>
                 </>
               )}
             </dl>

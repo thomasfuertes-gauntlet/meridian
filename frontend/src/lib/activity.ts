@@ -362,7 +362,7 @@ export function useActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: Ticker) {
   const coderRef = useRef(new BorshInstructionCoder(idl as Idl));
   const ctx = useContext(MarketDataContext);
   const ctxRef = useRef(ctx.data);
-  ctxRef.current = ctx.data;
+  useEffect(() => { ctxRef.current = ctx.data; });
 
   useEffect(() => {
     let alive = true;

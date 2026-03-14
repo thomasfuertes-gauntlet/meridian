@@ -1,5 +1,5 @@
 # ── Stage 1: Build frontend ──────────────────────────────────────
-FROM node:20-slim AS frontend-build
+FROM node:22-slim AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -14,7 +14,7 @@ ARG VITE_SIGNAL_URL
 RUN npm run build
 
 # ── Stage 2: Runtime ─────────────────────────────────────────────
-FROM node:20-slim
+FROM node:22-slim
 WORKDIR /app
 
 # Install root deps (scripts need anchor, spl-token, etc.)
@@ -24,6 +24,28 @@ RUN npm ci --omit=dev
 # Install automation deps
 COPY automation/package.json automation/package-lock.json ./automation/
 RUN cd automation && npm ci --omit=dev
+# Patch: jito-ts/node_modules/rpc-websockets@7 has no exports field, so Node 22's
+# ESM-aware require (via tsx) fails with ERR_PACKAGE_PATH_NOT_EXPORTED when it
+# resolves the specifier against the top-level rpc-websockets@9 exports map.
+# Add the missing subpath exports so require('rpc-websockets/dist/lib/client') resolves.
+RUN node -e " \
+  const fs = require('fs'); \
+  const p = 'automation/node_modules/jito-ts/node_modules/rpc-websockets/package.json'; \
+  if (!fs.existsSync(p)) { console.log('jito-ts/rpc-websockets not found, skipping patch'); process.exit(0); } \
+  const pkg = JSON.parse(fs.readFileSync(p, 'utf-8')); \
+  if (!pkg.exports) { \
+    pkg.exports = { \
+      '.': { require: './dist/index.cjs', default: './dist/index.cjs' }, \
+      './dist/lib/client': { require: './dist/lib/client.cjs', default: './dist/lib/client.cjs' }, \
+      './dist/lib/client/websocket': { require: './dist/lib/client/websocket.cjs', default: './dist/lib/client/websocket.cjs' }, \
+      './dist/lib/client/websocket.browser': { require: './dist/lib/client/websocket.browser.cjs', default: './dist/lib/client/websocket.browser.cjs' } \
+    }; \
+    fs.writeFileSync(p, JSON.stringify(pkg, null, 2)); \
+    console.log('Patched jito-ts/rpc-websockets exports'); \
+  } else { \
+    console.log('jito-ts/rpc-websockets already has exports, skipping patch'); \
+  } \
+"
 
 # Copy source
 COPY scripts/ ./scripts/

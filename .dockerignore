@@ -1,0 +1,29 @@
+# Local node_modules (Docker stages install their own)
+node_modules
+
+# Rust/Anchor build artifacts (only target/idl and target/types are needed)
+target/deploy
+target/debug
+target/release
+target/sbf-solana-solana
+
+# Dev-only files
+.wallets
+frontend/dist
+frontend/.env.local
+config/devnet.env
+*.env.local
+
+# Test and dev files
+tests
+programs
+Cargo.toml
+Cargo.lock
+legacy
+
+# Git
+.git
+.gitignore
+
+# Claude
+.claude

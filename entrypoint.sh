@@ -27,7 +27,8 @@ echo "  bot-a: 48xYES8qxE1vvHPVJKJCdKRhDMbueeWmJhGHKQ3gWGhh"
 echo "  bot-b: RSG4qia3Dp9pGPzsMnFS9AzsRPKyJxJ75iyoSubwQ5W"
 
 echo "Starting automation cron (morning 8AM ET + settlement 5:05PM ET)..."
-npx tsx automation/src/index.ts &
+# Use automation's own tsx (bundled in prod deps) to avoid npx version mismatch
+./automation/node_modules/.bin/tsx automation/src/index.ts &
 AUTOMATION_PID=$!
 
 echo "Starting signal-server + SPA on :${PORT:-8080}..."

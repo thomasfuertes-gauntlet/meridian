@@ -6,7 +6,7 @@
 	local-test-rust local-test-anchor local-test-smoke local-test-grep local-check \
 	devnet-env-check railway-env-check railway-sync \
 	railway-deploy-frontend railway-deploy-bots railway-deploy railway-release \
-	devnet-deploy devnet-setup devnet-health devnet-settle devnet-morning devnet-reset \
+	devnet-bootstrap devnet-deploy devnet-setup devnet-health devnet-settle devnet-morning devnet-reset \
 	wallet-pubkeys clean \
 	alpha-cycle alpha-settle alpha-seed \
 	dev dev-validator deploy setup bots live strategy-bots test check \
@@ -36,7 +36,7 @@ LOCAL_VALIDATOR_BOOT_WAIT ?= 30
 # The tsx CLI opens an IPC pipe that hits EPERM in sandboxed/non-interactive shells.
 TSX ?= node --import tsx
 
-DEVNET_URL ?= $(DEVNET_RPC_URL)
+DEVNET_URL ?= $(or $(DEVNET_RPC_URL),https://api.devnet.solana.com)
 RAILWAY_FRONTEND_SERVICE ?= frontend
 RAILWAY_BOTS_SERVICE ?= bots
 RAILWAY_BOTS_URL ?= $(RAILWAY_BOTS_PUBLIC_URL)
@@ -49,6 +49,7 @@ LOCAL_TS_ENV = ANCHOR_PROVIDER_URL="$(LOCAL_RPC_URL)" ANCHOR_WALLET="$(ADMIN_WAL
 LOCAL_TEST_ENV = ANCHOR_PROVIDER_URL="$(LOCAL_RPC_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)"
 DEVNET_READONLY_ENV = ANCHOR_PROVIDER_URL="$(DEVNET_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)"
 DEVNET_TS_ENV = ANCHOR_PROVIDER_URL="$(DEVNET_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" USDC_MINT="$(DEVNET_USDC_MINT)"
+DEVNET_BOOTSTRAP_ENV = ANCHOR_PROVIDER_URL="$(DEVNET_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" OFFLINE=1
 DEVNET_AUTOMATION_ENV = RPC_URL="$(DEVNET_URL)" USDC_MINT="$(DEVNET_USDC_MINT)" ADMIN_KEYPAIR_PATH=../$(ADMIN_WALLET)
 SMOKE_TEST_GREP = roundtrips create -> freeze -> settle-with-proof -> redeem against config-backed oracle policy
 
@@ -328,6 +329,33 @@ devnet-morning: wallets devnet-env-check
 devnet-reset: wallets devnet-env-check devnet-settle devnet-morning
 	@echo "Seeding devnet order books..."
 	$(DEVNET_TS_ENV) $(TSX) scripts/seed-bots.ts
+
+## One-command devnet deploy from zero. No config/devnet.env required.
+## Prerequisites: Rust + Solana + Anchor toolchain, npm ci, ~10 SOL on devnet.
+devnet-bootstrap:
+	@echo "=== Devnet Bootstrap ==="
+	@echo "Generating fresh keypairs..."
+	WALLET_MODE=generate $(TSX) scripts/dev-wallets.ts
+	@echo "Patching program ID..."
+	$(TSX) scripts/patch-program-id.ts
+	@echo "Building program..."
+	@$(MAKE) build
+	@echo "Airdropping SOL to wallets..."
+	$(DEVNET_BOOTSTRAP_ENV) $(TSX) scripts/devnet-fund.ts
+	@echo "Deploying to devnet..."
+	anchor deploy --provider.cluster devnet --provider.wallet "$(ADMIN_WALLET)" --no-idl
+	@echo "Creating USDC mint + markets + funding bots..."
+	$(DEVNET_BOOTSTRAP_ENV) $(TSX) scripts/setup-devnet.ts
+	@echo "Seeding order books..."
+	$(DEVNET_BOOTSTRAP_ENV) $(TSX) scripts/seed-bots.ts
+	@echo ""
+	@echo "=== Devnet Bootstrap Complete ==="
+	@echo "Program ID: $$(solana-keygen pubkey $(PROGRAM_KEYPAIR) 2>/dev/null || echo 'unknown')"
+	@echo "Admin:      $(ADMIN_PUBKEY)"
+	@echo ""
+	@echo "To run the frontend against your devnet deploy:"
+	@echo "  cd frontend"
+	@echo "  VITE_RPC_URL=$(DEVNET_URL) npm run dev"
 
 wallet-pubkeys: wallets
 	@echo "Admin: $$(solana-keygen pubkey $(ADMIN_WALLET))"

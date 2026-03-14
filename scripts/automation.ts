@@ -9,11 +9,10 @@
  */
 
 import cron from "node-cron";
-import "dotenv/config";
 
-import { runMorningJob } from "./morning-job.js";
-import { runSettlementJob } from "./settlement-job.js";
-import { sendAlert } from "./alert.js";
+import { runMorningJob } from "./morning-job";
+import { runSettlementJob } from "./settlement-job";
+import { sendAlert } from "./alert";
 
 // Schedules use America/New_York timezone so DST is handled automatically.
 const MORNING_SCHEDULE = "0 8 * * 1-5"; // 8:00 AM ET

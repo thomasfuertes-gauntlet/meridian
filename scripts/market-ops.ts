@@ -20,7 +20,7 @@ import * as path from "path";
 import { getDevWallet } from "./dev-wallets";
 import { USDC_PER_PAIR, USDC_DECIMALS, MAG7_TICKERS } from "./constants";
 import { isRemoteRpc, sleep } from "./bot-utils";
-import { calculateStrikes } from "../automation/src/strikes.js";
+import { calculateStrikes } from "./strikes";
 import { fetchStockPrices } from "./fair-value";
 
 const TX_DELAY = () => (isRemoteRpc() ? 1500 : 0);

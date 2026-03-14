@@ -42,7 +42,7 @@ LOCAL_TEST_ENV = ANCHOR_PROVIDER_URL="$(LOCAL_RPC_URL)" ANCHOR_WALLET="$(ADMIN_W
 DEVNET_READONLY_ENV = ANCHOR_PROVIDER_URL="$(DEVNET_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)"
 DEVNET_TS_ENV = ANCHOR_PROVIDER_URL="$(DEVNET_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" USDC_MINT="$(DEVNET_USDC_MINT)"
 DEVNET_BOOTSTRAP_ENV = ANCHOR_PROVIDER_URL="$(DEVNET_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" OFFLINE=1
-DEVNET_AUTOMATION_ENV = RPC_URL="$(DEVNET_URL)" USDC_MINT="$(DEVNET_USDC_MINT)" ADMIN_KEYPAIR_PATH=../$(ADMIN_WALLET)
+DEVNET_AUTOMATION_ENV = RPC_URL="$(DEVNET_URL)" USDC_MINT="$(DEVNET_USDC_MINT)" ADMIN_KEYPAIR_PATH=$(ADMIN_WALLET)
 SMOKE_TEST_GREP = roundtrips create -> freeze -> settle-with-proof -> redeem against config-backed oracle policy
 
 define require_var
@@ -244,10 +244,10 @@ devnet-health: wallets devnet-env-check
 	$(DEVNET_READONLY_ENV) $(TSX) scripts/health-check.ts
 
 devnet-settle: wallets devnet-env-check
-	cd automation && $(DEVNET_AUTOMATION_ENV) $(TSX) src/index.ts --settle
+	$(DEVNET_AUTOMATION_ENV) $(TSX) scripts/automation.ts --settle
 
 devnet-morning: wallets devnet-env-check
-	cd automation && $(DEVNET_AUTOMATION_ENV) $(TSX) src/index.ts --now
+	$(DEVNET_AUTOMATION_ENV) $(TSX) scripts/automation.ts --now
 
 devnet-reset: wallets devnet-env-check devnet-settle devnet-morning
 	$(DEVNET_TS_ENV) $(TSX) scripts/seed-bots.ts

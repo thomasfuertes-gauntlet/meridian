@@ -46,9 +46,8 @@ echo "  ENABLE_FRONTEND=${ENABLE_FRONTEND:-true}"
 PIDS=()
 
 if [[ "${ENABLE_AUTOMATION:-true}" != "false" ]]; then
-  echo "Starting automation cron (morning 8AM ET + settlement 5:05PM ET)..."
-  # Use automation's own tsx (bundled in prod deps) to avoid npx version mismatch
-  ./automation/node_modules/.bin/tsx automation/src/index.ts &
+  echo "Starting automation cron (morning 8AM ET + settlement 4:07PM ET)..."
+  npx tsx scripts/automation.ts &
   PIDS+=($!)
 else
   echo "Skipping automation cron (ENABLE_AUTOMATION=false)"

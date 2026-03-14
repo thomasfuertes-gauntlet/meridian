@@ -26,7 +26,7 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices } from "./fair-value";
-import { calculateStrikes } from "../automation/src/strikes.js";
+import { calculateStrikes } from "./strikes";
 import { MAG7_TICKERS, USDC_DECIMALS, USDC_PER_PAIR } from "./constants";
 import { accountExists, withRetry } from "./market-ops";
 

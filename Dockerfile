@@ -17,20 +17,15 @@ RUN npm run build
 FROM node:22-slim
 WORKDIR /app
 
-# Install root deps (scripts need anchor, spl-token, etc.)
+# Install deps (single tree - automation merged into scripts/)
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
-
-# Install automation deps
-COPY automation/package.json automation/package-lock.json ./automation/
-RUN cd automation && npm ci --omit=dev
 # Patch: jito-ts/node_modules/rpc-websockets@7 has no exports field, so Node 22's
-# ESM-aware require (via tsx) fails with ERR_PACKAGE_PATH_NOT_EXPORTED when it
-# resolves the specifier against the top-level rpc-websockets@9 exports map.
+# ESM-aware require (via tsx) fails with ERR_PACKAGE_PATH_NOT_EXPORTED.
 # Add the missing subpath exports so require('rpc-websockets/dist/lib/client') resolves.
 RUN node -e " \
   const fs = require('fs'); \
-  const p = 'automation/node_modules/jito-ts/node_modules/rpc-websockets/package.json'; \
+  const p = 'node_modules/jito-ts/node_modules/rpc-websockets/package.json'; \
   if (!fs.existsSync(p)) { console.log('jito-ts/rpc-websockets not found, skipping patch'); process.exit(0); } \
   const pkg = JSON.parse(fs.readFileSync(p, 'utf-8')); \
   if (!pkg.exports) { \
@@ -49,8 +44,6 @@ RUN node -e " \
 
 # Copy source
 COPY scripts/ ./scripts/
-COPY automation/src/ ./automation/src/
-COPY automation/tsconfig.json ./automation/tsconfig.json
 COPY target/idl/ ./target/idl/
 COPY target/types/ ./target/types/
 COPY tsconfig.json Anchor.toml ./

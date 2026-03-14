@@ -5,7 +5,7 @@
  * Includes fallback hardcoded prices for devnet/off-hours testing.
  */
 
-export const DEFAULT_FEED_IDS: Record<string, string> = {
+export const PYTH_FEED_IDS: Record<string, string> = {
   AAPL: "49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688",
   MSFT: "d0ca23c1cc005e004ccf1db5bf76aeb6a49218f43dac3d4b275e92de12ded4d1",
   GOOGL: "5a48c03e9b9cb337801073ed9d166817473697efff0d138874e0f6a33d6d5aa6",
@@ -67,7 +67,7 @@ export function feedIdToBytes(hexId: string): number[] {
  */
 export async function fetchPrice(
   ticker: string,
-  feedIds: Record<string, string> = DEFAULT_FEED_IDS,
+  feedIds: Record<string, string> = PYTH_FEED_IDS,
   hermesUrl: string = "https://hermes.pyth.network"
 ): Promise<PythPrice> {
   const feedId = feedIds[ticker];

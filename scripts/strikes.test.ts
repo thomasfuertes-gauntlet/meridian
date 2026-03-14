@@ -1,12 +1,12 @@
 /**
  * Tests for strike price calculation.
- * Run with: tsx --test src/strikes.test.ts
+ * Run with: npx tsx --test scripts/strikes.test.ts
  */
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { calculateStrikes } from "./strikes.js";
+import { calculateStrikes } from "./strikes";
 
 describe("calculateStrikes", () => {
   it("META at $680 produces the six mandatory V1 strikes", () => {

@@ -4,7 +4,7 @@
  * without requiring an RPC connection.
  *
  * Routes are now under /api/* prefix (e.g., /api/activity?limit=12&ticker=NVDA).
- * Run with: npx tsx --test automation/src/read-api-activity.test.ts
+ * Run with: npx tsx --test scripts/read-api-activity.test.ts
  */
 
 import { describe, it } from "node:test";

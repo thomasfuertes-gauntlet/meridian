@@ -10,8 +10,7 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - `programs/meridian/` - Anchor smart contract (built-in CLOB, credit/claim settlement)
 - `tests/` - validator-backed TypeScript integration tests
 - `frontend/` - Vite + React SPA (no Tailwind, semantic HTML + CSS custom properties)
-- `automation/` - cron jobs (market creation, settlement) and bot scripts
-- `scripts/` - dev tooling, bot strategies, fair-value engine
+- `scripts/` - dev tooling, bot strategies, fair-value engine, automation cron jobs
 - `config/` - devnet deployment config (`devnet.env`)
 
 ## Architecture at a Glance
@@ -159,7 +158,7 @@ Demo bot flow can be concentrated to a single ticker via `DEMO_TICKER`; current 
 
 ### Service Architecture
 
-- Dockerfile: `Dockerfile` (root, multi-stage: builds frontend SPA, then runtime with scripts + automation)
+- Dockerfile: `Dockerfile` (root, multi-stage: builds frontend SPA, then runtime with scripts)
 - Entrypoint: `entrypoint.sh`
 - Runs five processes under `wait -n` (container restarts if any die):
   - automation cron (market creation at 8:00 AM ET + settlement at 4:07 PM ET)
@@ -294,7 +293,7 @@ The built-in CLOB is the right demo choice (shows depth of understanding, avoids
 
 - [ ] **Structured logging** - Replace `console.log` bot output with structured JSON logs (pino/winston) feeding into a log aggregator.
 - [ ] **Metrics** - Instrument: order fill rate, settlement latency, oracle staleness, book depth, maker P&L. Export to Prometheus/Grafana.
-- [ ] **Automated market creation** - Current `setup-devnet` is semi-manual. Production needs a fully autonomous morning job that creates markets based on previous close (already partially built in `automation/`), handles holidays/half-days, and validates strike generation.
+- [ ] **Automated market creation** - Current `setup-devnet` is semi-manual. Production needs a fully autonomous morning job that creates markets based on previous close (already partially built in `scripts/automation.ts`), handles holidays/half-days, and validates strike generation.
 - [ ] **Graceful degradation** - If bots crash, markets should still function (they do - CLOB is on-chain). But front-end needs to clearly indicate when market-maker liquidity is absent.
 
 ### What's Already Production-Ready

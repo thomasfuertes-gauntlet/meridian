@@ -13,7 +13,6 @@ tsconfig.tsbuildinfo
 *.tsbuildinfo
 scripts/*.js
 tests/*.js
-automation/src/*.js
 
 # Anchor / Solana (target/* ignores contents, not the dir itself, so negations work)
 target/*
@@ -31,3 +30,4 @@ frontend/vite.config.js
 
 *.zip
 purge-history.sh
+request_sol.sh

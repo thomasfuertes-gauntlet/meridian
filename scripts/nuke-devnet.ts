@@ -5,6 +5,10 @@
  *
  * Usage:
  *   ANCHOR_PROVIDER_URL=https://... ANCHOR_WALLET=.wallets/admin.json npx tsx scripts/nuke-devnet.ts
+ *
+ * Flags:
+ *   --yes, -y   Skip interactive confirmation prompt
+ *   --hard      Also close the program account after draining (recovers program rent)
  */
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
@@ -15,7 +19,7 @@ import {
   Transaction,
   LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
-import { getDevWallet } from "./dev-wallets";
+import { getDevWallet, type WalletName } from "./dev-wallets";
 import { USDC_PER_PAIR } from "./constants";
 import { sleep } from "./bot-utils";
 import {
@@ -46,6 +50,12 @@ async function confirm(question: string): Promise<boolean> {
 }
 
 async function main() {
+  // Parse CLI flags
+  const args = process.argv.slice(2);
+  const SKIP_CONFIRM = args.includes("--yes") || args.includes("-y");
+  const HARD_MODE = args.includes("--hard");
+  const totalSteps = HARD_MODE ? 5 : 4;
+
   // Step 1: Refuse localhost (check before provider init to fail fast)
   const rpcUrl = process.env.ANCHOR_PROVIDER_URL || "";
   if (rpcUrl.includes("localhost") || rpcUrl.includes("127.0.0.1")) {
@@ -63,8 +73,14 @@ async function main() {
   const adminKeypair = (provider.wallet as anchor.Wallet).payer;
   const endpoint = connection.rpcEndpoint;
 
-  const botA = getDevWallet("bot-a");
-  const botB = getDevWallet("bot-b");
+  const ALL_WALLETS = [
+    { name: "bot-a", kp: getDevWallet("bot-a") },
+    { name: "bot-b", kp: getDevWallet("bot-b") },
+    ...Array.from({ length: 20 }, (_, i) => ({
+      name: `trader-${i + 1}`,
+      kp: getDevWallet(`trader-${i + 1}` as WalletName),
+    })),
+  ];
 
   // Step 2: Print current state
   console.log("=== Meridian Devnet Nuke ===");
@@ -88,8 +104,16 @@ async function main() {
   }
 
   const adminBalBefore = await connection.getBalance(adminKeypair.publicKey);
-  const botABal = await connection.getBalance(botA.publicKey);
-  const botBBal = await connection.getBalance(botB.publicKey);
+
+  let totalWalletSol = 0;
+  let walletsWithBalance = 0;
+  for (const w of ALL_WALLETS) {
+    const bal = await connection.getBalance(w.kp.publicKey);
+    if (bal > 5000) {
+      totalWalletSol += bal;
+      walletsWithBalance++;
+    }
+  }
 
   console.log(`\nMarkets: ${allMarkets.length} total`);
   console.log(`  Pending: ${pendingCount}`);
@@ -98,21 +122,24 @@ async function main() {
   console.log(
     `\nAdmin SOL: ${(adminBalBefore / LAMPORTS_PER_SOL).toFixed(4)}`
   );
-  console.log(`Bot-A SOL: ${(botABal / LAMPORTS_PER_SOL).toFixed(4)}`);
-  console.log(`Bot-B SOL: ${(botBBal / LAMPORTS_PER_SOL).toFixed(4)}`);
+  console.log(
+    `\nWallets: ${walletsWithBalance}/${ALL_WALLETS.length} with balance (${(totalWalletSol / LAMPORTS_PER_SOL).toFixed(4)} SOL total)`
+  );
 
-  if (allMarkets.length === 0 && botABal <= 5000 && botBBal <= 5000) {
+  if (allMarkets.length === 0 && totalWalletSol <= 5000 * ALL_WALLETS.length) {
     console.log("\nNothing to nuke. Exiting.");
     process.exit(0);
   }
 
   // Step 3: Confirmation prompt
-  const yes = await confirm(
-    `\nNuke ${allMarkets.length} markets on devnet? This is irreversible. [y/N] `
-  );
-  if (!yes) {
-    console.log("Aborted.");
-    process.exit(0);
+  if (!SKIP_CONFIRM) {
+    const yes = await confirm(
+      `\nNuke ${allMarkets.length} markets on devnet? This is irreversible. [y/N] `
+    );
+    if (!yes) {
+      console.log("Aborted.");
+      process.exit(0);
+    }
   }
 
   // Step 4: Force-settle all pending/frozen markets via admin_settle
@@ -123,7 +150,9 @@ async function main() {
   );
 
   if (unsettled.length > 0) {
-    console.log(`\n[1/4] Settling ${unsettled.length} unsettled markets...`);
+    console.log(
+      `\n[1/${totalSteps}] Settling ${unsettled.length} unsettled markets...`
+    );
     let settledOk = 0;
     let settleErrors = 0;
 
@@ -189,11 +218,11 @@ async function main() {
       `  Settle complete: ${settledOk} ok, ${settleErrors} errors`
     );
   } else {
-    console.log("\n[1/4] No unsettled markets.");
+    console.log(`\n[1/${totalSteps}] No unsettled markets.`);
   }
 
   // Step 5: Close all settled markets (force=true)
-  console.log("\n[2/4] Closing settled markets...");
+  console.log(`\n[2/${totalSteps}] Closing settled markets...`);
   // Re-fetch to include newly settled ones
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const refreshed = await (program.account as any).strikeMarket.all();
@@ -234,16 +263,12 @@ async function main() {
   }
   console.log(`  Closed ${closedCount} markets.`);
 
-  // Step 6: Close bot token accounts
-  console.log("\n[3/4] Closing bot token accounts...");
-  const bots = [
-    { name: "bot-a", kp: botA },
-    { name: "bot-b", kp: botB },
-  ];
+  // Step 6: Close wallet token accounts
+  console.log(`\n[3/${totalSteps}] Closing wallet token accounts...`);
 
   let tokenAccountsClosed = 0;
 
-  for (const bot of bots) {
+  for (const bot of ALL_WALLETS) {
     try {
       const tokenAccounts = await connection.getTokenAccountsByOwner(
         bot.kp.publicKey,
@@ -251,7 +276,6 @@ async function main() {
       );
 
       if (tokenAccounts.value.length === 0) {
-        console.log(`  ${bot.name}: no token accounts`);
         continue;
       }
 
@@ -328,18 +352,15 @@ async function main() {
   }
   console.log(`  Closed ${tokenAccountsClosed} token accounts.`);
 
-  // Step 7: Drain bot SOL to admin
-  console.log("\n[4/4] Draining bot SOL to admin...");
+  // Step 7: Drain wallet SOL to admin
+  console.log(`\n[4/${totalSteps}] Draining wallet SOL to admin...`);
   let solDrained = 0;
 
-  for (const bot of bots) {
+  for (const bot of ALL_WALLETS) {
     try {
       const bal = await connection.getBalance(bot.kp.publicKey);
       const transferAmount = bal - 5000; // keep 5000 lamports for rent-exempt minimum
       if (transferAmount <= 0) {
-        console.log(
-          `  ${bot.name}: ${(bal / LAMPORTS_PER_SOL).toFixed(6)} SOL (too low to drain)`
-        );
         continue;
       }
 
@@ -363,7 +384,38 @@ async function main() {
     }
   }
 
-  // Step 8: Print recovery report
+  // Step 8 (--hard only): Close program account
+  if (HARD_MODE) {
+    console.log(`\n[5/${totalSteps}] Closing program...`);
+    try {
+      const { execFileSync } = await import("child_process");
+      const programId = program.programId.toString();
+      const keypairPath = process.env.ANCHOR_WALLET || ".wallets/admin.json";
+      execFileSync(
+        "solana",
+        [
+          "program",
+          "close",
+          programId,
+          "--url",
+          endpoint,
+          "--keypair",
+          keypairPath,
+          "--recipient",
+          adminKeypair.publicKey.toString(),
+        ],
+        { stdio: "inherit", timeout: 30_000 }
+      );
+      console.log(`  Program ${programId} closed.`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `  Warning: program close failed (admin may not be upgrade authority): ${msg.slice(0, 120)}`
+      );
+    }
+  }
+
+  // Final: Print recovery report
   const adminBalAfter = await connection.getBalance(adminKeypair.publicKey);
   const totalRecovered =
     (adminBalAfter - adminBalBefore) / LAMPORTS_PER_SOL;

@@ -16,9 +16,8 @@ import * as fs from "fs";
 import * as path from "path";
 
 const CORE_WALLETS = ["admin", "bot-a", "bot-b"] as const;
-const TRADER_WALLETS = Array.from({ length: 20 }, (_, i) => `trader-${i + 1}`) as string[];
-const WALLET_NAMES = [...CORE_WALLETS, ...TRADER_WALLETS] as const;
-export type WalletName = (typeof CORE_WALLETS)[number] | `trader-${number}`;
+const WALLET_NAMES = CORE_WALLETS;
+export type WalletName = (typeof CORE_WALLETS)[number];
 
 const WALLETS_DIR = path.join(import.meta.dirname, "../.wallets");
 const PROGRAM_KEYPAIR_PATH = process.env.PROGRAM_KEYPAIR_PATH

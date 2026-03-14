@@ -26,7 +26,7 @@ import {
   Transaction,
   LAMPORTS_PER_SOL,
 } from "@solana/web3.js";
-import { getDevWallet, type WalletName } from "./dev-wallets";
+import { getDevWallet } from "./dev-wallets";
 import { USDC_PER_PAIR } from "./constants";
 import { sleep, defaultTxDelay, sendNoConfirm, batchConfirm } from "./bot-utils";
 import {
@@ -83,10 +83,6 @@ async function main() {
   const ALL_WALLETS = [
     { name: "bot-a", kp: getDevWallet("bot-a") },
     { name: "bot-b", kp: getDevWallet("bot-b") },
-    ...Array.from({ length: 20 }, (_, i) => ({
-      name: `trader-${i + 1}`,
-      kp: getDevWallet(`trader-${i + 1}` as WalletName),
-    })),
   ];
 
   // Step 2: Print current state

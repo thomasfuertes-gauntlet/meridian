@@ -71,10 +71,12 @@ if [[ "${ENABLE_LIQUIDITY_BOT:-true}" != "false" ]]; then
     const all = await (p.account as any).strikeMarket.all();
     const active = all.filter((m: any) => m.account.outcome?.pending !== undefined);
     console.log(active.length);
-  " 2>/dev/null | tail -1)
+  " 2>&1 | tail -1) || MARKET_COUNT="unknown"
   if [[ "$MARKET_COUNT" == "0" ]]; then
     echo "No active markets found. Running morning job bootstrap..."
     npx tsx scripts/automation.ts --now || echo "  (bootstrap failed, continuing - cron will retry)"
+  else
+    echo "  Active markets: $MARKET_COUNT"
   fi
 
   echo "Starting seed-bots (long-running, re-seeds every 15 min during market hours)..."

@@ -5,7 +5,6 @@
   "type": "module",
   "scripts": {
     "test": "ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts",
-    "local:bootstrap": "OFFLINE=1 make local-bootstrap",
     "local:ui": "cd frontend && npm run dev"
   },
   "dependencies": {

@@ -62,8 +62,24 @@ else
 fi
 
 if [[ "${ENABLE_LIQUIDITY_BOT:-true}" != "false" ]]; then
-  echo "Running seed-bots (auto-skips if already seeded)..."
-  npx tsx scripts/seed-bots.ts
+  # Bootstrap: if no active markets exist and it's a weekday during market hours,
+  # run the morning job inline so bots don't crash-loop waiting for the 8 AM cron.
+  MARKET_COUNT=$(npx tsx -e "
+    import * as anchor from '@coral-xyz/anchor';
+    anchor.setProvider(anchor.AnchorProvider.env());
+    const p = anchor.workspace.Meridian;
+    const all = await (p.account as any).strikeMarket.all();
+    const active = all.filter((m: any) => m.account.outcome?.pending !== undefined);
+    console.log(active.length);
+  " 2>/dev/null | tail -1)
+  if [[ "$MARKET_COUNT" == "0" ]]; then
+    echo "No active markets found. Running morning job bootstrap..."
+    npx tsx scripts/automation.ts --now || echo "  (bootstrap failed, continuing - cron will retry)"
+  fi
+
+  echo "Starting seed-bots (long-running, re-seeds every 15 min during market hours)..."
+  npx tsx scripts/seed-bots.ts &
+  PIDS+=($!)
 
   echo "Starting live trading bot..."
   npx tsx scripts/live-bots.ts &

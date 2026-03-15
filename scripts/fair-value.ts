@@ -7,14 +7,16 @@
 import { USDC_PER_PAIR, PYTH_FEED_IDS } from "./constants";
 
 const FETCH_TIMEOUT_MS = 5_000;
-const OFFLINE = process.env.OFFLINE === "1";
+// KEY-DECISION 2026-03-14: derive synthetic-price mode from RPC URL, not an env var.
+// Localnet always uses synthetic prices; devnet/mainnet use live Hermes with off-hours fallback.
+const LOCALNET = /127\.0\.0\.1|localhost/.test(process.env.ANCHOR_PROVIDER_URL ?? "");
 
 /**
  * US equity market hours check (ET).
  * Returns true during weekday 9:30 AM - 4:30 PM ET (30min buffer after close).
  * Used to decide whether missing Pyth data is expected or alarming.
  */
-function isMarketHours(): boolean {
+export function isMarketHours(): boolean {
   const now = new Date();
   const et = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
   const day = et.getDay();
@@ -114,7 +116,7 @@ export function computeLevels(fair: number): {
  * Fetch stock prices from Pyth Hermes HTTP API.
  *
  * Modes:
- *   OFFLINE=1 env var  - skip Hermes entirely, use synthetic random-walk prices
+ *   Localnet (auto-detected from ANCHOR_PROVIDER_URL) - synthetic random-walk prices
  *   Outside market hrs - try Hermes, silently fall back to synthetic
  *   During market hrs  - try Hermes, WARN loudly if falling back to synthetic
  *
@@ -124,7 +126,7 @@ export async function fetchStockPrices(): Promise<Map<string, number>> {
   const prices = new Map<string, number>();
   const entries = Object.entries(PYTH_FEED_IDS);
 
-  if (!OFFLINE) {
+  if (!LOCALNET) {
     try {
       const results = await Promise.allSettled(
         entries.map(async ([ticker, feedId]) => {
@@ -162,8 +164,8 @@ export async function fetchStockPrices(): Promise<Map<string, number>> {
   }
 
   if (missingTickers.length > 0) {
-    if (OFFLINE) {
-      console.log("  [OFFLINE] Synthetic prices:", missingTickers.join(", "));
+    if (LOCALNET) {
+      console.log("  [LOCALNET] Synthetic prices:", missingTickers.join(", "));
     } else if (isMarketHours()) {
       console.warn(`  [WARNING] Pyth Hermes failed during market hours! Synthetic fallback for: ${missingTickers.join(", ")}`);
     } else {

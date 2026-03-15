@@ -35,8 +35,9 @@ import {
   createFundedUser,
   getCurrentUnixTimestamp,
   createEmptyPriceUpdateAccount,
-  PYTH_RECEIVER_PROGRAM_ID,
   buildMockPriceUpdateV2Data,
+  createMockPriceUpdate,
+  deriveMarketPdas,
 } from "./helpers";
 
 // ─────────────────────────────────────────────────────────────────
@@ -530,22 +531,10 @@ describe("settlement unwind flow", () => {
 // ─────────────────────────────────────────────────────────────────
 //  ORACLE SETTLEMENT (settle_market)
 //
-//  settle_market reads a Pyth PriceUpdateV2 account on-chain. Full
-//  end-to-end testing requires the Pyth Receiver and Wormhole
-//  programs cloned onto the test validator. The tests below cover
-//  the error paths that DO work in the standard test environment.
-//
-//  TO ENABLE FULL ORACLE TESTS, add to Anchor.toml:
-//    [test.validator]
-//    [[test.validator.clone]]
-//    address = "rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ"  # Pyth Receiver
-//    [[test.validator.clone]]
-//    address = "HDwcJBJXjL9FpJ7UBsYBtaDjsBUhuLCUYoz3zr8SWWaQ"  # Wormhole Core Bridge
-//    url = "https://api.devnet.solana.com"
-//  Then replace the stub below with PythSolanaReceiver.buildPostPriceUpdateInstructions
-//  + a live VAA from https://hermes-beta.pyth.network at close_time + 30s.
-//  The buildMockPriceUpdateV2Data helper in helpers.ts documents the exact
-//  PriceUpdateV2 Borsh layout for reference.
+//  settle_market reads a Pyth PriceUpdateV2 account on-chain.
+//  A mock-pyth program (deployed at the real Pyth Receiver address via
+//  --bpf-program in Anchor.toml) accepts raw bytes and writes them to
+//  an account, enabling full oracle happy-path testing without Wormhole.
 // ─────────────────────────────────────────────────────────────────
 
 describe("oracle settlement (settle_market)", () => {
@@ -561,19 +550,15 @@ describe("oracle settlement (settle_market)", () => {
   });
 
   it("rejects settle_market when price_update is owned by the wrong program", async () => {
-    // Create a market past its close_time so prepare_for_settlement passes.
     const closedAt = await getCurrentUnixTimestamp(ctx);
     const pdas = await createMarket(
       ctx,
       "NVDA",
       new anchor.BN(300_000_000),
       nextOracleDate(),
-      new anchor.BN(closedAt - 10) // close_time 10s ago
+      new anchor.BN(closedAt - 10)
     );
 
-    // Create a regular keypair account owned by the System Program.
-    // settle_market's Account<'info, PriceUpdateV2> constraint will reject it
-    // because the owner is not the Pyth Receiver program.
     const wrongOwnerAccount = Keypair.generate();
     const lamports =
       await ctx.provider.connection.getMinimumBalanceForRentExemption(133);
@@ -607,7 +592,6 @@ describe("oracle settlement (settle_market)", () => {
         .rpc();
       expect.fail("Should have thrown AccountOwnedByWrongProgram");
     } catch (err: any) {
-      // Anchor rejects accounts not owned by the expected program.
       expect(err.toString()).to.satisfy((msg: string) =>
         msg.includes("AccountOwnedByWrongProgram") ||
         msg.includes("owned by") ||
@@ -617,7 +601,6 @@ describe("oracle settlement (settle_market)", () => {
   });
 
   it("rejects settle_market when price_update has wrong discriminator", async () => {
-    // Create a market past its close_time.
     const closedAt = await getCurrentUnixTimestamp(ctx);
     const pdas = await createMarket(
       ctx,
@@ -627,9 +610,6 @@ describe("oracle settlement (settle_market)", () => {
       new anchor.BN(closedAt - 10)
     );
 
-    // Create an account owned by the Pyth Receiver program but with all-zero
-    // data (no valid discriminator). settle_market should reject with
-    // AccountDiscriminatorMismatch.
     const zeroedPriceAccount = Keypair.generate();
     await createEmptyPriceUpdateAccount(ctx, zeroedPriceAccount);
 
@@ -660,8 +640,6 @@ describe("oracle settlement (settle_market)", () => {
     }
   });
 
-  // buildMockPriceUpdateV2Data demonstrates the exact PriceUpdateV2 Borsh
-  // layout. Confirm the helper builds a correctly-sized buffer.
   it("buildMockPriceUpdateV2Data produces 133-byte correctly-structured buffer", () => {
     const NVDA_FEED_ID = Array.from(
       Buffer.from(
@@ -678,22 +656,128 @@ describe("oracle settlement (settle_market)", () => {
     });
 
     expect(data.length).to.equal(133);
-
-    // Check discriminator bytes
     expect([...data.slice(0, 8)]).to.deep.equal([34, 241, 35, 99, 157, 126, 244, 205]);
-
-    // VerificationLevel::Full = 0x01 at byte 40
     expect(data.readUInt8(40)).to.equal(1);
-
-    // NVDA feed_id starts at byte 41
     expect([...data.slice(41, 73)]).to.deep.equal(NVDA_FEED_ID);
   });
 
-  // TODO(oracle-full-test): Once Anchor.toml includes Pyth Receiver + Wormhole
-  // program clones (see header comment), add a test here that:
-  //   1. Creates a market with close_time = now - 30
-  //   2. Calls PythSolanaReceiver.buildPostPriceUpdateInstructions with a VAA
-  //      from hermes-beta.pyth.network at targetTimestamp = close_time + 30
-  //   3. Calls settle_market with the resulting PriceUpdateV2 account
-  //   4. Asserts market.outcome != Pending and vault empties after redeem
+  // ── Oracle happy-path tests (requires mock-pyth program) ──────
+
+  const NVDA_FEED_ID = Array.from(
+    Buffer.from(
+      "b1073854ed24cbc755dc527418f52b7d271f6cc967bbf8d8129112b18860a593",
+      "hex"
+    )
+  );
+
+  async function createOracleMarket(
+    ctx: TestContext,
+    strikeDollars: number,
+    closeTimeOffset: number = -30
+  ) {
+    const closedAt = await getCurrentUnixTimestamp(ctx);
+    const closeTime = new anchor.BN(closedAt + closeTimeOffset);
+    const pdas = await createMarket(
+      ctx,
+      "NVDA",
+      new anchor.BN(strikeDollars * 1_000_000),
+      nextOracleDate(),
+      closeTime
+    );
+    return { pdas, closeTime: closedAt + closeTimeOffset };
+  }
+
+  async function oracleSettle(
+    ctx: TestContext,
+    pdas: ReturnType<typeof deriveMarketPdas>,
+    priceDollars: number,
+    publishTime: number
+  ) {
+    const priceUpdate = await createMockPriceUpdate(ctx.provider, {
+      feedId: NVDA_FEED_ID,
+      priceDollars,
+      publishTime,
+    });
+
+    const [orderBookPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("orderbook"), pdas.marketPda.toBuffer()],
+      ctx.program.programId
+    );
+
+    await ctx.methods
+      .settleMarket()
+      .accountsPartial({
+        settler: ctx.admin.publicKey,
+        market: pdas.marketPda,
+        priceUpdate,
+      })
+      .remainingAccounts([
+        { pubkey: orderBookPda, isSigner: false, isWritable: true },
+      ])
+      .rpc();
+  }
+
+  it("settles YesWins via oracle when price > strike", async () => {
+    const { pdas, closeTime } = await createOracleMarket(ctx, 150);
+    await mintPairForAdmin(ctx, pdas, 1);
+
+    await oracleSettle(ctx, pdas, 155.0, closeTime + 30);
+
+    const market = await ctx.program.account.strikeMarket.fetch(pdas.marketPda);
+    expect(market.outcome).to.deep.equal({ yesWins: {} });
+  });
+
+  it("settles NoWins via oracle when price < strike", async () => {
+    const { pdas, closeTime } = await createOracleMarket(ctx, 150);
+    await mintPairForAdmin(ctx, pdas, 1);
+
+    await oracleSettle(ctx, pdas, 145.0, closeTime + 30);
+
+    const market = await ctx.program.account.strikeMarket.fetch(pdas.marketPda);
+    expect(market.outcome).to.deep.equal({ noWins: {} });
+  });
+
+  it("settles YesWins via oracle when price == strike (at-or-above rule)", async () => {
+    const { pdas, closeTime } = await createOracleMarket(ctx, 150);
+    await mintPairForAdmin(ctx, pdas, 1);
+
+    await oracleSettle(ctx, pdas, 150.0, closeTime + 30);
+
+    const market = await ctx.program.account.strikeMarket.fetch(pdas.marketPda);
+    expect(market.outcome).to.deep.equal({ yesWins: {} });
+  });
+
+  it("oracle settlement + redeem drains vault to zero", async () => {
+    const { pdas, closeTime } = await createOracleMarket(ctx, 200);
+    const { userYes } = await mintPairForAdmin(ctx, pdas, 3);
+    const adminUsdcBefore = await tokenAmount(ctx, ctx.adminUsdcAta);
+
+    await oracleSettle(ctx, pdas, 210.0, closeTime + 30);
+
+    await redeemForUser(ctx, pdas, ctx.admin.publicKey, ctx.adminUsdcAta, pdas.yesMintPda, userYes, 3);
+
+    const adminUsdcAfter = await tokenAmount(ctx, ctx.adminUsdcAta);
+    const vaultAfter = await tokenAmount(ctx, pdas.vaultPda);
+
+    expectIncrease(adminUsdcBefore, adminUsdcAfter, 3_000_000);
+    expect(vaultAfter).to.equal(0);
+  });
+
+  it("oracle settlement auto-credits resting orders", async () => {
+    const { pdas, closeTime } = await createOracleMarket(ctx, 250);
+    const adminYes = await createAssociatedTokenAccount(
+      ctx.provider.connection,
+      ctx.mintAuthority,
+      pdas.yesMintPda,
+      ctx.admin.publicKey
+    );
+
+    // Place a bid on the book
+    await placeBid(ctx, pdas, ctx.admin.publicKey, ctx.adminUsdcAta, adminYes, 500_000, 1);
+
+    await oracleSettle(ctx, pdas, 260.0, closeTime + 30);
+
+    const market = await ctx.program.account.strikeMarket.fetch(pdas.marketPda);
+    expect(market.outcome).to.deep.equal({ yesWins: {} });
+  });
 });

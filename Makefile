@@ -1,11 +1,11 @@
 .PHONY: \
 	build clean \
-	_wallets _local-validator _local-validator-stop _devnet-env _railway-env \
-	local local-deploy local-cycle local-settle local-seed local-smart-deploy \
+	_wallets _mock-pyth _local-validator _local-validator-stop _devnet-env _railway-env _local-deploy \
+	local local-cycle local-settle local-seed \
 	local-live local-strategy local-ui local-validator-reset \
 	test uat \
-	devnet-deploy devnet-setup devnet-health devnet-settle devnet-morning \
-	devnet-reset devnet-bootstrap nuke \
+	devnet-deploy _devnet-setup devnet-health \
+	devnet-bootstrap nuke \
 	railway-sync railway-deploy
 
 # ── Config & Variables ──────────────────────────────────────────
@@ -15,16 +15,9 @@ export PATH := $(HOME)/.local/share/solana/install/active_release/bin:$(HOME)/.c
 -include .env
 
 ADMIN_WALLET ?= .wallets/admin.json
-BOT_A_WALLET ?= .wallets/bot-a.json
-BOT_B_WALLET ?= .wallets/bot-b.json
 PROGRAM_KEYPAIR ?= target/deploy/meridian-keypair.json
-APP_IDL_PATH := frontend/src/idl/meridian.json
-
 LOCAL_STATE_DIR ?= .localnet
 LOCAL_RPC_URL ?= http://127.0.0.1:8899
-LOCAL_WS_URL ?= ws://127.0.0.1:8900
-LOCAL_LEDGER_DIR ?= $(LOCAL_STATE_DIR)/ledger
-LOCAL_VALIDATOR_LOG ?= $(LOCAL_STATE_DIR)/validator.log
 LOCAL_VALIDATOR_PID ?= $(LOCAL_STATE_DIR)/validator.pid
 LOCAL_VALIDATOR_BOOT_WAIT ?= 30
 # KEY-DECISION 2026-03-13: use 'node --import tsx' not the 'tsx' CLI.
@@ -37,13 +30,10 @@ VITE_DEV_WALLET ?= true
 DEMO_TICKER ?= NVDA
 
 ADMIN_PUBKEY = $$(solana-keygen pubkey $(ADMIN_WALLET))
-LOCAL_TS_ENV = ANCHOR_PROVIDER_URL="$(LOCAL_RPC_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" OFFLINE="$(OFFLINE)" DEMO_TICKER="$(DEMO_TICKER)"
-LOCAL_TEST_ENV = ANCHOR_PROVIDER_URL="$(LOCAL_RPC_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)"
+LOCAL_TS_ENV = ANCHOR_PROVIDER_URL="$(LOCAL_RPC_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" DEMO_TICKER="$(DEMO_TICKER)"
 DEVNET_READONLY_ENV = ANCHOR_PROVIDER_URL="$(DEVNET_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)"
 DEVNET_TS_ENV = ANCHOR_PROVIDER_URL="$(DEVNET_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" USDC_MINT="$(DEVNET_USDC_MINT)"
-DEVNET_BOOTSTRAP_ENV = ANCHOR_PROVIDER_URL="$(DEVNET_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" OFFLINE=1
 DEVNET_AUTOMATION_ENV = RPC_URL="$(DEVNET_URL)" USDC_MINT="$(DEVNET_USDC_MINT)" ADMIN_KEYPAIR_PATH=$(ADMIN_WALLET)
-SMOKE_TEST_GREP = roundtrips create -> freeze -> settle-with-proof -> redeem against config-backed oracle policy
 
 define require_var
 	@if [ -z "$($1)" ]; then \
@@ -69,10 +59,17 @@ endef
 
 # ── Internal ────────────────────────────────────────────────────
 
+MOCK_PYTH_SO = mock-pyth/target/deploy/mock_pyth.so
+
 _wallets:
 	@$(TSX) scripts/dev-wallets.ts
 
-_local-validator:
+$(MOCK_PYTH_SO): mock-pyth/src/lib.rs mock-pyth/Cargo.toml
+	cd mock-pyth && cargo build-sbf
+
+_mock-pyth: $(MOCK_PYTH_SO)
+
+_local-validator: _mock-pyth
 	@mkdir -p $(LOCAL_STATE_DIR)
 	@# Kill stale validator if tracked but unhealthy
 	@if [ -f "$(LOCAL_VALIDATOR_PID)" ]; then \
@@ -89,10 +86,11 @@ _local-validator:
 		--bind-address 127.0.0.1 \
 		--faucet-port 0 \
 		--mint "$(ADMIN_PUBKEY)" \
+		--bpf-program rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ $(MOCK_PYTH_SO) \
 		--reset \
-		--ledger "$(LOCAL_LEDGER_DIR)" \
+		--ledger "$(LOCAL_STATE_DIR)/ledger" \
 		--limit-ledger-size 50000000 \
-		> "$(LOCAL_VALIDATOR_LOG)" 2>&1 < /dev/null & \
+		> "$(LOCAL_STATE_DIR)/validator.log" 2>&1 < /dev/null & \
 	disown; \
 	echo $$! > "$(LOCAL_VALIDATOR_PID)"
 	@echo "Waiting for validator on $(LOCAL_RPC_URL)..."
@@ -133,9 +131,9 @@ _railway-env:
 # Markets expire in 12 minutes (CYCLE_MINUTES). Run `make local-settle` to settle,
 # or `make local-cycle` to rotate to fresh markets.
 
-local: local-deploy local-cycle local-seed  ## Full local: deploy + 12-min markets + seeded books
+local: _local-deploy local-cycle local-seed  ## Full local: deploy + 12-min markets + seeded books
 
-local-deploy: _wallets _local-validator
+_local-deploy: _wallets _local-validator
 	@mkdir -p $(LOCAL_STATE_DIR)
 	@echo "Building program and refreshing IDL..."
 	@$(MAKE) build
@@ -151,9 +149,6 @@ local-settle: _wallets  ## Settle + close all markets
 local-seed: _wallets  ## Seed order books with bot liquidity
 	$(LOCAL_TS_ENV) $(TSX) scripts/seed-bots.ts
 
-local-smart-deploy: _wallets  ## Hash-compare redeploy (settle/close first if needed)
-	$(LOCAL_TS_ENV) $(TSX) scripts/smart-deploy.ts
-
 local-live: _wallets
 	$(LOCAL_TS_ENV) $(TSX) scripts/live-bots.ts
 
@@ -168,9 +163,9 @@ local-validator-reset: _local-validator-stop
 
 # ── Tests ──────────────────────────────────────────────────────
 
-test: _wallets
+test: _wallets _mock-pyth
 	@if [ -n "$(GREP)" ]; then \
-		$(LOCAL_TEST_ENV) npm test -- --grep "$(GREP)"; \
+		ANCHOR_PROVIDER_URL="$(LOCAL_RPC_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" npm test -- --grep "$(GREP)"; \
 	else \
 		anchor test --skip-build; \
 	fi
@@ -184,30 +179,21 @@ devnet-deploy: _wallets _devnet-env
 	@$(MAKE) build
 	anchor deploy --provider.cluster devnet --provider.wallet "$(ADMIN_WALLET)" --no-idl
 
-devnet-setup: _wallets _devnet-env
+_devnet-setup: _wallets _devnet-env
 	$(DEVNET_TS_ENV) $(TSX) scripts/setup-devnet.ts
 
 devnet-health: _wallets _devnet-env
 	$(DEVNET_READONLY_ENV) $(TSX) scripts/health-check.ts
-
-devnet-settle: _wallets _devnet-env
-	$(DEVNET_AUTOMATION_ENV) $(TSX) scripts/automation.ts --settle
-
-devnet-morning: _wallets _devnet-env
-	$(DEVNET_AUTOMATION_ENV) $(TSX) scripts/automation.ts --now
-
-devnet-reset: _wallets _devnet-env devnet-settle devnet-morning
-	$(DEVNET_TS_ENV) $(TSX) scripts/seed-bots.ts
 
 devnet-bootstrap:
 	@echo "=== Devnet Bootstrap ==="
 	WALLET_MODE=generate $(TSX) scripts/dev-wallets.ts
 	$(TSX) scripts/patch-program-id.ts
 	@$(MAKE) build
-	$(DEVNET_BOOTSTRAP_ENV) $(TSX) scripts/devnet-fund.ts
+	$(DEVNET_READONLY_ENV) $(TSX) scripts/devnet-fund.ts
 	anchor deploy --provider.cluster devnet --provider.wallet "$(ADMIN_WALLET)" --no-idl
-	$(DEVNET_BOOTSTRAP_ENV) $(TSX) scripts/setup-devnet.ts
-	$(DEVNET_BOOTSTRAP_ENV) $(TSX) scripts/seed-bots.ts
+	$(DEVNET_READONLY_ENV) $(TSX) scripts/setup-devnet.ts
+	$(DEVNET_READONLY_ENV) $(TSX) scripts/seed-bots.ts
 	@echo ""
 	@echo "=== Devnet Bootstrap Complete ==="
 	@echo "Program ID: $$(solana-keygen pubkey $(PROGRAM_KEYPAIR) 2>/dev/null || echo 'unknown')"
@@ -236,7 +222,7 @@ railway-deploy: _railway-env
 
 build:
 	anchor build
-	@cp target/idl/meridian.json $(APP_IDL_PATH)
+	@cp target/idl/meridian.json frontend/src/idl/meridian.json
 
 clean: _local-validator-stop
 	@for script in seed-bots.ts live-bots.ts strategy-bots.ts; do \

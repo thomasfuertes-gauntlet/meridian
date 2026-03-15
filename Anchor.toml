@@ -18,5 +18,12 @@ url = "https://api.apr.dev"
 cluster = "localnet"
 wallet = ".wallets/admin.json"
 
+[test.validator]
+bind_address = "127.0.0.1"
+
+[[test.genesis]]
+address = "rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ"
+program = "mock-pyth/target/deploy/mock_pyth.so"
+
 [scripts]
 test = "npx ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

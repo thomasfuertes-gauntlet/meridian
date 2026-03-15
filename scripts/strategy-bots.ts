@@ -21,7 +21,7 @@ import {
   mintTo,
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
-import { fetchStockPrices } from "./fair-value";
+import { fetchStockPrices, isMarketHours } from "./fair-value";
 import { MarketCtx, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveMarket, getBotTickerFilter, defaultTxDelay, discoverMarkets, type Order, getBlockhashCached, sendNoConfirm } from "./bot-utils";
 import { loadSharedBooks } from "./ws-cache";
 
@@ -232,15 +232,16 @@ async function main() {
     console.log("Demo ticker focus:", demoTicker);
   }
 
-  // Discover markets via RPC (one-time). Book state comes from shared tmpfile
-  // written by live-bots' ws-cache (no WS subs in this process).
+  // Discover markets via RPC. Refreshed every 15 min during market hours
+  // to pick up markets created after boot (e.g. 8 AM ET morning job).
   const discoveredMarkets = await discoverMarkets(program);
   const marketsByKey = new Map(discoveredMarkets.map((m) => [m.pubkey.toBase58(), m]));
+  let lastDiscoveryRefresh = Date.now();
+  const DISCOVERY_REFRESH_MS = 15 * 60 * 1000;
 
   console.log(`Found ${marketsByKey.size} active markets`);
   if (marketsByKey.size === 0) {
-    console.log("No active markets. Exiting.");
-    process.exit(0);
+    console.log("No active markets at startup. Will rediscover in loop.");
   }
 
   // Ensure ATAs exist for all markets (skip if already created)
@@ -400,6 +401,32 @@ async function main() {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     tickCount++;
+
+    // Periodic market rediscovery (picks up markets created after boot)
+    if (isMarketHours() && Date.now() - lastDiscoveryRefresh > DISCOVERY_REFRESH_MS) {
+      try {
+        const freshMarkets = await discoverMarkets(program);
+        let added = 0;
+        for (const mkt of freshMarkets) {
+          if (!marketsByKey.has(mkt.pubkey.toBase58())) {
+            try {
+              await ensureAtas(mkt);
+              marketsByKey.set(mkt.pubkey.toBase58(), mkt);
+              added++;
+            } catch (ataErr) {
+              const msg = ataErr instanceof Error ? ataErr.message : String(ataErr);
+              console.warn(`[discovery] ATA setup failed for ${mkt.pubkey.toBase58().slice(0, 8)}: ${msg.slice(0, 100)}`);
+            }
+          }
+        }
+        if (added > 0) console.log(`[discovery] Added ${added} new market(s) (total: ${marketsByKey.size})`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[discovery] Refresh failed: ${msg.slice(0, 120)}`);
+      } finally {
+        lastDiscoveryRefresh = Date.now();
+      }
+    }
 
     // Refresh stock prices every 30s
     if (Date.now() - lastPriceRefresh > 30_000) {

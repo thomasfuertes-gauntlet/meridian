@@ -18,7 +18,8 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - **16 on-chain instructions** - see `OVERVIEW.md` for the full contract surface.
 - **Market lifecycle**: Created → Frozen → Settled. Settlement auto-credits all resting orders (no drain requirement).
 - **Four trade paths** on one Yes/USDC order book: Buy Yes, Sell Yes, Buy No (`mint_pair` + `sell_yes`), Sell No (`buy_yes` + `redeem`).
-- **Devnet settlement**: uses `admin_settle` exclusively (Pyth PriceUpdateV2 accounts for equities are not readily available on devnet). `settle_market` (permissionless oracle path) is implemented and tested but not used by the automation service. Automation cron fires at **5:05 PM ET** (1hr after close per `admin_settle` delay).
+- **Hermetic oracle testing** - A lightweight mock Pyth program (`mock-pyth/`) runs on localnet, enabling the full permissionless `settle_market` oracle path without network dependencies. Same validation chain (feed ID, staleness, confidence, verification level) runs against deterministic test data.
+- **Devnet settlement**: Automation cron fires at **4:07 PM ET**. Tries `settle_market` (Pyth pull oracle, no delay) first; falls back to `admin_settle` (1hr delay, retries until ~5:00 PM ET). Set `HERMES_URL=https://hermes-beta.pyth.network` for devnet-compatible Wormhole VAAs. Localnet settlement uses the same oracle path via mock-pyth, with `admin_settle` as fallback.
 - **Oracle**: Pyth pull-based. Staleness threshold 300s, confidence band reject > 1% of price. Both configurable per ticker in `GlobalConfig.oracle_policies`.
 
 ## Local Workflow
@@ -45,7 +46,7 @@ cd frontend && npm run dev
 
 ## Bootstrap (Dev Wallets)
 
-Dev wallets are derived deterministically from `sha256("meridian-dev-{name}")` - every clone produces the same keys. Wallets: `admin`, `bot-a`, `bot-b`, `trader-1` through `trader-5`. Files live in `.wallets/` (gitignored), generated at runtime.
+Dev wallets are derived deterministically from `sha256("meridian-dev-{name}")` - every clone produces the same keys. Wallets: `admin`, `bot-a`, `bot-b`. Files live in `.wallets/` (gitignored), generated at runtime.
 
 ```bash
 make _wallets            # write .wallets/*.json from deterministic seed (internal; called automatically by other targets)
@@ -119,7 +120,8 @@ If you're working with an already-deployed program and USDC mint:
 ```bash
 cp .env.example .env
 # Fill in DEVNET_RPC_URL, DEVNET_USDC_MINT
-make devnet-setup    # create markets + fund bots
+make devnet-deploy   # build + deploy program
+make _devnet-setup   # create markets + fund bots
 make devnet-health   # verify deployment
 ```
 
@@ -189,7 +191,6 @@ What they do:
 - `make local-cycle` - settle old markets, create fresh 12-min markets (run again to rotate)
 - `make local-settle` - settle + close all current markets
 - `make local-seed` - re-seed order books with bot liquidity
-- `make local-smart-deploy` - hash-compare redeploy (settles/closes first if program changed)
 - `make test` - Anchor/TS test suite (`make test GREP='pattern'` for filtered runs)
 - `make uat` - automated E2E lifecycle: create → mint → trade → settle → redeem (~3 min)
 - `make nuke` - devnet only: settle all, close all, drain all wallets to admin. `NUKE_FLAGS="--yes"` skips prompt, `NUKE_FLAGS="--hard --yes"` also closes program
@@ -204,7 +205,7 @@ cd frontend && npm run dev  # in a second terminal
 
 Notes:
 
-- `make local` manages its own background validator. For a foreground validator, run `solana-test-validator --bind-address 127.0.0.1 --mint $(solana-keygen pubkey .wallets/admin.json) --reset --ledger .localnet/ledger --limit-ledger-size 50000000` in one terminal, then `make local-deploy local-cycle local-seed` in another.
+- `make local` manages its own background validator. For a foreground validator, run `solana-test-validator --bind-address 127.0.0.1 --mint $(solana-keygen pubkey .wallets/admin.json) --reset --ledger .localnet/ledger --limit-ledger-size 50000000` in one terminal, then `make local` in another (or run `_local-deploy`, `local-cycle`, `local-seed` individually).
 - Frontend startup and chain/bootstrap are intentionally separate so you can restart the UI without recreating local markets.
 - A local `frontend/.env.local` with `VITE_RPC_URL=http://127.0.0.1:8899` is the preferred explicit override for frontend-only local work.
 

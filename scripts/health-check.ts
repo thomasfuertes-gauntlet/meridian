@@ -262,7 +262,8 @@ async function main() {
 
   console.log(`  ET: ${dayNames[dayOfWeek]} ${et.toLocaleTimeString("en-US", { timeZone: "America/New_York" })}`);
   console.log(`  Market hours: ${isMarketHours ? "OPEN" : isWeekend ? "WEEKEND" : "CLOSED"}`);
-  console.log(`  Bot price mode: ${process.env.OFFLINE === "1" ? "OFFLINE (synthetic)" : isMarketHours ? "Pyth Hermes (live)" : "auto-fallback (synthetic)"}`);
+  const isLocalnet = /127\.0\.0\.1|localhost/.test(process.env.ANCHOR_PROVIDER_URL ?? "");
+  console.log(`  Bot price mode: ${isLocalnet ? "localnet (synthetic)" : isMarketHours ? "Pyth Hermes (live)" : "auto-fallback (synthetic)"}`);
 
   // Check if markets are stale (close_time in the past = need fresh markets)
   try {

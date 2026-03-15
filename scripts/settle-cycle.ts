@@ -18,6 +18,8 @@ import { USDC_PER_PAIR } from "./constants";
 import { closeAllSettled } from "./market-ops";
 import { sleep, defaultTxDelay } from "./bot-utils";
 import { fetchStockPrices } from "./fair-value";
+import { createMockPriceUpdate } from "./mock-pyth";
+import { feedIdToBytes, PYTH_FEED_IDS } from "./pyth";
 
 const TX_DELAY = defaultTxDelay();
 const RETRY_DELAY_MS = 10_000; // 10s between AdminSettleTooEarly retries
@@ -69,6 +71,8 @@ async function main() {
 
     const startMs = Date.now();
     let success = false;
+    const isLocalnet = provider.connection.rpcEndpoint.includes("127.0.0.1") ||
+      provider.connection.rpcEndpoint.includes("localhost");
 
     while (Date.now() - startMs < MAX_SETTLE_WAIT_MS) {
       const nowSecs = Math.floor(Date.now() / 1000);
@@ -81,6 +85,47 @@ async function main() {
         continue;
       }
 
+      // On localnet, try oracle path first via mock-pyth
+      if (isLocalnet && PYTH_FEED_IDS[ticker]) {
+        try {
+          const priceDollars = syntheticPrice / USDC_PER_PAIR;
+          const priceUpdate = await createMockPriceUpdate(provider, {
+            feedId: feedIdToBytes(PYTH_FEED_IDS[ticker]),
+            priceDollars,
+            publishTime: closeTime + 30,
+          });
+
+          await program.methods
+            .settleMarket()
+            .accountsPartial({
+              settler: admin.publicKey,
+              market: m.publicKey,
+              priceUpdate,
+            })
+            .remainingAccounts([
+              { pubkey: orderBookPda, isSigner: false, isWritable: true },
+            ])
+            .rpc();
+
+          const outcome = syntheticPrice >= strikeBaseUnits ? "YesWins" : "NoWins";
+          console.log(`  Settled (oracle): ${ticker} > $${strikeDollars} (${outcome}, price=$${priceDollars.toFixed(2)})`);
+          settled++;
+          success = true;
+          await sleep(TX_DELAY);
+          break;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes("AlreadySettled") || msg.includes("MarketAlreadySettled")) {
+            console.log(`  Already settled: ${ticker} > $${strikeDollars}`);
+            settled++;
+            success = true;
+            break;
+          }
+          console.log(`  Oracle settle failed, falling back to admin_settle: ${msg.slice(0, 80)}`);
+        }
+      }
+
+      // Fallback: admin_settle
       try {
         await program.methods
           .adminSettle(new BN(syntheticPrice))

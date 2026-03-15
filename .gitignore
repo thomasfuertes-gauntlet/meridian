@@ -27,6 +27,9 @@ node_modules/
 # Vite build artifact (tsc emits .js next to .ts config)
 frontend/vite.config.js
 
+# Mock Pyth build artifacts
+mock-pyth/target/
+
 *.zip
 purge-history.sh
 request_sol.sh

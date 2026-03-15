@@ -21,7 +21,6 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - Anchor 0.32.0 / Solana CLI 3.1.9 / Rust 1.94.0
 - `pyth-solana-receiver-sdk` 1.1.0 (pull-based oracle, PriceUpdateV2)
 - Standard SPL tokens (0 decimals for Yes/No, 6 for USDC). Custom devnet USDC mint.
-- Program ID: `GMwKXYNKRkN3wGdgAwR4BzG2RfPGGLGjehuoNwUzBGk2` (deterministic: `sha256("meridian-dev-program")`)
 - Built-in CLOB (32 orders/side, zero_copy OrderBook, separate escrow vaults per market)
 
 ## Decisions Resolved
@@ -47,8 +46,8 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - Commands in this environment run through non-interactive `zsh`; keep toolchain setup in shell startup files that `zsh -lc` reads, not only in interactive-only shell config.
 - Tests use `.accountsPartial({})` not `.accounts({})` - Anchor 0.32 auto-resolves PDAs.
 - `vault.reload()` after CPI transfers to refresh cached account data before invariant checks.
-- Pyth equity feeds only update during US market hours on devnet. Use admin_settle for off-hours testing. Use `OFFLINE=1` for synthetic bot prices outside market hours.
-- `StrikeMarket` stores `usdc_mint` (added after `vault`). Changing field order shifts Borsh layout - existing accounts incompatible. Devnet: `make devnet-reset` creates fresh markets.
+- Pyth equity feeds only update during US market hours on devnet. Use admin_settle for off-hours testing.
+- `StrikeMarket` stores `usdc_mint` (added after `vault`). Changing field order shifts Borsh layout - existing accounts incompatible. Devnet: `make nuke NUKE_FLAGS="--yes"` then `make devnet-deploy && make _devnet-setup` for fresh markets.
 - **Deterministic dev wallets** in `.wallets/` (gitignored) - see README for derivation details and security warning.
 - **Frontend auto-sign**: On localhost, "Dev Wallet" appears in wallet picker. Uses bot-b keypair, pre-funded locally with 250,000 USDC + 5 SOL. On devnet, `setup-devnet` funds both bots with 250,000 USDC each. Phantom also available via Wallet Standard alongside Dev Wallet.
 - Prefer a local `frontend/.env.local` for frontend-only local overrides; do not use Vite env files to drive root bootstrap scripts.
@@ -61,10 +60,11 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - OrderBook uses `#[account(zero_copy)]` + `AccountLoader` (4720 bytes exceeds 4096 stack limit for Borsh).
 - `AccountLoader` does not support `has_one` or field constraints in `#[account()]` - validate in handler body.
 - Escrow vaults (`ob_usdc_vault`, `ob_yes_vault`) are separate from the market vault. CLOB never touches market vault.
-- **Credit/claim model**: Taker fills (`buy_yes`/`sell_yes`) do one CPI transfer to the taker, then credit maker balances in OrderBook zero_copy memory. No `remaining_accounts` needed. Makers withdraw via `claim_fills` (permissionless, any market state). OrderBook SPACE: 7800 bytes (was 4728). Breaking layout change per deploy.
+- **Credit/claim model**: Taker fills (`buy_yes`/`sell_yes`) do one CPI transfer to the taker, then credit maker balances in OrderBook zero_copy memory. No `remaining_accounts` needed. Makers withdraw via `claim_fills` (permissionless, any market state). Breaking layout change per deploy.
 - `placeOrder` validates user's Yes ATA exists for both bid and ask sides. Create ATAs with `createAssociatedTokenAccountIdempotentInstruction` before any orders - don't rely on `mintPair` side effects.
+- **Mock Pyth oracle** (`mock-pyth/`): Standalone native Solana program (~30 lines, no Anchor) deployed at the real Pyth Receiver address via `--bpf-program`. Accepts raw bytes and writes them to an account, enabling `settle_market` (permissionless oracle path) on localnet. Built once by `cargo build-sbf` (~30s), cached via Make dependency on `mock-pyth/src/lib.rs`. Both `make local` and `make test` auto-build it. TS helpers in `scripts/mock-pyth.ts` (`buildMockPriceUpdateV2Data`, `createMockPriceUpdate`) are the public API for tests and `settle-cycle.ts`.
 - **Two local validator contexts**: `anchor test` starts its own ephemeral validator (faucet enabled, used by test helpers). `make local` starts a persistent validator (`--faucet-port 0`, admin funds via transfer). Don't mix them - run `make test` for the test suite, `make local` for interactive dev.
-- `seed-bots` on a non-empty order book can fail (new asks cross existing bids, triggering fills). For a fresh local start, prefer `make local-validator-reset && make local`.
+- `seed-bots` is long-running (loops every 15 min during market hours). Per-market seeded check: skips markets with existing orders, seeds empty ones. On a non-empty book, a newly seeded ask may cross an existing bid and trigger a fill (not an error). For a truly fresh local start, prefer `make local-validator-reset && make local`.
 
 ## WebSocket Architecture
 
@@ -94,13 +94,13 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - **Active market focus**: Bots weight 80% of activity toward the strike the user is viewing. Signal path: locally, Vite dev middleware writes `/tmp/meridian-active-market.txt`; on Railway, frontend SPA POSTs to `VITE_SIGNAL_URL` (bots service `scripts/signal-server.ts` on `PORT`), which writes the same file inside the bots container. `ACTIVE_MARKET` env var is a static fallback. File stale after 5 min.
 - bot-a = market maker (live-bots). bot-b = frontend dev wallet + strategy bots. bot-c/d/e/f are strategy labels, not wallets.
 - Bots use deterministic wallets from `.wallets/`. Admin wallet is USDC mint authority. No secrets in `local-config.json`.
-- `OFFLINE=1` skips Pyth Hermes and uses synthetic random-walk prices seeded near strikes. Without it: auto-detects market hours - warns loudly if Hermes fails during trading hours, silently falls back outside hours.
+- **Prices**: Auto-detected from `ANCHOR_PROVIDER_URL`. Localnet (127.0.0.1) always uses synthetic random-walk prices. Devnet/Railway uses live Hermes prices during market hours (warns loudly on fallback), silently falls back to synthetic outside them.
 - `package.json` has `"type": "module"`. Scripts use `import.meta.dirname` (not `__dirname`). `tsx` handles ESM natively; root tsconfig stays `commonjs` for `ts-mocha` test compat.
 
 ## Devnet / Railway Deployment
 
 - Devnet operator config: `.env` (copy from `.env.example`). Treat `DEVNET_RPC_URL` and `DEVNET_USDC_MINT` there as the repo deploy source of truth - not hardcoded Makefile defaults.
 - Bot scripts accept `USDC_MINT` env var (falls back to `local-config.json`). Airdrop only on localhost (devnet faucets rate-limit).
-- `make nuke` tears down all devnet state: force-settles markets, closes them (recovering ~70% of rent), drains bot wallets to admin. `NUKE_FLAGS="--yes"` skips prompt, `--skip-settle` / `--skip-close` bypass those steps (useful for pre-CLOB markets). `--hard` PERMANENTLY closes the program account (cannot redeploy to same ID) - only for final teardown, not iteration. For devnet cycling, just `make nuke NUKE_FLAGS="--yes"` then `make devnet-deploy && make devnet-setup`.
+- `make nuke` tears down all devnet state: force-settles markets, closes them (recovering ~70% of rent), drains bot wallets to admin. `NUKE_FLAGS="--yes"` skips prompt, `--skip-settle` / `--skip-close` bypass those steps (useful for pre-CLOB markets). `--hard` PERMANENTLY closes the program account (cannot redeploy to same ID) - only for final teardown, not iteration. For devnet cycling, just `make nuke NUKE_FLAGS="--yes"` then `make devnet-deploy && make _devnet-setup`.
 - Frontend `?debug` query param logs all Solana RPC calls and Pyth Hermes fetches to browser console.
 - See README `## Railway Deployment` for full Railway setup, env var table, and service architecture.

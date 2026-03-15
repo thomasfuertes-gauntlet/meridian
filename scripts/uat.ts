@@ -10,7 +10,7 @@
  *
  * Usage:
  *   ANCHOR_PROVIDER_URL=http://localhost:8899 ANCHOR_WALLET=.wallets/admin.json \
- *     OFFLINE=1 npx tsx scripts/uat.ts
+ *     npx tsx scripts/uat.ts  # localnet auto-detected from ANCHOR_PROVIDER_URL
  */
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";

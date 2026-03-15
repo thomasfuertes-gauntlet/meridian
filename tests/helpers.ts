@@ -805,135 +805,40 @@ export async function getCurrentUnixTimestamp(ctx: TestContext): Promise<number>
 }
 
 // ── Oracle settlement test utilities ─────────────────────────────
+// Canonical source: scripts/mock-pyth.ts
+
+import {
+  PYTH_RECEIVER_PROGRAM_ID,
+  PRICE_UPDATE_V2_DISCRIMINATOR,
+  PRICE_UPDATE_V2_SIZE,
+  buildMockPriceUpdateV2Data,
+  createMockPriceUpdate,
+} from "../scripts/mock-pyth";
+
+export {
+  PYTH_RECEIVER_PROGRAM_ID,
+  PRICE_UPDATE_V2_DISCRIMINATOR,
+  PRICE_UPDATE_V2_SIZE,
+  buildMockPriceUpdateV2Data,
+  createMockPriceUpdate,
+};
 
 /**
- * The Pyth Solana Receiver program ID.
- * Accounts owned by this program are accepted by settle_market's
- * `Account<'info, PriceUpdateV2>` constraint.
- */
-export const PYTH_RECEIVER_PROGRAM_ID = new PublicKey(
-  "rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ"
-);
-
-/**
- * PriceUpdateV2 Anchor account discriminator.
- * = first 8 bytes of sha256("account:PriceUpdateV2")
- */
-export const PRICE_UPDATE_V2_DISCRIMINATOR = Buffer.from([
-  34, 241, 35, 99, 157, 126, 244, 205,
-]);
-
-/**
- * Build the raw Borsh-encoded bytes for a PriceUpdateV2 account.
- *
- * Layout (133 bytes total):
- *   8  discriminator
- *   32 write_authority (Pubkey)
- *   1  VerificationLevel (1 = Full)
- *   32 feed_id ([u8; 32])
- *   8  price (i64)
- *   8  conf (u64)
- *   4  exponent (i32)
- *   8  publish_time (i64)
- *   8  prev_publish_time (i64)
- *   8  ema_price (i64)
- *   8  ema_conf (u64)
- *   8  posted_slot (u64)
- *
- * settle_market validates: VerificationLevel == Full, publish_time in
- * [close_time, close_time + max_price_staleness_secs], conf <= price * bps/10000.
- */
-export function buildMockPriceUpdateV2Data(params: {
-  writeAuthority: PublicKey;
-  feedId: number[]; // [u8; 32]
-  priceDollars: number; // e.g. 150.00
-  exponent: number; // e.g. -8 (price = priceDollars * 10^-exponent in Pyth units)
-  publishTime: number; // unix timestamp
-  postedSlot?: bigint;
-}): Buffer {
-  const buf = Buffer.alloc(133, 0);
-  let off = 0;
-
-  PRICE_UPDATE_V2_DISCRIMINATOR.copy(buf, off);
-  off += 8;
-
-  params.writeAuthority.toBuffer().copy(buf, off);
-  off += 32;
-
-  // VerificationLevel::Full = discriminant 1, no payload
-  buf.writeUInt8(1, off);
-  off += 1;
-
-  // feed_id [u8; 32]
-  Buffer.from(params.feedId).copy(buf, off);
-  off += 32;
-
-  // price i64: dollars * 10^-exponent → price * 10^8 if exponent == -8
-  const rawPrice = BigInt(Math.round(params.priceDollars * Math.pow(10, -params.exponent)));
-  buf.writeBigInt64LE(rawPrice, off);
-  off += 8;
-
-  // conf u64: 0.01% of price in the same units
-  const rawConf = rawPrice / 10000n;
-  buf.writeBigUInt64LE(rawConf, off);
-  off += 8;
-
-  // exponent i32
-  buf.writeInt32LE(params.exponent, off);
-  off += 4;
-
-  // publish_time i64
-  buf.writeBigInt64LE(BigInt(params.publishTime), off);
-  off += 8;
-
-  // prev_publish_time i64 (same as publish_time for mock)
-  buf.writeBigInt64LE(BigInt(params.publishTime), off);
-  off += 8;
-
-  // ema_price i64 (same as price for mock)
-  buf.writeBigInt64LE(rawPrice, off);
-  off += 8;
-
-  // ema_conf u64 (same as conf for mock)
-  buf.writeBigUInt64LE(rawConf, off);
-  off += 8;
-
-  // posted_slot u64
-  buf.writeBigUInt64LE(params.postedSlot ?? 0n, off);
-
-  return buf;
-}
-
-/**
- * Create an on-chain account owned by PYTH_RECEIVER_PROGRAM_ID.
- * The account is initialized with zeroed data (133 bytes).
- *
- * NOTE: To write custom PriceUpdateV2 data, the Pyth Receiver program must be
- * deployed on the test validator. Without it, you get a zeroed account (which
- * will fail settle_market's discriminator check - use this to test error paths).
- *
- * For a fully mocked oracle settlement test, add to Anchor.toml:
- *   [test.validator]
- *   [[test.validator.clone]]
- *   address = "rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ"  # Pyth Receiver
- *   [[test.validator.clone]]
- *   address = "HDwcJBJXjL9FpJ7UBsYBtaDjsBUhuLCUYoz3zr8SWWaQ"  # Wormhole Core Bridge
- *   url = "https://api.devnet.solana.com"
- * Then use PythSolanaReceiver.buildPostPriceUpdateInstructions with a real VAA from
- * https://hermes-beta.pyth.network.
+ * Create an on-chain account owned by PYTH_RECEIVER_PROGRAM_ID with zeroed data.
+ * Used to test settle_market error paths (wrong discriminator).
  */
 export async function createEmptyPriceUpdateAccount(
   ctx: TestContext,
   keypair: Keypair
 ): Promise<void> {
   const lamports =
-    await ctx.provider.connection.getMinimumBalanceForRentExemption(133);
+    await ctx.provider.connection.getMinimumBalanceForRentExemption(PRICE_UPDATE_V2_SIZE);
   const tx = new Transaction().add(
     SystemProgram.createAccount({
       fromPubkey: ctx.admin.publicKey,
       newAccountPubkey: keypair.publicKey,
       lamports,
-      space: 133,
+      space: PRICE_UPDATE_V2_SIZE,
       programId: PYTH_RECEIVER_PROGRAM_ID,
     })
   );

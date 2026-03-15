@@ -53,7 +53,9 @@ These are not exploitable by external attackers. They represent inherent central
 4. **`settle_market.rs`**: Added exponent bounds check (`|exp_diff| <= 19`) in `oracle_price_to_usdc_micro` to prevent `10u64.pow()` overflow.
 5. **`close_market.rs`**: Removed `force` parameter and unclaimed-credits guard. `close_market` now unconditionally closes any settled market. Removed dead error variants `OrderBookNotEmpty` and `UnclaimedCredits`. **(IDL change: removes `force: bool` arg)**
 
-Build: clean. Tests: 76/76 passing.
+6. **`tests/hardening.ts`**: New test file covering audit gaps - account substitution (wrong mint on user_usdc), admin gates (non-admin admin_settle/close_market/update_config, close on Frozen), order book boundaries (32-order cap, cancel non-owner), oracle edge cases (stale price, wide confidence), state machine (mint/place on Frozen, permissionless freeze).
+
+Build: clean. Rust unit tests: 76/76. Integration tests: 118/118.
 
 ---
 

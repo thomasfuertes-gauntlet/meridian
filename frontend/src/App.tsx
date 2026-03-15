@@ -19,6 +19,7 @@ import { Markets } from "./pages/Markets";
 import { MarketDetail } from "./pages/MarketDetail";
 import { Portfolio } from "./pages/Portfolio";
 import { Docs } from "./pages/Docs";
+import { ELI5 } from "./pages/ELI5";
 import { History } from "./pages/History";
 
 function NetworkBanner() {
@@ -76,6 +77,7 @@ export default function App() {
               <NavLink to="/history" label="History" />
               <NavLink to="/portfolio" label="Portfolio" />
               <NavLink to="/docs" label="Docs" />
+              <NavLink to="/eli5" label="ELI5" />
             </nav>
             <div>
               <mark data-tone={IS_LOCAL_RPC ? "muted" : "blue"}>{CLUSTER_LABEL}</mark>
@@ -94,6 +96,7 @@ export default function App() {
               <Route path="/history" element={<History />} />
               <Route path="/portfolio" element={<Portfolio />} />
               <Route path="/docs" element={<Docs />} />
+              <Route path="/eli5" element={<ELI5 />} />
             </Routes>
           </main>
           </MarketDataProvider>

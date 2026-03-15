@@ -38,6 +38,18 @@ mark[data-tone="green"] { color: #4a4; }
 mark[data-tone="red"] { color: #a44; }
 mark[data-tone="blue"] { color: #4af; }
 mark[data-tone="muted"] { color: var(--muted); }
+/* Landing page */
+.landing-hero { text-align: center; padding: 3rem 1rem; }
+.landing-hero h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+.landing-hero p { color: var(--muted); font-size: 1rem; max-width: 480px; margin: 0 auto 1.5rem; }
+.landing-hero-actions { display: flex; gap: 1rem; justify-content: center; align-items: center; flex-wrap: wrap; }
+.landing-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
+.landing-steps { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+.landing-steps > div { flex: 1; min-width: 180px; }
+.landing-steps kbd { display: block; font-size: 1.5rem; margin-bottom: 0.25rem; color: var(--muted); }
+.landing-steps dt { font-weight: 600; margin-bottom: 0.25rem; }
+.landing-steps dd { color: var(--muted); font-size: 13px; margin: 0; }
+
 /* wallet adapter - minimal overrides */
 .wallet-adapter-button { font-family: inherit !important; }
 .wallet-adapter-dropdown { position: relative; z-index: 30; }

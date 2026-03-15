@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Route, Routes, Navigate, Link, useLocation } from "react-router-dom";
+import { Route, Routes, Link, useLocation } from "react-router-dom";
 import {
   ConnectionProvider,
   WalletProvider,
@@ -12,6 +12,7 @@ import { LocalDevWalletAdapter } from "./lib/local-wallet";
 import { MarketDataProvider } from "./lib/ws-market-data";
 import { WalletButton } from "./components/WalletButton";
 import { FaucetButton } from "./components/FaucetButton";
+import { Landing } from "./pages/Landing";
 import { Markets } from "./pages/Markets";
 import { MarketDetail } from "./pages/MarketDetail";
 import { Portfolio } from "./pages/Portfolio";
@@ -38,12 +39,12 @@ export default function App() {
 
   return (
     <ConnectionProvider endpoint={RPC_URL}>
-      <WalletProvider wallets={wallets} autoConnect>
+      <WalletProvider wallets={wallets} autoConnect={IS_LOCAL_RPC}>
         <WalletModalProvider>
           <MarketDataProvider>
           <header>
             <nav>
-              <strong>Meridian</strong>
+              <Link to="/"><strong>Meridian</strong></Link>
               <NavLink to="/markets" label="Markets" />
               <NavLink to="/history" label="History" />
               <NavLink to="/portfolio" label="Portfolio" />
@@ -58,7 +59,7 @@ export default function App() {
           </header>
           <main>
             <Routes>
-              <Route path="/" element={<Navigate to="/markets" replace />} />
+              <Route path="/" element={<Landing />} />
               <Route path="/markets" element={<Markets />} />
               <Route path="/markets/:ticker" element={<MarketDetail />} />
               <Route path="/history" element={<History />} />

@@ -358,46 +358,32 @@ export async function createMarketsForTickers(
   const stockPrices = await fetchStockPrices();
   let totalCreated = 0;
 
-  // Build all create tasks, then fire in parallel batches
-  const tasks: { ticker: string; strikeDollars: number; strikePrice: BN }[] = [];
   for (const ticker of tickers) {
     const refPrice = stockPrices.get(ticker);
     const effectivePrice = refPrice || 100;
     const strikes = calculateStrikes(effectivePrice);
     console.log(`  ${ticker} ref=$${effectivePrice.toFixed(2)} -> ${strikes.length} strikes`);
-    for (const strikeDollars of strikes) {
-      tasks.push({ ticker, strikeDollars, strikePrice: new BN(strikeDollars * USDC_PER_PAIR) });
-    }
-  }
 
-  // Parallel batches of 7 (one per ticker avoids PDA collisions within a ticker)
-  const BATCH = 7;
-  for (let i = 0; i < tasks.length; i += BATCH) {
-    const batch = tasks.slice(i, i + BATCH);
-    const results = await Promise.allSettled(
-      batch.map(async ({ ticker, strikeDollars, strikePrice }) => {
+    for (const strikeDollars of strikes) {
+      const strikePrice = new BN(strikeDollars * USDC_PER_PAIR);
+      try {
         await program.methods
           .createStrikeMarket(ticker, strikePrice, dateSeed, closeTime)
           .accountsPartial({ admin: adminPk, usdcMint })
           .rpc();
         console.log(`    Created: ${ticker} > $${strikeDollars}`);
-      })
-    );
-    for (let j = 0; j < results.length; j++) {
-      const r = results[j];
-      if (r.status === "fulfilled") {
         totalCreated++;
-      } else {
-        const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        await sleep(TX_DELAY());
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes("already in use")) {
-          console.log(`    ${batch[j].ticker} > $${batch[j].strikeDollars} already exists`);
+          console.log(`    ${ticker} > $${strikeDollars} already exists`);
           totalCreated++;
         } else {
-          console.error(`    Failed: ${batch[j].ticker} > $${batch[j].strikeDollars}: ${msg.slice(0, 100)}`);
+          console.error(`    Failed: ${ticker} > $${strikeDollars}: ${msg.slice(0, 100)}`);
         }
       }
     }
-    if (i + BATCH < tasks.length) await sleep(TX_DELAY());
   }
   return totalCreated;
 }

@@ -9,11 +9,11 @@ set -euo pipefail
 # RPC_URL is derived from ANCHOR_PROVIDER_URL so automation scripts don't need a
 # separate Railway variable.
 #
-# Feature flags (set to "false" to disable; any other value or unset = enabled):
-#   ENABLE_AUTOMATION    - automation cron (market setup + settlement)
-#   ENABLE_LIQUIDITY_BOT - live-bots market maker
-#   ENABLE_TRADE_BOTS    - strategy-bots directional traders
-#   ENABLE_FRONTEND      - signal-server + SPA
+# Feature flags:
+#   ENABLE_AUTOMATION    - automation cron (default: true)
+#   ENABLE_FRONTEND      - signal-server + SPA (default: true)
+#   ENABLE_LIQUIDITY_BOT - live-bots market maker (default: false)
+#   ENABLE_TRADE_BOTS    - strategy-bots directional traders (default: false)
 
 export ANCHOR_WALLET=".wallets/admin.json"
 export DEMO_TICKER="${DEMO_TICKER:-NVDA}"
@@ -39,8 +39,8 @@ echo "  Demo ticker: $DEMO_TICKER"
 echo "  bot-a: 48xYES8qxE1vvHPVJKJCdKRhDMbueeWmJhGHKQ3gWGhh"
 echo "  bot-b: RSG4qia3Dp9pGPzsMnFS9AzsRPKyJxJ75iyoSubwQ5W"
 echo "  ENABLE_AUTOMATION=${ENABLE_AUTOMATION:-true}"
-echo "  ENABLE_LIQUIDITY_BOT=${ENABLE_LIQUIDITY_BOT:-true}"
-echo "  ENABLE_TRADE_BOTS=${ENABLE_TRADE_BOTS:-true}"
+echo "  ENABLE_LIQUIDITY_BOT=${ENABLE_LIQUIDITY_BOT:-false}"
+echo "  ENABLE_TRADE_BOTS=${ENABLE_TRADE_BOTS:-false}"
 echo "  ENABLE_FRONTEND=${ENABLE_FRONTEND:-true}"
 
 PIDS=()

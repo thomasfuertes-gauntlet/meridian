@@ -140,19 +140,19 @@ cp .env.example .env
 railway init                # creates project, links to current dir
 railway add -s meridian     # creates the service
 
-# 3. Push env vars and deploy
-make railway-sync           # pushes .env vars to Railway service
-make railway-deploy         # builds + deploys container
+# 3. Deploy (builds program, funds bots, syncs env, pushes container)
+make railway-deploy
 ```
 
-`.env` is the single operator config source for devnet deploys and Railway syncs. `RAILWAY_SERVICE` is the Railway service name used by `make railway-sync` to target the right service via the Railway CLI.
+`railway-deploy` chains the full lifecycle: `devnet-deploy` → `_devnet-setup` (idempotent) → `railway-sync` → `railway up`. `.env` is the single operator config source.
 
 ### Redeployment
 
 ```bash
-make railway-sync     # if env vars changed
-make railway-deploy   # rebuild + deploy
+make railway-deploy   # rebuild program + setup markets + deploy container
 ```
+
+If only env vars changed (no code changes): `make railway-sync` then `make railway-deploy`.
 
 Demo bot flow can be concentrated to a single ticker via `DEMO_TICKER`; current recommended demo default is `NVDA`.
 

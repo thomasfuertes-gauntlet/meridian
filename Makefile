@@ -28,12 +28,13 @@ DEVNET_URL ?= $(or $(DEVNET_RPC_URL),https://api.devnet.solana.com)
 RAILWAY_SERVICE ?= meridian
 VITE_DEV_WALLET ?= true
 DEMO_TICKER ?= NVDA
+ENABLE_LIQUIDITY_BOT ?= false
+ENABLE_TRADE_BOTS ?= false
 
 ADMIN_PUBKEY = $$(solana-keygen pubkey $(ADMIN_WALLET))
 LOCAL_TS_ENV = ANCHOR_PROVIDER_URL="$(LOCAL_RPC_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" DEMO_TICKER="$(DEMO_TICKER)"
 DEVNET_READONLY_ENV = ANCHOR_PROVIDER_URL="$(DEVNET_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)"
 DEVNET_TS_ENV = ANCHOR_PROVIDER_URL="$(DEVNET_URL)" ANCHOR_WALLET="$(ADMIN_WALLET)" USDC_MINT="$(DEVNET_USDC_MINT)"
-DEVNET_AUTOMATION_ENV = RPC_URL="$(DEVNET_URL)" USDC_MINT="$(DEVNET_USDC_MINT)" ADMIN_KEYPAIR_PATH=$(ADMIN_WALLET)
 
 define require_var
 	@if [ -z "$($1)" ]; then \
@@ -193,6 +194,7 @@ devnet-bootstrap:
 	$(DEVNET_READONLY_ENV) $(TSX) scripts/devnet-fund.ts
 	anchor deploy --provider.cluster devnet --provider.wallet "$(ADMIN_WALLET)" --no-idl
 	$(DEVNET_READONLY_ENV) $(TSX) scripts/setup-devnet.ts
+	$(DEVNET_READONLY_ENV) $(TSX) scripts/automation.ts --now
 	$(DEVNET_READONLY_ENV) $(TSX) scripts/seed-bots.ts
 	@echo ""
 	@echo "=== Devnet Bootstrap Complete ==="
@@ -213,9 +215,11 @@ railway-sync: _railway-env
 		"VITE_DEV_WALLET=$(VITE_DEV_WALLET)" \
 		"RAILWAY_DOCKERFILE_PATH=Dockerfile" \
 		"DEMO_TICKER=$(DEMO_TICKER)" \
+		"ENABLE_LIQUIDITY_BOT=$(ENABLE_LIQUIDITY_BOT)" \
+		"ENABLE_TRADE_BOTS=$(ENABLE_TRADE_BOTS)" \
 	| xargs railway variable set -s "$(RAILWAY_SERVICE)"
 
-railway-deploy: _railway-env
+railway-deploy: devnet-deploy _devnet-setup railway-sync
 	railway up -s "$(RAILWAY_SERVICE)" -d
 
 # ── Build & Cleanup ────────────────────────────────────────────

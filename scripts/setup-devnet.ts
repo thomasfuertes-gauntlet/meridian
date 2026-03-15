@@ -1,20 +1,16 @@
 /**
- * Devnet setup script.
- * Creates config, USDC mint, markets, and order books.
+ * Devnet infrastructure setup: config, USDC mint, bot funding.
  * Idempotent - safe to run multiple times.
  *
- * Unlike setup-local.ts, uses a future close_time so settle_market works with
- * actual Pyth oracle data. Feed IDs now live in on-chain config.
+ * Market creation is handled by the automation cron (morning-job.ts).
+ * Run `npx tsx scripts/automation.ts --now` to bootstrap markets immediately.
  *
  * Usage:
  *   ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=.wallets/admin.json \
  *     npx tsx scripts/setup-devnet.ts
- *
- * Outputs USDC mint address for config/devnet.env.
  */
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import BN from "bn.js";
 import { Meridian } from "../target/types/meridian";
 import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import {
@@ -25,10 +21,8 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
-import { fetchStockPrices } from "./fair-value";
-import { calculateStrikes } from "./strikes";
-import { MAG7_TICKERS, USDC_DECIMALS, USDC_PER_PAIR } from "./constants";
-import { accountExists, withRetry } from "./market-ops";
+import { USDC_DECIMALS, USDC_PER_PAIR } from "./constants";
+import { accountExists } from "./market-ops";
 import { sleep, defaultTxDelay } from "./bot-utils";
 
 const DEVNET_DELAY_MS = defaultTxDelay();
@@ -177,76 +171,8 @@ async function main() {
     console.log("Config initialized");
   }
 
-  // Create markets with real Pyth feed IDs
-  console.log("\nFetching reference prices for strike generation...");
-  const refPrices = await fetchStockPrices();
-  let totalMarkets = 0;
-
-  // close_time = today's market close (4:00 PM ET) as Unix timestamp
-  // EST = UTC-5, EDT = UTC-4. Rough DST: March(2)-November(10).
-  const now = new Date();
-  const month = now.getUTCMonth(); // 0-indexed
-  const etOffset = (month >= 2 && month <= 10) ? 4 : 5;
-  const closeET = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 16 + etOffset, 0, 0)
-  );
-  // If market already closed today, use tomorrow
-  if (closeET.getTime() < Date.now()) {
-    closeET.setDate(closeET.getDate() + 1);
-    // Skip weekends
-    while (closeET.getDay() === 0 || closeET.getDay() === 6) {
-      closeET.setDate(closeET.getDate() + 1);
-    }
-  }
-  const closeTime = new BN(Math.floor(closeET.getTime() / 1000));
-  const today = new BN(Math.floor(Date.now() / 86400000));
-
-  console.log(`Close time: ${closeET.toISOString()} (Unix: ${closeTime.toString()})`);
-
-  for (const ticker of MAG7_TICKERS) {
-    const refPrice = refPrices.get(ticker);
-    if (!refPrice) {
-      console.warn(`  No reference price for ${ticker}, skipping`);
-      continue;
-    }
-    const strikes = calculateStrikes(refPrice);
-    console.log(`  ${ticker} ref=$${refPrice.toFixed(2)} -> strikes: ${strikes.map((s) => `$${s}`).join(", ")}`);
-
-    for (const strikeDollars of strikes) {
-      const strike = strikeDollars * USDC_PER_PAIR;
-      const strikePrice = new BN(strike);
-      const [marketPda] = PublicKey.findProgramAddressSync(
-        [
-          Buffer.from("market"),
-          Buffer.from(ticker),
-          strikePrice.toArrayLike(Buffer, "le", 8),
-          today.toArrayLike(Buffer, "le", 8),
-        ],
-        program.programId
-      );
-
-      if (await accountExists(connection, marketPda)) {
-        console.log(`    ${ticker} > $${strikeDollars} already exists, skipping`);
-        totalMarkets++;
-        continue;
-      }
-
-      await withRetry(
-        () => program.methods
-          .createStrikeMarket(ticker, strikePrice, today, closeTime)
-          .accountsPartial({ admin: admin.publicKey, usdcMint })
-          .rpc(),
-        `createStrikeMarket ${ticker} > $${strikeDollars}`
-      );
-
-      await sleep(DEVNET_DELAY_MS);
-
-      console.log(`    Created: ${ticker} > $${strikeDollars}`);
-      totalMarkets++;
-
-      await sleep(DEVNET_DELAY_MS);
-    }
-  }
+  // Market creation is handled by the automation cron (morning-job.ts at 8 AM ET).
+  // Run `npx tsx scripts/automation.ts --now` to bootstrap markets immediately.
 
   // Write local-config.json for local testing against devnet
   const fs = await import("fs");
@@ -258,8 +184,8 @@ async function main() {
 
   console.log("\n=== Devnet Setup Complete ===");
   console.log(`USDC Mint: ${usdcMint.toString()}`);
-  console.log(`Markets created: ${totalMarkets}`);
   console.log(`\nEnsure .env has: DEVNET_USDC_MINT=${usdcMint.toString()}`);
+  console.log(`To create markets: npx tsx scripts/automation.ts --now`);
 }
 
 main().catch((err) => {

@@ -106,13 +106,15 @@ _local-validator: _mock-pyth
 	fi
 
 _local-validator-stop:
+	@# Kill by PID file if valid
 	@if [ -f "$(LOCAL_VALIDATOR_PID)" ] && kill -0 "$$(cat $(LOCAL_VALIDATOR_PID))" 2>/dev/null; then \
 		echo "Stopping local validator (pid $$(cat $(LOCAL_VALIDATOR_PID)))"; \
 		kill "$$(cat $(LOCAL_VALIDATOR_PID))"; \
-		rm -f "$(LOCAL_VALIDATOR_PID)"; \
-	else \
-		echo "No tracked local validator is running"; \
 	fi
+	@rm -f "$(LOCAL_VALIDATOR_PID)"
+	@# Also kill any orphaned validator on our port
+	@pkill -f 'solana-test-validator.*127.0.0.1' 2>/dev/null && echo "Killed orphaned validator" || true
+	@sleep 1
 
 _devnet-env:
 	$(call require_any_var,DEVNET_RPC_URL,DEVNET_URL)

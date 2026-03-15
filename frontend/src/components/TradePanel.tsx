@@ -195,6 +195,15 @@ export function TradePanel({
         ))}
       </nav>
 
+      {wallet && (
+        <dl>
+          <dt>Yes tokens</dt>
+          <dd>{balanceMap.get(yesMint.toString()) ?? 0}</dd>
+          <dt>No tokens</dt>
+          <dd>{balanceMap.get(noMint.toString()) ?? 0}</dd>
+        </dl>
+      )}
+
       <label>
         Price (USDC) - leave empty for market
         <input

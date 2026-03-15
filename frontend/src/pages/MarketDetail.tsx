@@ -285,6 +285,9 @@ export function MarketDetail() {
               asks={featured.orderBook.asks}
               noBids={noBook.bids}
               noAsks={noBook.asks}
+              market={featured.publicKey}
+              yesMint={featured.yesMint}
+              usdcMint={usdcMint}
             />
           ) : (
             <section>

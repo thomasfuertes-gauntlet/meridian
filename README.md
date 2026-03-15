@@ -192,9 +192,16 @@ All bot activity is scoped to NVDA.
 
 ## Current Frontend State
 
-- **Landing** (`/`) - product explanation, live MAG7 Pyth prices, wallet connect CTA, settlement countdown.
+- **Landing** (`/`) - product explanation, live MAG7 Pyth prices, wallet connect CTA, settlement countdown. Featured contract card (nearest-ATM NVDA market) with Yes/No price bar and invariant display.
 - **Markets** (`/markets`) - 7-ticker grid with live prices, strike counts, CLOB mid sparklines.
-- **Market detail** (`/markets/:ticker`) - left-hand strike rail with per-strike Yes/No mid and liquidity. Trade panel with Buy Yes, Sell Yes, Buy No, Sell No paths.
+- **Market detail** (`/markets/:ticker`) - three-column layout: strike rail | order book + depth chart | trade panel + inline portfolio. Includes:
+  - Lifecycle indicator (Created → Trading → Frozen → Settled step display)
+  - Yes/No price bar (full variant in header, compact in strike rail)
+  - Implied probability curve (SVG chart of yesMid across all strikes, clickable to select)
+  - Depth chart (cumulative bid/ask stepped-area SVG below order book)
+  - Solvency banner (vault pairs × $1.00 invariant check)
+  - Settlement audit panel (oracle price, source, outcome - shown on settled markets)
+  - Inline portfolio panel (ticker-scoped positions with redeem/exit buttons, below trade panel)
 - **History** (`/history`) - on-chain instruction decoding. "My Trades" (connected wallet) or "All Activity" toggle. Cursor-based load-more pagination.
 - **Portfolio** (`/portfolio`) - positions scoped to connected wallet. Mark value, cost basis, unrealized/realized P&L, redeem buttons for settled winners and pre-settlement complete sets.
 - Header shows cluster label (Devnet/Localnet) and red banner when Phantom is on wrong network.

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import { DepthChart } from "../components/DepthChart";
@@ -57,12 +57,16 @@ export function MarketDetail() {
   const [posLoading, setPosLoading] = useState(false);
   const [posAction, setPosAction] = useState<Record<string, string>>({});
 
+  // Ref to avoid data in useCallback deps (data changes every poll cycle)
+  const dataRef = useRef(data);
+  dataRef.current = data;
+
   const loadPositions = useCallback(async () => {
-    if (!wallet || !data) return;
+    if (!wallet || !dataRef.current) return;
     setPosLoading(true);
     try {
       const program = getReadOnlyProgram();
-      const allMarkets = Object.values(data.marketsByTicker).flat();
+      const allMarkets = Object.values(dataRef.current.marketsByTicker).flat();
       const all = await fetchPositions(program, connection, wallet.publicKey, allMarkets);
       setPositions(all.filter((p) => p.ticker === routeTicker));
     } catch {
@@ -70,8 +74,9 @@ export function MarketDetail() {
     } finally {
       setPosLoading(false);
     }
-  }, [wallet, connection, data, routeTicker]);
+  }, [wallet, connection, routeTicker]);
 
+  // Load once on mount + when wallet/ticker changes (not on every poll)
   useEffect(() => { loadPositions(); }, [loadPositions]);
 
   const handleRedeem = useCallback(async (position: Position) => {

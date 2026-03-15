@@ -62,31 +62,35 @@ solana airdrop 5 $(solana-keygen pubkey .wallets/admin.json) --url devnet
 Then bootstrap the program and markets:
 
 ```bash
-make setup-devnet        # deploy program, create USDC mint, init markets, fund bots
-# or the full one-command path:
-make devnet-bootstrap    # generate fresh keypairs + deploy + fund + setup (use for a brand-new program)
+make devnet-deploy       # build + deploy program
+make devnet-setup        # create USDC mint, init markets, fund bots
 ```
 
 > **Devnet only.** Deterministic keys are in committed code - compromised if the repo goes public. Production requires HSM/multisig (see [Production Hardening Roadmap](#production-hardening-roadmap)).
 
 ## Devnet Deploy
 
-One command from `git clone` to ~49 live markets on devnet:
+From `git clone` to ~49 live markets on devnet:
 
 ```bash
 npm ci
-make devnet-bootstrap
+cp .env.example .env     # fill in DEVNET_RPC_URL, DEVNET_USDC_MINT
+
+# First-time bootstrap (fresh program)
+WALLET_MODE=generate npx tsx scripts/dev-wallets.ts  # generate keypairs
+npx tsx scripts/patch-program-id.ts                  # embed program ID in Anchor.toml
+npx tsx scripts/devnet-fund.ts                       # airdrop SOL to wallets
+make devnet-deploy                                   # build + deploy program
+make devnet-setup                                    # create markets + fund bots
 ```
 
-This generates fresh keypairs, builds the program, airdrops SOL, deploys to devnet, creates a USDC mint, initializes markets for all 7 MAG7 tickers, and seeds order books with bot liquidity. No config file needed - defaults to the public devnet RPC.
-
-Then run the frontend against your deployment:
+Then run the frontend:
 
 ```bash
-cd frontend && VITE_RPC_URL=https://api.devnet.solana.com npm run dev
+cd frontend && npm run dev
 ```
 
-**Prerequisites:** Rust + Solana CLI + Anchor toolchain (see [Solana install docs](https://docs.solana.com/cli/install-solana-cli-tools)). The devnet faucet provides ~10 SOL for the deploy.
+**Prerequisites:** Rust + Solana CLI + Anchor toolchain (see [Solana install docs](https://docs.solana.com/cli/install-solana-cli-tools)).
 
 > Set `DEVNET_RPC_URL` in `.env` (copy from `.env.example`). [Helius](https://helius.dev) Developer plan ($49/mo) recommended - 50 req/s, 10M credits/mo. Free tier (10 req/s, 1M credits) works but bots burn through credits fast.
 
@@ -233,7 +237,7 @@ Deviations from `spec.md` that are deliberate V1 scope decisions:
 | Trade page | Integrated into MarketDetail (`/markets/:ticker`) | Trade panel lives inside market detail view |
 | Settlement at ~4:05 PM ET via oracle | 4:07 PM ET, `settle_market` first then `admin_settle` fallback | Oracle path posts Wormhole-verified VAA from Hermes; falls back to `admin_settle` (1hr delay) if VAA outside settlement window or Hermes unavailable |
 | Next.js for frontend | Vite + React | Lighter build, no SSR needed for SPA |
-| Sell No limit orders | Market orders only | `buy_yes` + `redeem` composition requires fill before redeem; architectural constraint |
+| Sell No limit orders | Market orders only | `buy_yes` + `redeem` composition requires fill before redeem. Spec describes Sell No as a taker action ("buys a Yes token from the ask side"), so this is spec-aligned. |
 
 ## Risks & Limitations
 

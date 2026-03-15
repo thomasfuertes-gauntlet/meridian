@@ -5,7 +5,7 @@
 	local-live local-strategy local-ui local-validator-reset \
 	test uat \
 	devnet-deploy devnet-setup devnet-health \
-	devnet-bootstrap nuke \
+	nuke \
 	railway-deploy railway-env
 
 # ── Config & Variables ──────────────────────────────────────────
@@ -178,28 +178,13 @@ uat: _wallets  ## E2E lifecycle test: create -> mint -> trade -> settle -> redee
 
 devnet-deploy: _wallets _devnet-env
 	@$(MAKE) build
-	anchor deploy --provider.cluster devnet --provider.wallet "$(ADMIN_WALLET)" --no-idl
+	anchor deploy --provider.cluster "$(DEVNET_URL)" --provider.wallet "$(ADMIN_WALLET)" --no-idl
 
 devnet-setup: _wallets _devnet-env  ## Create markets + fund bots on devnet
 	$(DEVNET_TS_ENV) $(TSX) scripts/setup-devnet.ts
 
 devnet-health: _wallets _devnet-env
 	$(DEVNET_READONLY_ENV) $(TSX) scripts/health-check.ts
-
-devnet-bootstrap:
-	@echo "=== Devnet Bootstrap ==="
-	WALLET_MODE=generate $(TSX) scripts/dev-wallets.ts
-	$(TSX) scripts/patch-program-id.ts
-	@$(MAKE) build
-	$(DEVNET_READONLY_ENV) $(TSX) scripts/devnet-fund.ts
-	anchor deploy --provider.cluster devnet --provider.wallet "$(ADMIN_WALLET)" --no-idl
-	$(DEVNET_READONLY_ENV) $(TSX) scripts/setup-devnet.ts
-	$(DEVNET_READONLY_ENV) $(TSX) scripts/automation.ts --now
-	$(DEVNET_READONLY_ENV) $(TSX) scripts/seed-bots.ts
-	@echo ""
-	@echo "=== Devnet Bootstrap Complete ==="
-	@echo "Program ID: $$(solana-keygen pubkey $(PROGRAM_KEYPAIR) 2>/dev/null || echo 'unknown')"
-	@echo "Admin:      $(ADMIN_PUBKEY)"
 
 nuke: _wallets _devnet-env  ## Devnet: settle all, close all, drain SOL to admin (y/N prompt)
 	$(DEVNET_TS_ENV) $(TSX) scripts/nuke-devnet.ts $(NUKE_FLAGS)

@@ -2,11 +2,11 @@
  * Strike price calculation for MAG7 binary outcome markets.
  *
  * Given a previous closing price, generates strike prices at
- * +/-3%, +/-6%, and +/-9% offsets.
+ * the rounded close plus +/-3%, +/-6%, and +/-9% offsets.
  * All values rounded to nearest $10, deduplicated, and sorted.
  */
 
-const OFFSETS = [-0.09, -0.06, -0.03, 0.03, 0.06, 0.09];
+const OFFSETS = [-0.09, -0.06, -0.03, 0, 0.03, 0.06, 0.09];
 
 function roundToNearest10(value: number): number {
   return Math.round(value / 10) * 10;

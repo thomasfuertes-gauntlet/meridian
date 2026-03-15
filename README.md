@@ -331,6 +331,7 @@ The built-in CLOB is the right demo choice (shows depth of understanding, avoids
 - [ ] **Official close price source** - Pyth's real-time equity feed at ~4:05 PM ET is *not* the official NYSE/NASDAQ closing auction print. Production needs either: (a) a dedicated closing-price oracle feed, or (b) a longer settlement window (e.g., settle after 4:30 PM when official close is published) with dispute resolution.
 - [ ] **Multi-oracle aggregation** - Median of 3+ oracle sources to prevent single-feed manipulation. Current single-feed Pyth dependency is a liveness risk if Hermes goes down during settlement.
 - [ ] **Settlement dispute window** - Add a challenge period (e.g., 30 min) where anyone can submit counter-evidence before settlement finalizes. Current settlement is instant and irreversible.
+- [ ] **Account migration instruction** - Program upgrades that change `OrderBook` or `StrikeMarket` Borsh layout orphan existing accounts (Anchor's `AccountLoader` panics on size mismatch). Production needs a versioned `migrate_market(version)` instruction that reads the old layout, writes the new one, and reallocates if needed. Current devnet workaround: `make nuke --skip-settle --skip-close` and accept ~0.07 SOL/market rent loss.
 
 ### Risk & Compliance
 

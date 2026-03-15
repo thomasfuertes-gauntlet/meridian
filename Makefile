@@ -4,7 +4,7 @@
 	local local-cycle local-settle local-seed \
 	local-live local-strategy local-ui local-validator-reset \
 	test uat \
-	devnet-deploy devnet-setup devnet-fund-bots devnet-health \
+	devnet-deploy _devnet-setup devnet-fund-bots devnet-health \
 	nuke \
 	railway-deploy railway-env
 
@@ -176,11 +176,12 @@ uat: _wallets  ## E2E lifecycle test: create -> mint -> trade -> settle -> redee
 
 # ── Devnet ─────────────────────────────────────────────────────
 
-devnet-deploy: _wallets _devnet-env
+devnet-deploy: _wallets _devnet-env  ## Build, deploy program, ensure config
 	@$(MAKE) build
 	anchor deploy --provider.cluster "$(DEVNET_URL)" --provider.wallet "$(ADMIN_WALLET)" --no-idl
+	@$(MAKE) _devnet-setup
 
-devnet-setup: _wallets _devnet-env  ## USDC mint + GlobalConfig (no bots)
+_devnet-setup: _wallets _devnet-env
 	$(DEVNET_TS_ENV) $(TSX) scripts/setup-devnet.ts
 
 devnet-fund-bots: _wallets _devnet-env  ## Fund bot-a/bot-b with SOL + USDC

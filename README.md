@@ -62,8 +62,7 @@ solana airdrop 5 $(solana-keygen pubkey .wallets/admin.json) --url devnet
 Then bootstrap the program and markets:
 
 ```bash
-make devnet-deploy       # build + deploy program
-make devnet-setup        # create USDC mint, init markets, fund bots
+make devnet-deploy       # build + deploy program + ensure USDC mint + GlobalConfig
 ```
 
 > **Devnet only.** Deterministic keys are in committed code - compromised if the repo goes public. Production requires HSM/multisig (see [Production Hardening Roadmap](#production-hardening-roadmap)).
@@ -80,8 +79,7 @@ cp .env.example .env     # fill in DEVNET_RPC_URL, DEVNET_USDC_MINT
 WALLET_MODE=generate npx tsx scripts/dev-wallets.ts  # generate keypairs
 npx tsx scripts/patch-program-id.ts                  # embed program ID in Anchor.toml
 npx tsx scripts/devnet-fund.ts                       # airdrop SOL to wallets
-make devnet-deploy                                   # build + deploy program
-make devnet-setup                                    # create markets + fund bots
+make devnet-deploy                                   # build + deploy + USDC mint + GlobalConfig
 ```
 
 Then run the frontend:
@@ -124,8 +122,7 @@ If you're working with an already-deployed program and USDC mint:
 ```bash
 cp .env.example .env
 # Fill in DEVNET_RPC_URL, DEVNET_USDC_MINT
-make devnet-deploy   # build + deploy program
-make devnet-setup   # create markets + fund bots
+make devnet-deploy   # build + deploy + ensure USDC mint + GlobalConfig
 make devnet-health   # verify deployment
 ```
 
@@ -145,8 +142,7 @@ railway init                # creates project, links to current dir
 railway add -s meridian     # creates the service
 
 # 3. First-time full deploy
-make devnet-deploy    # build + deploy program to devnet
-make devnet-setup     # create markets + fund bots
+make devnet-deploy    # build + deploy + USDC mint + GlobalConfig
 make railway-env      # sync env vars to Railway service
 make railway-deploy   # build + push container
 ```
@@ -158,7 +154,7 @@ make railway-deploy   # build + push container
 make railway-deploy
 
 # After contract changes (Rust)
-make devnet-deploy && make devnet-setup && make railway-deploy
+make devnet-deploy && make railway-deploy
 
 # After config changes (.env)
 make railway-env && make railway-deploy

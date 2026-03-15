@@ -47,7 +47,7 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - Tests use `.accountsPartial({})` not `.accounts({})` - Anchor 0.32 auto-resolves PDAs.
 - `vault.reload()` after CPI transfers to refresh cached account data before invariant checks.
 - Pyth equity feeds only update during US market hours on devnet. Use admin_settle for off-hours testing.
-- `StrikeMarket` stores `usdc_mint` (added after `vault`). Changing field order shifts Borsh layout - existing accounts incompatible. Devnet: `make nuke NUKE_FLAGS="--yes"` then `make devnet-deploy && make devnet-setup` for fresh markets.
+- `StrikeMarket` stores `usdc_mint` (added after `vault`). Changing field order shifts Borsh layout - existing accounts incompatible. Devnet: `make nuke NUKE_FLAGS="--yes"` then `make devnet-deploy` for fresh markets.
 - **Deterministic dev wallets** in `.wallets/` (gitignored) - see README for derivation details and security warning.
 - **Frontend auto-sign**: On localhost, "Dev Wallet" appears in wallet picker. Uses bot-b keypair, pre-funded locally with 250,000 USDC + 5 SOL. On devnet, `setup-devnet` funds both bots with 250,000 USDC each. Phantom also available via Wallet Standard alongside Dev Wallet.
 - Prefer a local `frontend/.env.local` for frontend-only local overrides; do not use Vite env files to drive root bootstrap scripts.
@@ -101,7 +101,7 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 
 - Devnet operator config: `.env` (copy from `.env.example`). Treat `DEVNET_RPC_URL` and `DEVNET_USDC_MINT` there as the repo deploy source of truth - not hardcoded Makefile defaults.
 - Bot scripts accept `USDC_MINT` env var (falls back to `local-config.json`). Airdrop only on localhost (devnet faucets rate-limit).
-- `make nuke` tears down all devnet state: force-settles markets, closes them (recovering ~70% of rent), drains bot wallets to admin. `NUKE_FLAGS="--yes"` skips prompt, `--skip-settle` / `--skip-close` bypass those steps (useful for pre-CLOB markets). `--hard` PERMANENTLY closes the program account (cannot redeploy to same ID) - only for final teardown, not iteration. For devnet cycling, just `make nuke NUKE_FLAGS="--yes"` then `make devnet-deploy && make devnet-setup`.
-- Railway targets are decoupled: `make railway-deploy` pushes the container only. `make railway-env` syncs env vars. No composite target - chain explicitly when needed (e.g. `make devnet-deploy && make devnet-setup && make railway-deploy` after contract changes).
+- `make nuke` tears down all devnet state: force-settles markets, closes them (recovering ~70% of rent), drains bot wallets to admin. `NUKE_FLAGS="--yes"` skips prompt, `--skip-settle` / `--skip-close` bypass those steps (useful for pre-CLOB markets). `--hard` PERMANENTLY closes the program account (cannot redeploy to same ID) - only for final teardown, not iteration. For devnet cycling, just `make nuke NUKE_FLAGS="--yes"` then `make devnet-deploy`.
+- Railway targets are decoupled: `make railway-deploy` pushes the container only. `make railway-env` syncs env vars. After contract changes: `make devnet-deploy && make railway-deploy`.
 - Frontend `?debug` query param logs all Solana RPC calls and Pyth Hermes fetches to browser console.
 - See README `## Railway Deployment` for full Railway setup, env var table, and service architecture.

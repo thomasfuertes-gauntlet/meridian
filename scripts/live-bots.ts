@@ -31,8 +31,8 @@ import { createWsCache } from "./ws-cache";
 const MIN_PRICE = 50_000;   // $0.05 floor
 const MAX_PRICE = 950_000;  // $0.95 ceiling
 const MIN_ORDERS_PER_SIDE = 3;
-const TICK_MS_MIN = 150;
-const TICK_MS_MAX = 400;
+const TICK_MS_MIN = 2_000;
+const TICK_MS_MAX = 5_000;
 const PRICE_REFRESH_MS = 30_000;
 const TX_DELAY_MS = defaultTxDelay();
 const REPLENISH_THRESHOLD = 100_000 * USDC_PER_PAIR;

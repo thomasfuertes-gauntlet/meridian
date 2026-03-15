@@ -136,10 +136,11 @@ _railway-env:
 local: _local-validator-stop _local-deploy local-cycle local-bots  ## Full local: deploy + 12-min markets + seeded books + bots
 
 local-bots: _wallets  ## Run seed-bots + live-bots + strategy-bots (foreground, Ctrl+C kills all)
-	@$(LOCAL_TS_ENV) $(TSX) scripts/seed-bots.ts &
-	@sleep 2 && $(LOCAL_TS_ENV) $(TSX) scripts/live-bots.ts &
-	@sleep 4 && $(LOCAL_TS_ENV) $(TSX) scripts/strategy-bots.ts &
-	@wait
+	@trap 'kill 0' EXIT; \
+	$(LOCAL_TS_ENV) $(TSX) scripts/seed-bots.ts & \
+	sleep 2; $(LOCAL_TS_ENV) $(TSX) scripts/live-bots.ts & \
+	sleep 2; $(LOCAL_TS_ENV) $(TSX) scripts/strategy-bots.ts & \
+	wait
 
 _local-deploy: _wallets _local-validator
 	@mkdir -p $(LOCAL_STATE_DIR)

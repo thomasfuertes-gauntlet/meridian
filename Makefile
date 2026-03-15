@@ -4,9 +4,9 @@
 	local local-cycle local-settle local-seed \
 	local-live local-strategy local-ui local-validator-reset \
 	test uat \
-	devnet-deploy _devnet-setup devnet-health \
+	devnet-deploy devnet-setup devnet-health \
 	devnet-bootstrap nuke \
-	railway-sync railway-deploy
+	railway-deploy railway-env railway-full
 
 # ── Config & Variables ──────────────────────────────────────────
 
@@ -180,7 +180,7 @@ devnet-deploy: _wallets _devnet-env
 	@$(MAKE) build
 	anchor deploy --provider.cluster devnet --provider.wallet "$(ADMIN_WALLET)" --no-idl
 
-_devnet-setup: _wallets _devnet-env
+devnet-setup: _wallets _devnet-env  ## Create markets + fund bots on devnet
 	$(DEVNET_TS_ENV) $(TSX) scripts/setup-devnet.ts
 
 devnet-health: _wallets _devnet-env
@@ -205,8 +205,16 @@ nuke: _wallets _devnet-env  ## Devnet: settle all, close all, drain SOL to admin
 	$(DEVNET_TS_ENV) $(TSX) scripts/nuke-devnet.ts $(NUKE_FLAGS)
 
 # ── Railway ────────────────────────────────────────────────────
+# Decoupled: deploy container, sync env, and full pipeline are independent.
+#   make railway-deploy   → push container (the 10x/day action)
+#   make railway-env      → sync env vars to Railway service
+#   make railway-full     → program + state + env + container (rare, after contract changes)
 
-railway-sync: _railway-env
+railway-deploy:  ## Push container to Railway
+	$(call require_var,RAILWAY_SERVICE)
+	railway up -s "$(RAILWAY_SERVICE)" -d
+
+railway-env: _railway-env  ## Sync env vars to Railway service
 	@printf '%s\n' \
 		"ANCHOR_PROVIDER_URL=$(DEVNET_URL)" \
 		"USDC_MINT=$(DEVNET_USDC_MINT)" \
@@ -219,8 +227,7 @@ railway-sync: _railway-env
 		"ENABLE_TRADE_BOTS=$(ENABLE_TRADE_BOTS)" \
 	| xargs railway variable set -s "$(RAILWAY_SERVICE)"
 
-railway-deploy: devnet-deploy _devnet-setup railway-sync
-	railway up -s "$(RAILWAY_SERVICE)" -d
+railway-full: devnet-deploy devnet-setup railway-env railway-deploy  ## Full: program + state + env + container
 
 # ── Build & Cleanup ────────────────────────────────────────────
 

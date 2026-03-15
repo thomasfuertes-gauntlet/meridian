@@ -131,7 +131,7 @@ _railway-env:
 # Markets expire in 12 minutes (CYCLE_MINUTES). Run `make local-settle` to settle,
 # or `make local-cycle` to rotate to fresh markets.
 
-local: _local-deploy local-cycle local-seed  ## Full local: deploy + 12-min markets + seeded books
+local: _local-validator-stop _local-deploy local-cycle local-seed  ## Full local: deploy + 12-min markets + seeded books
 
 _local-deploy: _wallets _local-validator
 	@mkdir -p $(LOCAL_STATE_DIR)

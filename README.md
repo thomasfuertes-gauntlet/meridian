@@ -192,9 +192,16 @@ All bot activity is scoped to NVDA.
 
 ## Current Frontend State
 
-- **Landing** (`/`) - product explanation, live MAG7 Pyth prices, wallet connect CTA, settlement countdown.
+- **Landing** (`/`) - product explanation, live MAG7 Pyth prices, wallet connect CTA, settlement countdown. Featured contract card (nearest-ATM NVDA market) with Yes/No price bar and invariant display.
 - **Markets** (`/markets`) - 7-ticker grid with live prices, strike counts, CLOB mid sparklines.
-- **Market detail** (`/markets/:ticker`) - left-hand strike rail with per-strike Yes/No mid and liquidity. Trade panel with Buy Yes, Sell Yes, Buy No, Sell No paths.
+- **Market detail** (`/markets/:ticker`) - three-column layout: strike rail | order book + depth chart | trade panel + inline portfolio. Includes:
+  - Lifecycle indicator (Created → Trading → Frozen → Settled step display)
+  - Yes/No price bar (full variant in header, compact in strike rail)
+  - Implied probability curve (SVG chart of yesMid across all strikes, clickable to select)
+  - Depth chart (cumulative bid/ask stepped-area SVG below order book)
+  - Solvency banner (vault pairs × $1.00 invariant check)
+  - Settlement audit panel (oracle price, source, outcome - shown on settled markets)
+  - Inline portfolio panel (ticker-scoped positions with redeem/exit buttons, below trade panel)
 - **History** (`/history`) - on-chain instruction decoding. "My Trades" (connected wallet) or "All Activity" toggle. Cursor-based load-more pagination.
 - **Portfolio** (`/portfolio`) - positions scoped to connected wallet. Mark value, cost basis, unrealized/realized P&L, redeem buttons for settled winners and pre-settlement complete sets.
 - Header shows cluster label (Devnet/Localnet) and red banner when Phantom is on wrong network.
@@ -292,6 +299,7 @@ The built-in CLOB is the right demo choice (shows depth of understanding, avoids
 - [ ] **Partial fills** - `buy_yes` and `sell_yes` currently require full fills (atomic fill-or-kill). Production needs partial fills with remaining quantity posted as a resting order. Requires rethinking the taker instruction to optionally place a maker order with the unfilled residual.
 - [ ] **Order types** - Add IOC (immediate-or-cancel), GTC (good-till-cancel), and day orders. Current `place_order` is implicitly GTC with manual cancel.
 - [ ] **Matching engine optimization** - Replace linear order scan with a sorted binary heap. Current O(n) iteration is fine for 32 slots; at 1,000+ orders it becomes a compute-unit bottleneck (~200k CU budget per Solana tx).
+- [ ] **Sell No limit orders (auto-redeem on fill)** - Currently Sell No is market-only because `buy_yes` + `redeem` requires the fill to complete before redeem executes - impossible for resting orders where the fill happens in the taker's transaction. Fix: add `auto_redeem` flag on `Order` struct. During fill, if set, the program burns credited Yes + escrowed No directly and credits USDC instead of Yes tokens. Requires: new Order field (Borsh layout change), No token escrow vault on the OB, and fill handler access to Yes/No mints for burning. Maker still claims USDC via `claim_fills`. ~Half-day Rust change.
 
 ### Settlement & Oracle
 
@@ -299,6 +307,7 @@ The built-in CLOB is the right demo choice (shows depth of understanding, avoids
 - [ ] **Official close price source** - Pyth's real-time equity feed at ~4:05 PM ET is *not* the official NYSE/NASDAQ closing auction print. Production needs either: (a) a dedicated closing-price oracle feed, or (b) a longer settlement window (e.g., settle after 4:30 PM when official close is published) with dispute resolution.
 - [ ] **Multi-oracle aggregation** - Median of 3+ oracle sources to prevent single-feed manipulation. Current single-feed Pyth dependency is a liveness risk if Hermes goes down during settlement.
 - [ ] **Settlement dispute window** - Add a challenge period (e.g., 30 min) where anyone can submit counter-evidence before settlement finalizes. Current settlement is instant and irreversible.
+- [ ] **Mint-only freeze (keep CLOB live)** - `freeze_market` currently blocks all activity: minting, placing, taking, and cancelling. The exploit it prevents is post-close minting (mint pair after seeing the close price, sell the losing side). But the CLOB itself should stay open - if the close price is known, book prices converge naturally and no one sells the winning side cheap. Production should split the guard: `mint_pair` checks `status != Frozen`, trading instructions check `status != Settled`. This keeps price discovery alive during the 4:00-4:07 PM settlement window and matches how real exchanges work (halt issuance, not trading). ~30 min change (4 guard calls), no Borsh layout impact.
 - [ ] **Account migration instruction** - Program upgrades that change `OrderBook` or `StrikeMarket` Borsh layout orphan existing accounts (Anchor's `AccountLoader` panics on size mismatch). Production needs a versioned `migrate_market(version)` instruction that reads the old layout, writes the new one, and reallocates if needed. Current devnet workaround: `make nuke --skip-settle --skip-close` and accept ~0.07 SOL/market rent loss.
 
 ### Risk & Compliance

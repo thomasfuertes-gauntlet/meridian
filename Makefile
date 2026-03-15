@@ -106,13 +106,15 @@ _local-validator: _mock-pyth
 	fi
 
 _local-validator-stop:
+	@# Kill by PID file if valid
 	@if [ -f "$(LOCAL_VALIDATOR_PID)" ] && kill -0 "$$(cat $(LOCAL_VALIDATOR_PID))" 2>/dev/null; then \
 		echo "Stopping local validator (pid $$(cat $(LOCAL_VALIDATOR_PID)))"; \
 		kill "$$(cat $(LOCAL_VALIDATOR_PID))"; \
-		rm -f "$(LOCAL_VALIDATOR_PID)"; \
-	else \
-		echo "No tracked local validator is running"; \
 	fi
+	@rm -f "$(LOCAL_VALIDATOR_PID)"
+	@# Also kill any orphaned validator on our port
+	@pkill -f 'solana-test-validator.*127.0.0.1' 2>/dev/null && echo "Killed orphaned validator" || true
+	@sleep 1
 
 _devnet-env:
 	$(call require_any_var,DEVNET_RPC_URL,DEVNET_URL)
@@ -131,7 +133,14 @@ _railway-env:
 # Markets expire in 12 minutes (CYCLE_MINUTES). Run `make local-settle` to settle,
 # or `make local-cycle` to rotate to fresh markets.
 
-local: _local-deploy local-cycle local-seed  ## Full local: deploy + 12-min markets + seeded books
+local: _local-validator-stop _local-deploy local-cycle local-bots  ## Full local: deploy + 12-min markets + seeded books + bots
+
+local-bots: _wallets  ## Run seed-bots + live-bots + strategy-bots (foreground, Ctrl+C kills all)
+	@trap 'kill 0' EXIT; \
+	$(LOCAL_TS_ENV) $(TSX) scripts/seed-bots.ts & \
+	sleep 2; $(LOCAL_TS_ENV) $(TSX) scripts/live-bots.ts & \
+	sleep 2; $(LOCAL_TS_ENV) $(TSX) scripts/strategy-bots.ts & \
+	wait
 
 _local-deploy: _wallets _local-validator
 	@mkdir -p $(LOCAL_STATE_DIR)

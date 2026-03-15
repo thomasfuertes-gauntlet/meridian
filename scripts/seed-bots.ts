@@ -82,7 +82,7 @@ async function main() {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     try {
-    if (!isMarketHours()) {
+    if (!isLocalhost && !isMarketHours()) {
       await sleep(RESEED_INTERVAL_MS);
       continue;
     }

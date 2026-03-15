@@ -28,6 +28,8 @@ sell_yes                   -- taker sells Yes into bids (atomic fill-or-kill)
 claim_fills                -- withdraw credited fill proceeds (permissionless)
 unwind_order               -- permissionless order removal during freeze
 freeze_market              -- pre-freeze before settlement window
+close_market               -- admin closes settled market (recovers rent)
+update_config              -- admin updates oracle policies, settlement delay
 ```
 
 Frontend composes higher-level actions from these primitives:

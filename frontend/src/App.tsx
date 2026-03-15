@@ -18,7 +18,9 @@ import { Landing } from "./pages/Landing";
 import { Markets } from "./pages/Markets";
 import { MarketDetail } from "./pages/MarketDetail";
 import { Portfolio } from "./pages/Portfolio";
+import { Docs } from "./pages/Docs";
 import { History } from "./pages/History";
+import { Overview } from "./pages/Overview";
 
 function NetworkBanner() {
   const { publicKey } = useWallet();
@@ -74,6 +76,8 @@ export default function App() {
               <NavLink to="/markets" label="Markets" />
               <NavLink to="/history" label="History" />
               <NavLink to="/portfolio" label="Portfolio" />
+              <NavLink to="/overview" label="Overview" />
+              <NavLink to="/docs" label="Docs" />
             </nav>
             <div>
               <mark data-tone={IS_LOCAL_RPC ? "muted" : "blue"}>{CLUSTER_LABEL}</mark>
@@ -91,6 +95,8 @@ export default function App() {
               <Route path="/markets/:ticker" element={<MarketDetail />} />
               <Route path="/history" element={<History />} />
               <Route path="/portfolio" element={<Portfolio />} />
+              <Route path="/overview" element={<Overview />} />
+              <Route path="/docs" element={<Docs />} />
             </Routes>
           </main>
           </MarketDataProvider>

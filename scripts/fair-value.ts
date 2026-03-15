@@ -25,32 +25,46 @@ export function isMarketHours(): boolean {
   return minutes >= 570 && minutes <= 990; // 9:30 AM - 4:30 PM
 }
 
-// Fallback prices near setup-local.ts strikes for interesting fair values.
-// Used when Pyth Hermes is unavailable (weekends, off-hours, network issues).
+// Fallback/seed prices for synthetic random-walk on localnet.
+// Updated 2026-03-15. Strike generation uses these as reference,
+// so fair values make sense relative to the generated strikes.
 const FALLBACK_PRICES: Record<string, number> = {
   AAPL: 237,
-  MSFT: 432,
-  GOOGL: 185,
-  AMZN: 206,
-  NVDA: 134,
+  MSFT: 430,
+  GOOGL: 184,
+  AMZN: 208,
+  NVDA: 180,
   META: 700,
-  TSLA: 258,
+  TSLA: 259,
 };
 
-// Synthetic random walk state (persists across calls within a process)
-const syntheticPrices = new Map<string, number>();
+// Synthetic random walk state (persists across calls within a process).
+// Walks ±$5 max per minute, clamped to ±15% from seed. Time-based so
+// multiple calls within the same minute return the same price.
+const syntheticState = new Map<string, { price: number; lastMinute: number }>();
 
 function getSyntheticPrice(ticker: string): number {
-  let price = syntheticPrices.get(ticker);
-  if (price === undefined) {
-    price = FALLBACK_PRICES[ticker] ?? 100;
-    syntheticPrices.set(ticker, price);
+  const seed = FALLBACK_PRICES[ticker] ?? 100;
+  const nowMinute = Math.floor(Date.now() / 60_000);
+  let state = syntheticState.get(ticker);
+
+  if (!state) {
+    state = { price: seed, lastMinute: nowMinute };
+    syntheticState.set(ticker, state);
+    return state.price;
   }
-  // Random walk: drift +-0.5% per call
-  const drift = (Math.random() - 0.5) * 0.01 * price;
-  price = Math.max(price * 0.85, Math.min(price * 1.15, price + drift));
-  syntheticPrices.set(ticker, price);
-  return price;
+
+  // Only walk on new minutes (idempotent within same minute)
+  const elapsed = nowMinute - state.lastMinute;
+  if (elapsed > 0) {
+    for (let i = 0; i < elapsed; i++) {
+      const drift = (Math.random() - 0.5) * 10; // ±$5 per minute
+      state.price = Math.max(seed * 0.85, Math.min(seed * 1.15, state.price + drift));
+    }
+    state.lastMinute = nowMinute;
+  }
+
+  return state.price;
 }
 
 
@@ -89,7 +103,9 @@ export function computeLevels(fair: number): {
   asks: [number, number][];
 } {
   const offsets = [0.02, 0.05, 0.08, 0.13, 0.19, 0.27];
-  const quantities = [10, 15, 25, 40, 50, 60];
+  // KEY-DECISION 2026-03-15: institutional-scale depth for demo credibility.
+  // 21,500 tokens/side ≈ $10,750 notional at fair. Well within 250K bot budget.
+  const quantities = [500, 1_000, 2_000, 4_000, 6_000, 8_000];
 
   const bids: [number, number][] = [];
   const asks: [number, number][] = [];

@@ -411,6 +411,42 @@ export async function buildBuyNoLimitTx(
   return tx;
 }
 
+// Cancel a resting order by ID. Refunds escrowed USDC (bids) or Yes (asks).
+export async function buildCancelOrderTx(
+  program: Program,
+  user: PublicKey,
+  market: PublicKey,
+  yesMint: PublicKey,
+  usdcMint: PublicKey,
+  orderId: number,
+  side: "bid" | "ask",
+): Promise<Transaction> {
+  const [orderBook] = findOrderBookPda(market);
+  const [obUsdcVault] = findVaultPda("ob_usdc_vault", market);
+  const [obYesVault] = findVaultPda("ob_yes_vault", market);
+  // Bids refund USDC, asks refund Yes tokens
+  const refundMint = side === "bid" ? usdcMint : yesMint;
+  const refundDestination = getAssociatedTokenAddressSync(refundMint, user);
+
+  const tx = new Transaction();
+  tx.add(createAssociatedTokenAccountIdempotentInstruction(user, refundDestination, user, refundMint));
+
+  const ix = await program.methods
+    .cancelOrder(new (await import("@coral-xyz/anchor")).BN(orderId))
+    .accountsPartial({
+      user,
+      market,
+      orderBook,
+      obUsdcVault,
+      obYesVault,
+      refundDestination,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    })
+    .instruction();
+  tx.add(ix);
+  return tx;
+}
+
 // Claim credited fills from the order book (permissionless - anyone can crank)
 export async function buildClaimFillsTx(
   program: Program,

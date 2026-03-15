@@ -1,13 +1,32 @@
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { PriceBar } from "../components/PriceBar";
 import { SettlementCountdown } from "../components/SettlementCountdown";
 import { useMarketData } from "../lib/use-market-data";
-import { MAG7 } from "../lib/constants";
+import { MAG7, USDC_PER_PAIR, type Ticker } from "../lib/constants";
+import { formatUsdcBaseUnits } from "../lib/format";
 
 export function Landing() {
   const navigate = useNavigate();
   const { data, loading } = useMarketData();
   const snapshots = data?.tickerSnapshots ?? [];
+
+  // Featured contract: first NVDA market with book data
+  const featuredContract = useMemo(() => {
+    if (!data) return null;
+    const nvdaMarkets = data.marketsByTicker["NVDA" as Ticker] ?? [];
+    const active = nvdaMarkets
+      .filter((m) => m.status === "created" && m.yesMid != null)
+      .sort((a, b) => {
+        // Closest to ATM
+        const nvda = snapshots.find((s) => s.ticker === "NVDA");
+        const spot = nvda?.latestPrice ?? 0;
+        const spotBase = spot * USDC_PER_PAIR;
+        return Math.abs(a.strikePrice - spotBase) - Math.abs(b.strikePrice - spotBase);
+      });
+    return active[0] ?? null;
+  }, [data, snapshots]);
 
   return (
     <>
@@ -22,6 +41,23 @@ export function Landing() {
           <WalletMultiButton />
           <SettlementCountdown />
         </div>
+        {featuredContract && (
+          <article
+            data-contract-card
+            onClick={() => navigate(`/markets/${featuredContract.ticker}`)}
+            style={{ cursor: "pointer", maxWidth: 360, margin: "var(--space-lg) auto 0", textAlign: "left" }}
+          >
+            <small><mark data-tone="created">MAG7 STOCK</mark></small>
+            <h2 style={{ fontSize: "1.25rem" }}>{featuredContract.ticker}</h2>
+            <p style={{ color: "var(--text-dim)", fontSize: 13 }}>
+              Will {featuredContract.ticker} close above {formatUsdcBaseUnits(featuredContract.strikePrice)} today?
+            </p>
+            <PriceBar yesMid={featuredContract.yesMid} />
+            <small style={{ display: "block", marginTop: "var(--space-xs)", color: "var(--muted)", fontFamily: "var(--mono)" }}>
+              Invariant: Yes ({formatUsdcBaseUnits(featuredContract.yesMid)}) + No ({formatUsdcBaseUnits(featuredContract.yesMid != null ? USDC_PER_PAIR - featuredContract.yesMid : null)}) = $1.00 USDC
+            </small>
+          </article>
+        )}
       </section>
 
       {/* Live Prices */}

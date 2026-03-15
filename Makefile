@@ -4,7 +4,7 @@
 	local local-cycle local-settle local-seed \
 	local-live local-strategy local-ui local-validator-reset \
 	test uat \
-	devnet-deploy devnet-setup devnet-health \
+	devnet-deploy devnet-setup devnet-fund-bots devnet-health \
 	nuke \
 	railway-deploy railway-env
 
@@ -180,8 +180,11 @@ devnet-deploy: _wallets _devnet-env
 	@$(MAKE) build
 	anchor deploy --provider.cluster "$(DEVNET_URL)" --provider.wallet "$(ADMIN_WALLET)" --no-idl
 
-devnet-setup: _wallets _devnet-env  ## Create markets + fund bots on devnet
+devnet-setup: _wallets _devnet-env  ## USDC mint + GlobalConfig (no bots)
 	$(DEVNET_TS_ENV) $(TSX) scripts/setup-devnet.ts
+
+devnet-fund-bots: _wallets _devnet-env  ## Fund bot-a/bot-b with SOL + USDC
+	$(DEVNET_TS_ENV) $(TSX) scripts/fund-bots.ts
 
 devnet-health: _wallets _devnet-env
 	$(DEVNET_READONLY_ENV) $(TSX) scripts/health-check.ts

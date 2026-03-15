@@ -151,8 +151,8 @@ async function main() {
       return; // natural pause
     }
 
-    if (roll < 0.55 && (botBids.length > MIN_ORDERS_PER_SIDE || botAsks.length > MIN_ORDERS_PER_SIDE)) {
-      // 50% - Cancel + replace with drift toward fair value
+    if (roll < 0.35 && (botBids.length > MIN_ORDERS_PER_SIDE || botAsks.length > MIN_ORDERS_PER_SIDE)) {
+      // 30% - Cancel + replace with drift toward fair value
       const side = botBids.length > MIN_ORDERS_PER_SIDE && (Math.random() < 0.5 || botAsks.length <= MIN_ORDERS_PER_SIDE)
         ? "bid" : "ask";
       const orders = side === "bid" ? botBids : botAsks;
@@ -225,8 +225,8 @@ async function main() {
       const arrow = drift > 0 ? "↑" : "↓";
       console.log(`[${mkt.ticker}] ${arrow} ${side} $${(order.price / USDC_PER_PAIR).toFixed(2)}->${(refreshedSafePrice / USDC_PER_PAIR).toFixed(2)} qty=${order.quantity}  [${txCount}]`);
 
-    } else if (roll < 0.80) {
-      // 25% - Place a new resting order near the spread, anchored to fair
+    } else if (roll < 0.55) {
+      // 20% - Place a new resting order near the spread, anchored to fair
       const bestBid = book.bids[0]?.price ?? Math.round(fair * USDC_PER_PAIR * 0.8);
       const bestAsk = book.asks[0]?.price ?? Math.round(fair * USDC_PER_PAIR * 1.2);
       const mid = Math.floor((bestBid + bestAsk) / 2);
@@ -298,9 +298,10 @@ async function main() {
       console.log(`[${mkt.ticker}] + ${side} ${qty} @ $${(refreshedPrice / USDC_PER_PAIR).toFixed(2)}  [${txCount}]`);
 
     } else if (book.bids.length > MIN_ORDERS_PER_SIDE && book.asks.length > MIN_ORDERS_PER_SIDE) {
-      // 20% - Cross the spread with qty 1 (visible fill)
+      // 45% - Cross the spread (visible fill)
+      const crossQty = randInt(5, 50);
       await program.methods
-        .mintPair(new BN(1))
+        .mintPair(new BN(crossQty))
         .accountsPartial({
           user: bot.publicKey,
           market: mkt.pubkey,
@@ -325,7 +326,7 @@ async function main() {
         if (!bestAsk) return;
         const hitPrice = bestAsk.price;
         await program.methods
-          .buyYes(new BN(1), new BN(hitPrice))
+          .buyYes(new BN(crossQty), new BN(hitPrice))
           .accountsPartial({
             user: bot.publicKey,
             market: mkt.pubkey,
@@ -340,13 +341,13 @@ async function main() {
           .rpc();
         txCount++;
 
-        console.log(`[${mkt.ticker}] * BUY 1 @ $${(hitPrice / USDC_PER_PAIR).toFixed(2)}  [${txCount}]`);
+        console.log(`[${mkt.ticker}] * BUY ${crossQty} @ $${(hitPrice / USDC_PER_PAIR).toFixed(2)}  [${txCount}]`);
       } else {
         const bestBid = refreshedBook.bids[0];
         if (!bestBid) return;
         const hitPrice = bestBid.price;
         await program.methods
-          .sellYes(new BN(1), new BN(hitPrice))
+          .sellYes(new BN(crossQty), new BN(hitPrice))
           .accountsPartial({
             user: bot.publicKey,
             market: mkt.pubkey,
@@ -360,7 +361,7 @@ async function main() {
           .rpc();
         txCount++;
 
-        console.log(`[${mkt.ticker}] * SELL 1 @ $${(hitPrice / USDC_PER_PAIR).toFixed(2)}  [${txCount}]`);
+        console.log(`[${mkt.ticker}] * SELL ${crossQty} @ $${(hitPrice / USDC_PER_PAIR).toFixed(2)}  [${txCount}]`);
       }
     }
   }

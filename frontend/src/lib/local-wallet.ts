@@ -8,8 +8,22 @@ import { Keypair, PublicKey, Transaction, VersionedTransaction } from "@solana/w
 import { BaseSignerWalletAdapter, WalletReadyState } from "@solana/wallet-adapter-base";
 import type { WalletName } from "@solana/wallet-adapter-base";
 
-// Deterministic: sha256("meridian-dev-user") - pre-computed to avoid node:crypto in browser
-const USER_SEED = new Uint8Array([227,241,45,217,52,146,183,221,180,88,4,122,179,76,79,200,232,126,89,99,38,56,148,38,213,237,27,212,134,63,49,183]);
+// Deterministic default: sha256("meridian-dev-user"), pre-computed for browser.
+// Override via VITE_USER_SEED (hex) when WALLET_MODE=generate.
+const DEFAULT_USER_SEED = new Uint8Array([227,241,45,217,52,146,183,221,180,88,4,122,179,76,79,200,232,126,89,99,38,56,148,38,213,237,27,212,134,63,49,183]);
+
+function hexToBytes(hex: string): Uint8Array {
+  const clean = hex.startsWith("0x") ? hex.slice(2) : hex;
+  const bytes = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
+}
+
+const USER_SEED = import.meta.env.VITE_USER_SEED
+  ? hexToBytes(import.meta.env.VITE_USER_SEED)
+  : DEFAULT_USER_SEED;
 const DEV_KEYPAIR = Keypair.fromSeed(USER_SEED);
 
 export class LocalDevWalletAdapter extends BaseSignerWalletAdapter {

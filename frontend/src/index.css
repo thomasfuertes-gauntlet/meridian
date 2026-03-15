@@ -50,6 +50,12 @@ mark[data-tone="muted"] { color: var(--muted); }
 .landing-steps dt { font-weight: 600; margin-bottom: 0.25rem; }
 .landing-steps dd { color: var(--muted); font-size: 13px; margin: 0; }
 
+/* Forms */
+form > * + * { margin-top: 0.75rem; }
+label { display: block; color: var(--muted); font-size: 12px; }
+label > input, label > select { display: block; width: 100%; margin-top: 0.25rem; }
+output { display: block; font-size: 13px; padding: 0.5rem; border: 1px solid var(--border); }
+
 /* wallet adapter - minimal overrides */
 .wallet-adapter-button { font-family: inherit !important; }
 .wallet-adapter-dropdown { position: relative; z-index: 30; }

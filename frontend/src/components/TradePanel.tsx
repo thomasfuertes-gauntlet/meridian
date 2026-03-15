@@ -49,7 +49,8 @@ export function TradePanel({
   const { connection } = useConnection();
   const [action, setAction] = useState<TradeAction>("buyYes");
   const [quantity, setQuantity] = useState("100");
-  const [price, setPrice] = useState("");
+  const emptyBook = bestBid == null && bestAsk == null;
+  const [price, setPrice] = useState(emptyBook ? "0.50" : "");
   const [status, setStatus] = useState<string | null>(null);
   const [balanceMap, setBalanceMap] = useState<Map<string, number>>(new Map());
   const [balanceTick, setBalanceTick] = useState(0);
@@ -273,9 +274,9 @@ export function TradePanel({
                 : ACTION_LABELS[action]}
       </button>
 
-      {bestBid == null && bestAsk == null && (
+      {emptyBook && (
         <>
-          <p><small>Empty book - enter a price to place the first limit order, or request bot liquidity.</small></p>
+          <p><small>Empty book - place a limit order to seed liquidity, or request bots.</small></p>
           <button
             type="button"
             onClick={() => {

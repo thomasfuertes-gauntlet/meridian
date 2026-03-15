@@ -10,7 +10,6 @@ ARG VITE_RPC_URL
 ARG VITE_USDC_MINT
 ARG VITE_PROGRAM_ID
 ARG VITE_DEV_WALLET
-ARG VITE_SIGNAL_URL
 RUN npm run build
 
 # ── Stage 2: Runtime ─────────────────────────────────────────────

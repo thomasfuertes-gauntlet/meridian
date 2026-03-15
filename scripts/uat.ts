@@ -68,7 +68,7 @@ async function main() {
   const botA = getDevWallet("bot-a");
   const botB = getDevWallet("bot-b");
 
-  const ticker = (process.env.DEMO_TICKER || "NVDA").trim().toUpperCase();
+  const ticker = "NVDA";
 
   console.log("=== Meridian UAT ===");
   console.log(`Program: ${program.programId.toString()}`);

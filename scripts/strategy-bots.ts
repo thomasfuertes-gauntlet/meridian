@@ -22,7 +22,7 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fetchStockPrices, isMarketHours } from "./fair-value";
-import { MarketCtx, loadUsdcMint, sleep, USDC_PER_PAIR, getActiveMarket, getBotTickerFilter, defaultTxDelay, discoverMarkets, type Order, getBlockhashCached, sendNoConfirm } from "./bot-utils";
+import { MarketCtx, loadUsdcMint, sleep, USDC_PER_PAIR, defaultTxDelay, discoverMarkets, type Order, getBlockhashCached, sendNoConfirm } from "./bot-utils";
 import { loadSharedBooks } from "./ws-cache";
 
 const TICK_MS = 45_000;
@@ -227,10 +227,7 @@ async function main() {
 
   console.log("Strategy Bots (bot-c/d/e/f) using wallet:", bot.publicKey.toString());
   console.log("USDC Mint:", usdcMint.toString());
-  const demoTicker = getBotTickerFilter();
-  if (demoTicker) {
-    console.log("Demo ticker focus:", demoTicker);
-  }
+  console.log("Ticker: NVDA");
 
   // Discover markets via RPC. Refreshed every 15 min during market hours
   // to pick up markets created after boot (e.g. 8 AM ET morning job).
@@ -494,9 +491,7 @@ async function main() {
       else cooldowns.set(key, ticks - 1);
     }
 
-    // Collect signals from all strategies, prioritizing active market signal
-    const activeMarket = getActiveMarket();
-    const activeTicker = activeMarket?.ticker ?? null;
+    // Collect signals from all strategies
     const signals: { signal: TradeSignal; stratName: string }[] = [];
     for (const strategy of STRATEGIES) {
       for (const mi of marketInfos) {
@@ -510,15 +505,6 @@ async function main() {
         const sig = strategy.signal(mi, hist, histMap);
         if (sig) signals.push({ signal: sig, stratName: strategy.name });
       }
-    }
-
-    // Sort active ticker signals first
-    if (activeTicker) {
-      signals.sort((a, b) => {
-        const aActive = a.signal.market.ticker === activeTicker ? 0 : 1;
-        const bActive = b.signal.market.ticker === activeTicker ? 0 : 1;
-        return aActive - bActive;
-      });
     }
 
     // Execute top signals (max MAX_TRADES_PER_TICK)

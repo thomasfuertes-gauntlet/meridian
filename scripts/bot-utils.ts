@@ -85,11 +85,6 @@ export interface MarketCtx {
   obYesVault: PublicKey;
 }
 
-export function getBotTickerFilter(): string {
-  const ticker = process.env.DEMO_TICKER?.trim().toUpperCase();
-  return ticker || "NVDA";
-}
-
 function marketRecordToCtx(m: { address: string; ticker: string; strikePrice: number; closeTime: number }, pid: PublicKey): MarketCtx {
   const pk = new PublicKey(m.address);
   return {
@@ -106,10 +101,9 @@ function marketRecordToCtx(m: { address: string; ticker: string; strikePrice: nu
   };
 }
 
-/** Discover all active (pending) markets via direct RPC. */
+/** Discover all active (pending) NVDA markets via direct RPC. */
 export async function discoverMarkets(program: Program<Meridian>): Promise<MarketCtx[]> {
   const pid = program.programId;
-  const demoTicker = getBotTickerFilter();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allMarkets = await (program.account as any).strikeMarket.all();
@@ -118,7 +112,7 @@ export async function discoverMarkets(program: Program<Meridian>): Promise<Marke
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .filter((m: any) => m.account.outcome?.pending !== undefined)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .filter((m: any) => !demoTicker || (m.account.ticker as string).toUpperCase() === demoTicker)
+    .filter((m: any) => (m.account.ticker as string).toUpperCase() === "NVDA")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .map((m: any) => marketRecordToCtx({ address: m.publicKey.toBase58(), ticker: m.account.ticker, strikePrice: m.account.strikePrice.toNumber(), closeTime: m.account.closeTime.toNumber() }, pid));
 }
@@ -163,57 +157,6 @@ export function defaultTxDelay(): number {
   return Number(process.env.TX_DELAY_MS ?? (isRemoteRpc() ? 500 : 0));
 }
 
-const ACTIVE_MARKET_FILE = "/tmp/meridian-active-market.txt";
-const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
-
-export interface ActiveMarket {
-  ticker: string;
-  marketAddress: string | null;
-}
-
-/**
- * Read the active market signal from env or file.
- * Supports `ticker:address` format; if no colon, treats as ticker-only.
- * File signal is considered stale if mtime > 5 min and returns null.
- */
-export function getActiveMarket(): ActiveMarket | null {
-  // Env var override takes priority (ACTIVE_MARKET=ticker:address or just ticker)
-  const envVal = process.env.ACTIVE_MARKET?.trim();
-  if (envVal) {
-    const colonIdx = envVal.indexOf(":");
-    if (colonIdx >= 0) {
-      return { ticker: envVal.slice(0, colonIdx).toUpperCase(), marketAddress: envVal.slice(colonIdx + 1) };
-    }
-    return { ticker: envVal.toUpperCase(), marketAddress: null };
-  }
-
-  // File signal (written by frontend dev server middleware)
-  try {
-    const stat = fs.statSync(ACTIVE_MARKET_FILE);
-    if (Date.now() - stat.mtimeMs > STALE_THRESHOLD_MS) return null; // stale
-    const content = fs.readFileSync(ACTIVE_MARKET_FILE, "utf-8").trim();
-    if (!content) return null;
-    const colonIdx = content.indexOf(":");
-    if (colonIdx >= 0) {
-      return { ticker: content.slice(0, colonIdx).toUpperCase(), marketAddress: content.slice(colonIdx + 1) };
-    }
-    return { ticker: content.toUpperCase(), marketAddress: null };
-  } catch {
-    return null;
-  }
-}
-
-/** @deprecated Use getActiveMarket() instead. Kept for backwards compat. */
-export function getActiveTicker(): string | null {
-  return getActiveMarket()?.ticker ?? null;
-}
-
-/**
- * Select markets weighted toward the active market signal.
- * If active market has a specific address: 80% weight on that exact strike.
- * If active market is ticker-only: 80% weight on all markets for that ticker.
- * Falls back to uniform random if no signal or no matching markets.
- */
 // --- RPC credit optimization helpers ---
 // KEY-DECISION 2026-03-14: Helius free tier = 1M credits/mo. Each
 // sendAndConfirmTransaction costs ~3 credits (blockhash + send + confirm).
@@ -303,22 +246,3 @@ export async function batchConfirm(
   return { confirmed, failed };
 }
 
-export function weightedMarketSelect(markets: MarketCtx[], count: number): MarketCtx[] {
-  const activeMarket = getActiveMarket();
-  if (!activeMarket || count >= markets.length) {
-    return [...markets].sort(() => Math.random() - 0.5).slice(0, count);
-  }
-  const active = activeMarket.marketAddress
-    ? markets.filter((m) => m.pubkey.toBase58() === activeMarket.marketAddress)
-    : markets.filter((m) => m.ticker === activeMarket.ticker);
-  const rest = markets.filter((m) => !active.includes(m));
-  if (active.length === 0) {
-    return [...markets].sort(() => Math.random() - 0.5).slice(0, count);
-  }
-  const selected: MarketCtx[] = [];
-  for (let i = 0; i < count; i++) {
-    const pool = Math.random() < 0.8 && active.length > 0 ? active : rest.length > 0 ? rest : active;
-    selected.push(pool[Math.floor(Math.random() * pool.length)]);
-  }
-  return selected;
-}

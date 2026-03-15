@@ -55,20 +55,6 @@ export function MarketDetail() {
       ?? null;
   }, [markets, selectedMarketAddress]);
 
-  // Signal active market to bots so they weight activity toward this strike.
-  // On Railway: VITE_SIGNAL_URL points to the bots service signal-server.
-  // Locally: Vite dev middleware handles /api/active-ticker.
-  const featuredAddress = featured?.address;
-  const featuredTicker = featured?.ticker;
-  useEffect(() => {
-    if (!featuredAddress || !featuredTicker) return;
-    const base = import.meta.env.VITE_SIGNAL_URL;
-    const url = base
-      ? `${base}/active-market?ticker=${featuredTicker}&market=${featuredAddress}`
-      : `/api/active-ticker?ticker=${featuredTicker}&market=${featuredAddress}`;
-    fetch(url).catch(() => {});
-  }, [featuredAddress, featuredTicker]);
-
   const closeTime = featured?.closeTime ?? null;
   useEffect(() => {
     if (closeTime == null) return;

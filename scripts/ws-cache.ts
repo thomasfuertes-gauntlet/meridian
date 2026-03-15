@@ -1,8 +1,8 @@
 /**
  * Shared WebSocket subscription cache for bot scripts.
  *
- * Subscribes to ONLY the active market's orderbook via onAccountChange (1 WS sub).
- * Rotates subscription when the active-market signal changes.
+ * Subscribes to one orderbook at a time via onAccountChange (1 WS sub).
+ * Cycles through discovered markets round-robin every 10s.
  * Writes parsed book state to a tmpfile so other processes (strategy-bots) can
  * read without their own WS connections. Fits within Helius free-tier 5 WS limit.
  *
@@ -18,7 +18,7 @@
 import { Connection, PublicKey } from "@solana/web3.js";
 import { Program } from "@coral-xyz/anchor";
 import { Meridian } from "../target/types/meridian";
-import { MarketCtx, Book, Order, parseBook, discoverMarkets, getActiveMarket } from "./bot-utils";
+import { MarketCtx, Book, Order, parseBook, discoverMarkets } from "./bot-utils";
 import { writeFileSync, readFileSync } from "node:fs";
 
 export interface WsCache {
@@ -145,19 +145,12 @@ export function createWsCache(connection: Connection, program: Program<Meridian>
   }
 
   function rotateActiveSubscription() {
-    const signal = getActiveMarket();
-    // Try exact market address first, then any market matching the ticker
-    if (signal?.marketAddress) {
-      const mkt = markets.get(signal.marketAddress);
-      if (mkt) { subscribeOrderBook(mkt); return; }
-    }
-    if (signal?.ticker) {
-      const match = [...markets.values()].find((m) => m.ticker === signal.ticker);
-      if (match) { subscribeOrderBook(match); return; }
-    }
-    // Fallback: first market
-    const first = [...markets.values()][0];
-    if (first) subscribeOrderBook(first);
+    // Cycle through markets sequentially (round-robin)
+    const all = [...markets.values()];
+    if (all.length === 0) return;
+    const currentIdx = activeObKey ? all.findIndex((m) => m.orderBook.toBase58() === activeObKey) : -1;
+    const nextIdx = (currentIdx + 1) % all.length;
+    subscribeOrderBook(all[nextIdx]);
   }
 
   async function bootstrap() {
@@ -178,7 +171,7 @@ export function createWsCache(connection: Connection, program: Program<Meridian>
 
   const ready = bootstrap();
 
-  // Rotate WS sub when active market signal changes; also check liveness to detect
+  // Rotate WS sub round-robin every 10s; also check liveness to detect
   // silently dropped WS connections (common on public devnet RPC).
   const rotateInterval = setInterval(() => {
     checkWsLiveness();

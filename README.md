@@ -41,6 +41,7 @@ make local-settle       # settle + close all current markets
 make local-seed         # re-seed order books with bot liquidity
 make test               # run Anchor/TS test suite (or: make test GREP='pattern')
 make uat                # E2E lifecycle test: create → mint → trade → settle → redeem
+cd frontend && npm test # run frontend unit tests (orderbook, portfolio, position, trade, format)
 cd frontend && npm run dev
 ```
 
@@ -111,7 +112,7 @@ make devnet-health   # verify deployment
 
 | Consumer | WS subs | Notes |
 |---|---|---|
-| Bots (`live-bots`) | 1 | `onAccountChange` for the active market's orderbook only; rotates every 10s |
+| Bots (`live-bots`) | 1 | `onAccountChange` round-robin through all NVDA orderbooks; rotates every 10s |
 | Frontend (activity feed) | 1 | `onLogs` for the program; cleaned up on page unmount |
 | Frontend (market data) | 0 | Pure RPC polling via `getMultipleAccountsInfo` every 10s |
 | **Total** | **2** | Well within Helius WS limits |
@@ -130,7 +131,7 @@ make devnet-health   # verify deployment
 
 ## Railway Deployment
 
-Meridian runs as a single Railway service `meridian`: one container serves the frontend SPA (via signal-server static file serving), runs automation cron, market-maker bots, strategy bots, and the active-market signal endpoint.
+Meridian runs as a single Railway service `meridian`: one container serves the frontend SPA (via signal-server static file serving), runs automation cron, market-maker bots, and strategy bots.
 
 ### Setup
 
@@ -162,7 +163,7 @@ make devnet-deploy && make railway-deploy
 make railway-env && make railway-deploy
 ```
 
-Demo bot flow can be concentrated to a single ticker via `DEMO_TICKER`; current recommended demo default is `NVDA`.
+All bot activity is scoped to NVDA.
 
 ### Service Architecture
 
@@ -170,12 +171,10 @@ Demo bot flow can be concentrated to a single ticker via `DEMO_TICKER`; current 
 - Entrypoint: `entrypoint.sh`
 - Runs five processes under `wait -n` (container restarts if any die):
   - automation cron (market creation at 8:00 AM ET + settlement at 4:07 PM ET)
-  - signal-server (`scripts/signal-server.ts`, listens on `PORT`) - serves frontend SPA static files AND receives active-market signals
-  - seed-bots (one-shot order book seeding)
+  - signal-server (`scripts/signal-server.ts`, listens on `PORT`) - serves frontend SPA static files
+  - seed-bots (long-running, re-seeds every 15 min during market hours)
   - live-bots (market maker, bot-a wallet)
   - strategy-bots (4 directional strategies, bot-b wallet) - starts **90s after live-bots** to stagger initial market discovery
-
-Frontend SPA POSTs to `/active-market` (same origin, same port) when the user navigates to a market. The signal-server writes the active market to `/tmp/meridian-active-market.txt`. Bots weight 80% of activity toward the strike the user is viewing. Signal is considered stale after 5 minutes.
 
 ### Environment Variables
 
@@ -184,10 +183,8 @@ Frontend SPA POSTs to `/active-market` (same origin, same port) when the user na
 | `VITE_RPC_URL` | Helius devnet RPC URL (baked into SPA at build time) |
 | `VITE_USDC_MINT` | Devnet USDC mint address (baked into SPA at build time) |
 | `VITE_DEV_WALLET` | `true` to enable auto-sign Dev Wallet |
-| `VITE_SIGNAL_URL` | Not needed - signal-server is same-origin now |
 | `USDC_MINT` | Devnet USDC mint address (runtime, for bots) |
 | `ANCHOR_PROVIDER_URL` | Helius devnet RPC URL (runtime, for Anchor SDK + bots; `RPC_URL` is derived from this in `entrypoint.sh`) |
-| `DEMO_TICKER` | Scope all bot activity to one ticker (e.g., `NVDA`) |
 | `HERMES_URL` | `https://hermes-beta.pyth.network` for devnet-compatible Wormhole VAAs |
 | `ALERT_WEBHOOK_URL` | Slack/Discord incoming webhook for automation failure alerts (optional) |
 | `PORT` | Signal-server listen port (set by Railway automatically) |
@@ -219,7 +216,7 @@ Three bot processes provide liquidity and trading activity. All are optional sid
 | Process | Wallet | Behavior | Cadence |
 |---------|--------|----------|---------|
 | **seed-bots** | bot-a | Bootstrap empty order books with logarithmic depth (6 bid/ask levels). Idempotent per market. | Loop every 15 min |
-| **live-bots** | bot-a | Market maker: cancel/replace, place near spread, cross spread. Weighted 80% toward active market. | Tick every 150-400ms |
+| **live-bots** | bot-a | Market maker: cancel/replace, place near spread, cross spread. Uniform random across NVDA strikes. | Tick every 150-400ms |
 | **strategy-bots** | bot-b | Four directional strategies (momentum, Bollinger, correlation, time-decay). Taker-only. | Tick every 45s |
 
 ### Prices
@@ -229,16 +226,9 @@ Auto-detected from `ANCHOR_PROVIDER_URL`:
 - **Market hours** (9:30 AM-4:30 PM ET): Pyth Hermes HTTP; warns on fallback
 - **Off-hours**: Pyth Hermes with silent fallback to synthetic
 
-### Active Market Signal
-
-Frontend writes the currently-viewed market to `/tmp/meridian-active-market.txt`. Bots weight 80% of activity toward that strike. Signal stale after 5 min → uniform random fallback.
-
-- **Local**: Vite dev middleware writes file on navigation
-- **Railway**: Frontend POSTs to signal-server (same container), which writes the file
-
 ### WS Cache
 
-Live-bots owns a single WS subscription to the active market's orderbook. Writes parsed book state to `/tmp/meridian-ws-books.json`. Strategy-bots reads this file - no WS sub needed. Subscription rotates every 10s based on active-market signal.
+Live-bots owns a single WS subscription, cycling through orderbooks round-robin every 10s. Writes parsed book state to `/tmp/meridian-ws-books.json`. Strategy-bots reads this file - no WS sub needed.
 
 ### Running Bots
 

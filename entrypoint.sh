@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Unified Railway entrypoint: SPA + bots + automation in one container.
-# signal-server serves both the frontend SPA and the active-market signal endpoint.
+# signal-server serves the frontend SPA static files.
 # Deterministic wallets are pre-generated in Dockerfile (dev-wallets.ts).
 # USDC_MINT and ANCHOR_PROVIDER_URL must be set as Railway env vars.
 #
@@ -16,7 +16,6 @@ set -euo pipefail
 #   ENABLE_TRADE_BOTS    - strategy-bots directional traders (default: false)
 
 export ANCHOR_WALLET=".wallets/admin.json"
-export DEMO_TICKER="${DEMO_TICKER:-NVDA}"
 
 if [ -z "${USDC_MINT:-}" ]; then
   echo "ERROR: USDC_MINT env var not set. Run setup-devnet.ts first."
@@ -35,7 +34,6 @@ export RPC_URL="${RPC_URL:-$ANCHOR_PROVIDER_URL}"
 echo "Meridian (unified container)"
 echo "  RPC: $ANCHOR_PROVIDER_URL"
 echo "  USDC: $USDC_MINT"
-echo "  Demo ticker: $DEMO_TICKER"
 echo "  bot-a: 48xYES8qxE1vvHPVJKJCdKRhDMbueeWmJhGHKQ3gWGhh"
 echo "  bot-b: RSG4qia3Dp9pGPzsMnFS9AzsRPKyJxJ75iyoSubwQ5W"
 echo "  ENABLE_AUTOMATION=${ENABLE_AUTOMATION:-true}"
@@ -54,11 +52,11 @@ else
 fi
 
 if [[ "${ENABLE_FRONTEND:-true}" != "false" ]]; then
-  echo "Starting signal-server + SPA on :${PORT:-8080}..."
+  echo "Starting SPA server on :${PORT:-8080}..."
   npx tsx scripts/signal-server.ts &
   PIDS+=($!)
 else
-  echo "Skipping signal-server (ENABLE_FRONTEND=false)"
+  echo "Skipping SPA server (ENABLE_FRONTEND=false)"
 fi
 
 if [[ "${ENABLE_LIQUIDITY_BOT:-true}" != "false" ]]; then

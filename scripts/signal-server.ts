@@ -1,18 +1,15 @@
 /**
  * HTTP server that:
- *  1. Accepts active-market signals from the frontend SPA (POST /active-market)
- *  2. Health check (GET /health)
- *  3. Serves the frontend SPA static files from frontend/dist/ with SPA fallback
+ *  1. Health check (GET /health)
+ *  2. Serves the frontend SPA static files from frontend/dist/ with SPA fallback
  *
- * POST /active-market?ticker=NVDA&market=<address>  -> writes "NVDA:<address>"
- * GET  /health                                       -> 200 OK
- * GET  /*                                            -> static file or index.html
+ * GET  /health  -> 200 OK
+ * GET  /*       -> static file or index.html
  *
  * Listens on PORT (Railway sets this) or 8080.
  */
 import { createServer } from "http";
 import {
-  writeFileSync,
   existsSync,
   readFileSync,
   statSync,
@@ -20,7 +17,6 @@ import {
 import { join, extname } from "path";
 
 const PORT = Number(process.env.PORT || 8080);
-const ACTIVE_MARKET_FILE = "/tmp/meridian-active-market.txt";
 
 // Resolve frontend/dist relative to cwd (Docker WORKDIR = /app, local dev = repo root)
 const STATIC_DIR = join(process.cwd(), "frontend", "dist");
@@ -98,18 +94,6 @@ const server = createServer((req, res) => {
   if (url.pathname === "/health") {
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("ok");
-    return;
-  }
-
-  if (url.pathname === "/active-market") {
-    const ticker = url.searchParams.get("ticker");
-    const market = url.searchParams.get("market");
-    if (ticker) {
-      const value = market ? `${ticker}:${market}` : ticker;
-      writeFileSync(ACTIVE_MARKET_FILE, value);
-    }
-    res.writeHead(204);
-    res.end();
     return;
   }
 

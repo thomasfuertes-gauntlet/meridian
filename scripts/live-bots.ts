@@ -25,7 +25,7 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fairValue, fetchStockPrices } from "./fair-value";
-import { MarketCtx, loadUsdcMint, sleep, USDC_PER_PAIR, MAX_PER_SIDE, weightedMarketSelect, getBotTickerFilter, defaultTxDelay, getBlockhashCached } from "./bot-utils";
+import { MarketCtx, loadUsdcMint, sleep, USDC_PER_PAIR, MAX_PER_SIDE, defaultTxDelay, getBlockhashCached } from "./bot-utils";
 import { createWsCache } from "./ws-cache";
 
 const MIN_PRICE = 50_000;   // $0.05 floor
@@ -79,10 +79,7 @@ async function main() {
 
   console.log("Bot:", bot.publicKey.toString());
   console.log("USDC Mint:", usdcMint.toString());
-  const demoTicker = getBotTickerFilter();
-  if (demoTicker) {
-    console.log("Demo ticker focus:", demoTicker);
-  }
+  console.log("Ticker: NVDA");
 
   const cache = createWsCache(connection, program);
   await cache.ready;
@@ -383,14 +380,14 @@ async function main() {
       await checkReplenish();
     }
 
-    // Pick 1-2 markets weighted toward active frontend market signal
+    // Pick 1-2 markets uniformly at random
     const markets = [...cache.markets.values()];
     if (markets.length === 0) {
       console.log("[done] All markets settled. Exiting gracefully.");
       process.exit(0);
     }
     const batch = randInt(1, Math.min(2, markets.length));
-    const selected = weightedMarketSelect(markets, batch);
+    const selected = [...markets].sort(() => Math.random() - 0.5).slice(0, batch);
 
     for (const mkt of selected) {
       try {

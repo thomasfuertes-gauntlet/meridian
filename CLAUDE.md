@@ -68,8 +68,8 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 
 ## WebSocket Architecture
 
-- Bots use Solana WS subscriptions (single active-market sub). Frontend uses RPC polling (no WS subs in MarketDataProvider). No read-api.
-- `scripts/ws-cache.ts`: shared WS cache. `createWsCache(connection, program)` subscribes to only the active market's orderbook (1 WS sub). Writes parsed book state to `/tmp/meridian-ws-books.json`. Live-bots owns the cache; strategy-bots reads the shared file via `loadSharedBooks()`. Rotates sub every 10s based on active-market signal.
+- Bots use Solana WS subscriptions (single sub, round-robin across markets). Frontend uses RPC polling (no WS subs in MarketDataProvider). No read-api.
+- `scripts/ws-cache.ts`: shared WS cache. `createWsCache(connection, program)` subscribes to one orderbook at a time (1 WS sub), cycling round-robin every 10s. Writes parsed book state to `/tmp/meridian-ws-books.json`. Live-bots owns the cache; strategy-bots reads the shared file via `loadSharedBooks()`.
 - Frontend: `frontend/src/lib/ws-market-data.tsx` provides `MarketDataProvider` context. Cold-loads via `getProgramAccounts`, then polls orderbooks + market status via `getMultipleAccountsInfo` every 10s. No per-market WS subs (polling is more credit-efficient). Pyth prices refresh every 30s via HTTP (not Solana RPC). Activity feed uses a single `onLogs` WS sub, cleaned up on page unmount.
 
 ## Frontend Dev Notes
@@ -90,8 +90,7 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 
 ## Bot System
 
-- `DEMO_TICKER` scopes all bot activity to a single ticker. Defaults to `NVDA` when unset (hard default in `getBotTickerFilter()`). `LOCAL_TS_ENV` now passes it to all local bot commands.
-- **Active market focus**: Bots weight 80% of activity toward the strike the user is viewing. Signal path: locally, Vite dev middleware writes `/tmp/meridian-active-market.txt`; on Railway, frontend SPA POSTs to `VITE_SIGNAL_URL` (bots service `scripts/signal-server.ts` on `PORT`), which writes the same file inside the bots container. `ACTIVE_MARKET` env var is a static fallback. File stale after 5 min.
+- All bot activity is hard-coded to NVDA. `discoverMarkets()` filters to `ticker === "NVDA"`. If multi-ticker is needed later, re-add a filter param.
 - bot-a = market maker (live-bots). bot-b = frontend dev wallet + strategy bots. bot-c/d/e/f are strategy labels, not wallets.
 - Bots use deterministic wallets from `.wallets/`. Admin wallet is USDC mint authority. No secrets in `local-config.json`.
 - **Prices**: Auto-detected from `ANCHOR_PROVIDER_URL`. Localnet (127.0.0.1) always uses synthetic random-walk prices. Devnet/Railway uses live Hermes prices during market hours (warns loudly on fallback), silently falls back to synthetic outside them.

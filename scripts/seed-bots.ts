@@ -22,7 +22,7 @@ import {
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { fairValue, computeLevels, fetchStockPrices, isMarketHours } from "./fair-value";
-import { getBotTickerFilter, sleep, defaultTxDelay, isRemoteRpc } from "./bot-utils";
+import { sleep, defaultTxDelay, isRemoteRpc } from "./bot-utils";
 import { USDC_PER_PAIR } from "./constants";
 
 const RESEED_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
@@ -57,10 +57,7 @@ async function main() {
   console.log("Program ID:", program.programId.toString());
   console.log("Bot wallet (bot-a):", bot.publicKey.toString());
   console.log(`TX delay: ${txDelayMs}ms`);
-  const demoTicker = getBotTickerFilter();
-  if (demoTicker) {
-    console.log(`Demo ticker focus: ${demoTicker}`);
-  }
+  console.log("Ticker: NVDA");
 
   // Fund bot with SOL (only on localhost - devnet faucets rate-limit heavily)
   const botBal = await connection.getBalance(bot.publicKey);
@@ -101,7 +98,7 @@ async function main() {
       (m: any) => m.account.outcome?.pending !== undefined
     ).filter(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (m: any) => !demoTicker || (m.account.ticker as string).toUpperCase() === demoTicker
+      (m: any) => (m.account.ticker as string).toUpperCase() === "NVDA"
     );
 
     if (pendingMarkets.length === 0) {

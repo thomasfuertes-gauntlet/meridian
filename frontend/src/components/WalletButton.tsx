@@ -15,10 +15,7 @@ export function WalletButton() {
 
   useEffect(() => {
     const usdcMint = getConfiguredUsdcMint();
-    if (!publicKey || !usdcMint) {
-      setBalance(null);
-      return;
-    }
+    if (!publicKey || !usdcMint) return;
 
     const ata = getAssociatedTokenAddressSync(usdcMint, publicKey, false, TOKEN_PROGRAM_ID);
 
@@ -35,14 +32,17 @@ export function WalletButton() {
 
     fetch();
     timerRef.current = setInterval(fetch, POLL_MS);
-    return () => clearInterval(timerRef.current);
+    return () => { clearInterval(timerRef.current); setBalance(null); };
   }, [connection, publicKey]);
+
+  // Derive display: hide stale balance when disconnected
+  const displayBalance = publicKey ? balance : null;
 
   return (
     <>
-      {balance != null && (
+      {displayBalance != null && (
         <span data-usdc-balance>
-          ${balance.toFixed(2)}
+          ${displayBalance.toFixed(2)}
         </span>
       )}
       <WalletMultiButton />

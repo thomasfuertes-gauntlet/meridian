@@ -1,0 +1,6 @@
+#!/bin/sh
+# Pre-push: lint frontend to catch CI failures locally.
+# Install: git config core.hooksPath .githooks
+
+echo "[pre-push] Running frontend eslint..."
+cd frontend && npx eslint . --quiet

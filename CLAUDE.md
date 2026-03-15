@@ -31,7 +31,7 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - settle_market is permissionless (anyone can crank). admin_settle is admin-only with configurable delay (`admin_settle_delay_secs`, default 3600s, tunable via `update_config`). **Devnet automation tries settle_market first** (fetches VAA from Hermes, posts PriceUpdateV2 on-chain) then falls back to admin_settle. Cron fires at 4:07 PM ET. If oracle path fails (timing window miss or Hermes issues), admin_settle retries until 5:00 PM ET. Set `HERMES_URL=https://hermes-beta.pyth.network` for devnet-compatible Wormhole VAAs. Local dev uses `update_config` to set delay to 60s for rapid cycles.
 - Oracle policy now lives in `GlobalConfig.oracle_policies` keyed by ticker. Markets no longer store per-market feed IDs.
 - **Order Book: Built-in CLOB over Phoenix DEX.** Phoenix requires per-user per-market "seat approval" by market authority before trading, devnet program ID is undocumented, and CPI docs for atomic mint-and-sell are sparse. Building a minimal CLOB in the Anchor program is both more practical for the sprint and scores higher per spec ("more ambitious, but demonstrates deeper understanding").
-- **Keep `buy_yes` / `sell_yes` as atomic taker instructions.** They are the only path for atomic fill-or-kill crossing of the CLOB. Credit/claim model (commit 8a06400) eliminated `remaining_accounts` entirely - fills credit maker balances in OrderBook zero_copy memory, makers withdraw via `claim_fills`. Taker txs are fully deterministic.
+- **Keep `buy_yes` / `sell_yes` as atomic taker instructions.** They are the only path for atomic fill-or-kill crossing of the CLOB. Credit/claim model eliminated `remaining_accounts` entirely - fills credit maker balances in OrderBook zero_copy memory, makers withdraw via `claim_fills`. Taker txs are fully deterministic.
 
 ## Conventions
 
@@ -47,7 +47,7 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - Tests use `.accountsPartial({})` not `.accounts({})` - Anchor 0.32 auto-resolves PDAs.
 - `vault.reload()` after CPI transfers to refresh cached account data before invariant checks.
 - Pyth equity feeds only update during US market hours on devnet. Use admin_settle for off-hours testing.
-- `StrikeMarket` stores `usdc_mint` (added after `vault`). Changing field order shifts Borsh layout - existing accounts incompatible. Devnet: `make nuke NUKE_FLAGS="--yes"` then `make devnet-deploy && make _devnet-setup` for fresh markets.
+- `StrikeMarket` stores `usdc_mint` (added after `vault`). Changing field order shifts Borsh layout - existing accounts incompatible. Devnet: `make nuke NUKE_FLAGS="--yes"` then `make devnet-deploy && make devnet-setup` for fresh markets.
 - **Deterministic dev wallets** in `.wallets/` (gitignored) - see README for derivation details and security warning.
 - **Frontend auto-sign**: On localhost, "Dev Wallet" appears in wallet picker. Uses bot-b keypair, pre-funded locally with 250,000 USDC + 5 SOL. On devnet, `setup-devnet` funds both bots with 250,000 USDC each. Phantom also available via Wallet Standard alongside Dev Wallet.
 - Prefer a local `frontend/.env.local` for frontend-only local overrides; do not use Vite env files to drive root bootstrap scripts.
@@ -101,6 +101,6 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 
 - Devnet operator config: `.env` (copy from `.env.example`). Treat `DEVNET_RPC_URL` and `DEVNET_USDC_MINT` there as the repo deploy source of truth - not hardcoded Makefile defaults.
 - Bot scripts accept `USDC_MINT` env var (falls back to `local-config.json`). Airdrop only on localhost (devnet faucets rate-limit).
-- `make nuke` tears down all devnet state: force-settles markets, closes them (recovering ~70% of rent), drains bot wallets to admin. `NUKE_FLAGS="--yes"` skips prompt, `--skip-settle` / `--skip-close` bypass those steps (useful for pre-CLOB markets). `--hard` PERMANENTLY closes the program account (cannot redeploy to same ID) - only for final teardown, not iteration. For devnet cycling, just `make nuke NUKE_FLAGS="--yes"` then `make devnet-deploy && make _devnet-setup`.
+- `make nuke` tears down all devnet state: force-settles markets, closes them (recovering ~70% of rent), drains bot wallets to admin. `NUKE_FLAGS="--yes"` skips prompt, `--skip-settle` / `--skip-close` bypass those steps (useful for pre-CLOB markets). `--hard` PERMANENTLY closes the program account (cannot redeploy to same ID) - only for final teardown, not iteration. For devnet cycling, just `make nuke NUKE_FLAGS="--yes"` then `make devnet-deploy && make devnet-setup`.
 - Frontend `?debug` query param logs all Solana RPC calls and Pyth Hermes fetches to browser console.
 - See README `## Railway Deployment` for full Railway setup, env var table, and service architecture.

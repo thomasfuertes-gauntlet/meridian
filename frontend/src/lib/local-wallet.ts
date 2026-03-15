@@ -4,13 +4,12 @@
  * UI portfolio is clean of bot activity.
  * Active on localhost or when VITE_DEV_WALLET=true (e.g. Railway demo).
  */
-import { createHash } from "node:crypto";
 import { Keypair, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { BaseSignerWalletAdapter, WalletReadyState } from "@solana/wallet-adapter-base";
 import type { WalletName } from "@solana/wallet-adapter-base";
 
-// Deterministic: sha256("meridian-dev-user")
-const USER_SEED = createHash("sha256").update("meridian-dev-user").digest();
+// Deterministic: sha256("meridian-dev-user") - pre-computed to avoid node:crypto in browser
+const USER_SEED = new Uint8Array([227,241,45,217,52,146,183,221,180,88,4,122,179,76,79,200,232,126,89,99,38,56,148,38,213,237,27,212,134,63,49,183]);
 const DEV_KEYPAIR = Keypair.fromSeed(USER_SEED);
 
 export class LocalDevWalletAdapter extends BaseSignerWalletAdapter {

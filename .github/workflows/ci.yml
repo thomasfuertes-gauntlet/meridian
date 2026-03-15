@@ -102,6 +102,18 @@ jobs:
       - name: Anchor build
         if: steps.anchor-build-cache.outputs.cache-hit != 'true'
         run: anchor build
+
+      # Mock Pyth oracle needed by anchor test (validator loads it via --bpf-program)
+      - name: Cache mock-pyth build
+        id: mock-pyth-cache
+        uses: actions/cache@v4
+        with:
+          path: mock-pyth/target/deploy/
+          key: mock-pyth-${{ hashFiles('mock-pyth/src/lib.rs', 'mock-pyth/Cargo.toml') }}
+      - name: Build mock-pyth
+        if: steps.mock-pyth-cache.outputs.cache-hit != 'true'
+        run: cd mock-pyth && cargo build-sbf
+
       - name: Generate dev wallets
         run: npx tsx scripts/dev-wallets.ts
       - name: Run tests

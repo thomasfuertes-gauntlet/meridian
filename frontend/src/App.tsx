@@ -26,11 +26,13 @@ function NetworkBanner() {
   const [zeroBalance, setZeroBalance] = useState(false);
 
   useEffect(() => {
-    if (!publicKey || IS_LOCAL_RPC) { setZeroBalance(false); return; }
+    if (!publicKey || IS_LOCAL_RPC) return;
+    let alive = true;
     connection.getBalance(publicKey).then(
-      (bal) => setZeroBalance(bal === 0),
-      () => setZeroBalance(false),
+      (bal) => { if (alive) setZeroBalance(bal === 0); },
+      () => { if (alive) setZeroBalance(false); },
     );
+    return () => { alive = false; };
   }, [publicKey, connection]);
 
   if (!zeroBalance) return null;

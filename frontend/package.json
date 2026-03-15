@@ -8,7 +8,8 @@
     "dev:devnet": "vite --mode development",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "tsx --test src/lib/*.test.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

@@ -28,6 +28,29 @@ interface TradePanelProps {
   bestAsk: number | null;
 }
 
+// Map on-chain error messages to user-friendly descriptions
+const ERROR_MAP: [RegExp, string][] = [
+  [/AtomicTradeIncomplete/, "Not enough liquidity to fill your order. Try a smaller quantity."],
+  [/insufficient funds/, "Insufficient token balance for this trade."],
+  [/OrderBookFull/, "Order book is full (32 orders/side). Try again after cancellations."],
+  [/NoMatchingOrders/, "No orders on the book to match against."],
+  [/MarketFrozen/, "Market is frozen for settlement. Trading resumes next cycle."],
+  [/MarketAlreadySettled/, "This market has already settled. Check portfolio to redeem."],
+  [/InvalidPrice/, "Price must be between $0.01 and $0.99."],
+  [/Paused/, "Protocol is paused by admin."],
+  [/CreditLedgerFull/, "Credit ledger full (64 unique makers). Claim fills first."],
+  [/CrossingOrdersUseDedicatedPath/, "Limit price crosses the book. Use market order or adjust price."],
+  [/User rejected/, "Transaction cancelled."],
+];
+
+function friendlyError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  for (const [pattern, friendly] of ERROR_MAP) {
+    if (pattern.test(raw)) return friendly;
+  }
+  return raw.slice(0, 150);
+}
+
 const ACTION_LABELS: Record<TradeAction, string> = {
   buyYes: "Buy Yes",
   buyNo: "Buy No",
@@ -159,8 +182,7 @@ export function TradePanel({
       setBalanceTick((t) => t + 1);
     } catch (err: unknown) {
       console.error("Trade failed:", err);
-      const msg = err instanceof Error ? err.message : String(err);
-      setStatus(`Error: ${msg.slice(0, 200)}`);
+      setStatus(`Error: ${friendlyError(err)}`);
     }
   }, [
     wallet,

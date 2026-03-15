@@ -211,6 +211,36 @@ export function ELI5() {
   └───────────┴──────────┴─────────────┴──────────────┘
 `}</pre>
       </section>
+
+      <section>
+        <h2>9. The Reframe - Issuance Protocol, Not Exchange</h2>
+        <pre style={{ background: "var(--bg-input)", padding: "var(--space-md)", borderRadius: "var(--radius-sm)", overflow: "auto", fontSize: 13, lineHeight: 1.6, fontFamily: "var(--mono)", color: "var(--text-dim)" }}>{`
+  Meridian isn't an exchange. It's an issuance and settlement protocol.
+  The CLOB is one venue. The tokens can trade anywhere.
+
+  ┌──────────────────┬────────────────────────────────┬────────────────────┐
+  │ Layer            │ Meridian                       │ TradFi analog      │
+  ├──────────────────┼────────────────────────────────┼────────────────────┤
+  │ Issuance         │ mint_pair ($1 in, Yes+No out)  │ OCC (clearinghouse)│
+  │ Settlement       │ settle_market (oracle, pless)  │ Clearing           │
+  │ Primary venue    │ Built-in CLOB                  │ CBOE               │
+  │ Secondary venues │ Jupiter, Raydium, any DEX      │ ISE, PHLX, etc.    │
+  │ Composability    │ CPI, DeFi collateral           │ Not possible       │
+  └──────────────────┴────────────────────────────────┴────────────────────┘
+
+  The last row is the punchline.
+
+  TradFi can't use options as collateral in a lending protocol.
+  Meridian tokens can - they're SPL tokens on the same chain.
+
+  The protocol doesn't need to own all the liquidity.
+  It mints the assets and guarantees the $1 payout.
+  That's the clearing layer.
+
+  Spec hint: position constraints are "frontend-only UX guardrails."
+  The tokens are freely transferable by design. The spec knows this.
+`}</pre>
+      </section>
     </>
   );
 }

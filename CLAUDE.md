@@ -49,7 +49,7 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - Pyth equity feeds only update during US market hours on devnet. Use admin_settle for off-hours testing.
 - `StrikeMarket` stores `usdc_mint` (added after `vault`). Changing field order shifts Borsh layout - existing accounts incompatible. Devnet: `make nuke NUKE_FLAGS="--yes"` then `make devnet-deploy` for fresh markets.
 - **Deterministic dev wallets** in `.wallets/` (gitignored) - see README for derivation details and security warning.
-- **Frontend auto-sign**: On localhost, "Dev Wallet" appears in wallet picker. Uses bot-b keypair, pre-funded locally with 1,000,000 USDC + 5 SOL. On devnet, `setup-devnet` funds both bots with 1,000,000 USDC each. Phantom also available via Wallet Standard alongside Dev Wallet.
+- **Frontend auto-sign**: On localhost, "Dev Wallet" appears in wallet picker. Uses a dedicated `user` keypair (`sha256("meridian-dev-user")`) - separate from bot wallets so the UI portfolio is clean of bot activity. Funded with SOL only (no USDC faucet). Bots (bot-a, bot-b) each get 1,000,000 USDC. Phantom also available via Wallet Standard alongside Dev Wallet.
 - Prefer a local `frontend/.env.local` for frontend-only local overrides; do not use Vite env files to drive root bootstrap scripts.
 - USDC mint address written to `frontend/src/lib/local-config.json` by setup script (gitignored, changes per session).
 - Phantom must use custom RPC `http://localhost:8899` for local dev (not devnet setting).

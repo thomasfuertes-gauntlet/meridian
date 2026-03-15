@@ -1,28 +1,17 @@
 /**
  * Auto-sign wallet adapter for dev environments.
- * Uses the deterministic bot-b keypair so users can trade without Phantom.
+ * Uses a dedicated "user" keypair - separate from bot wallets so the
+ * UI portfolio is clean of bot activity.
  * Active on localhost or when VITE_DEV_WALLET=true (e.g. Railway demo).
  */
+import { createHash } from "node:crypto";
 import { Keypair, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { BaseSignerWalletAdapter, WalletReadyState } from "@solana/wallet-adapter-base";
 import type { WalletName } from "@solana/wallet-adapter-base";
 
-// Deterministic default: sha256("meridian-dev-bot-b")
-const DEFAULT_BOT_B_SEED = new Uint8Array([216,203,1,24,131,66,29,212,48,8,128,132,145,120,92,100,20,242,44,6,35,255,181,187,199,94,79,179,255,200,118,232]);
-
-function hexToBytes(hex: string): Uint8Array {
-  const clean = hex.startsWith("0x") ? hex.slice(2) : hex;
-  const bytes = new Uint8Array(clean.length / 2);
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
-  }
-  return bytes;
-}
-
-const BOT_B_SEED = import.meta.env.VITE_BOT_B_SEED
-  ? hexToBytes(import.meta.env.VITE_BOT_B_SEED)
-  : DEFAULT_BOT_B_SEED;
-const DEV_KEYPAIR = Keypair.fromSeed(BOT_B_SEED);
+// Deterministic: sha256("meridian-dev-user")
+const USER_SEED = createHash("sha256").update("meridian-dev-user").digest();
+const DEV_KEYPAIR = Keypair.fromSeed(USER_SEED);
 
 export class LocalDevWalletAdapter extends BaseSignerWalletAdapter {
   name = "Dev Wallet" as WalletName;

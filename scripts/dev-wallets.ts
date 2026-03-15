@@ -5,7 +5,8 @@
  * Wallets:
  *   admin  - program admin, USDC mint authority, config initializer
  *   bot-a  - seed-bots + live-bots liquidity provider
- *   bot-b  - frontend auto-sign wallet on localhost
+ *   bot-b  - strategy-bots directional trading
+ *   user   - frontend auto-sign wallet on localhost (no USDC faucet)
  *
  * Set WALLET_MODE=generate to create random keypairs instead of deterministic
  * derivation. Existing files are preserved (never overwritten in generate mode).
@@ -15,7 +16,7 @@ import { Keypair } from "@solana/web3.js";
 import * as fs from "fs";
 import * as path from "path";
 
-const CORE_WALLETS = ["admin", "bot-a", "bot-b"] as const;
+const CORE_WALLETS = ["admin", "bot-a", "bot-b", "user"] as const;
 const WALLET_NAMES = CORE_WALLETS;
 export type WalletName = (typeof CORE_WALLETS)[number];
 

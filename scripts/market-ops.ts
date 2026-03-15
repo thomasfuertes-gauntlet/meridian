@@ -160,11 +160,13 @@ export async function fundDevWallets(
   const { adminUsdc = 1_000_000, botUsdc = 1_000_000, solPerBot = 5 } = opts;
   const botA = getDevWallet("bot-a");
   const botB = getDevWallet("bot-b");
+  const user = getDevWallet("user");
 
-  // Fund bots with SOL
+  // Fund bots + user with SOL
   for (const [name, kp] of [
     ["bot-a", botA],
     ["bot-b", botB],
+    ["user", user],
   ] as const) {
     await ensureSolBalance(
       connection,

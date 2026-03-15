@@ -31,5 +31,6 @@ frontend/vite.config.js
 mock-pyth/target/
 
 *.zip
+*.tar.gz
 purge-history.sh
 request_sol.sh

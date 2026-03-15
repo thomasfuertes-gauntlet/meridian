@@ -36,7 +36,7 @@ pub struct CloseMarket<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<CloseMarket>, force: bool) -> Result<()> {
+pub fn handler(ctx: Context<CloseMarket>) -> Result<()> {
     let market = &ctx.accounts.market;
     require!(market.is_settled(), MeridianError::MarketNotSettled);
 
@@ -45,14 +45,6 @@ pub fn handler(ctx: Context<CloseMarket>, force: bool) -> Result<()> {
         ctx.accounts.order_book.key() == market.order_book,
         MeridianError::InvalidOrderBookAccount
     );
-
-    if !force {
-        let ob = ctx.accounts.order_book.load()?;
-        // Ensure all credits have been claimed
-        let has_unclaimed = (0..ob.credit_count as usize)
-            .any(|i| ob.credits[i].usdc_claimable > 0 || ob.credits[i].yes_claimable > 0);
-        require!(!has_unclaimed, MeridianError::UnclaimedCredits);
-    }
 
     // Close the OrderBook account manually - return rent to admin.
     // AccountLoader doesn't support Anchor's `close` attribute, so we do it here.

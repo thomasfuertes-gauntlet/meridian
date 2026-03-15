@@ -225,7 +225,7 @@ async function main() {
 
       try {
         const ix = await program.methods
-          .closeMarket(true) // force=true
+          .closeMarket()
           .accountsPartial({ admin: adminKeypair.publicKey, market: m.publicKey, orderBook: orderBookPda })
           .instruction();
 

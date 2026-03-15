@@ -246,13 +246,12 @@ export async function closeMarketAccount(
   admin: PublicKey | { publicKey: PublicKey },
   market: PublicKey,
   obPda: PublicKey,
-  force: boolean,
   signers?: anchor.web3.Keypair[],
 ): Promise<boolean> {
   const adminPk = "publicKey" in admin ? admin.publicKey : admin;
   try {
     const builder = program.methods
-      .closeMarket(force)
+      .closeMarket()
       .accountsPartial({ admin: adminPk, market, orderBook: obPda });
     if (signers) builder.signers(signers);
     await builder.rpc();
@@ -323,9 +322,9 @@ export async function settleAllPending(
 export async function closeAllSettled(
   program: Program<Meridian>,
   adminPk: PublicKey,
-  opts: { signers?: anchor.web3.Keypair[]; force?: boolean; log?: boolean } = {},
+  opts: { signers?: anchor.web3.Keypair[]; log?: boolean } = {},
 ): Promise<number> {
-  const { signers, force = true, log = true } = opts;
+  const { signers, log = true } = opts;
   const allMarkets = await (program.account as any).strikeMarket.all();
   const settled = allMarkets.filter((m: any) => "settled" in m.account.status);
 
@@ -338,7 +337,7 @@ export async function closeAllSettled(
       program.programId,
     );
 
-    const ok = await closeMarketAccount(program, adminPk, m.publicKey, obPda, force, signers);
+    const ok = await closeMarketAccount(program, adminPk, m.publicKey, obPda, signers);
     if (ok) {
       if (log) console.log(`    Closed: ${ticker} > $${strikeDollars}`);
       closed++;

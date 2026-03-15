@@ -52,8 +52,6 @@ pub enum MeridianError {
     OrderNotFound,
     #[msg("Not the order owner")]
     NotOrderOwner,
-    #[msg("Order book still has active orders")]
-    OrderBookNotEmpty,
     #[msg("Order book escrow is not empty")]
     OrderBookEscrowNotEmpty,
     #[msg("Missing order book validation accounts")]
@@ -76,6 +74,4 @@ pub enum MeridianError {
     CreditLedgerFull,
     #[msg("Nothing to claim")]
     NothingToClaim,
-    #[msg("Market has unclaimed credits; claim all fills before closing")]
-    UnclaimedCredits,
 }

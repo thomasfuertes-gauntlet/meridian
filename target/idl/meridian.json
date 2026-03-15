@@ -1044,12 +1044,7 @@
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": [
-        {
-          "name": "force",
-          "type": "bool"
-        }
-      ]
+      "args": []
     },
     {
       "name": "create_strike_market",
@@ -2792,68 +2787,58 @@
     },
     {
       "code": 6025,
-      "name": "OrderBookNotEmpty",
-      "msg": "Order book still has active orders"
-    },
-    {
-      "code": 6026,
       "name": "OrderBookEscrowNotEmpty",
       "msg": "Order book escrow is not empty"
     },
     {
-      "code": 6027,
+      "code": 6026,
       "name": "MissingOrderBookAccounts",
       "msg": "Missing order book validation accounts"
     },
     {
-      "code": 6028,
+      "code": 6027,
       "name": "InvalidOrderBookAccount",
       "msg": "Invalid order book validation accounts"
     },
     {
-      "code": 6029,
+      "code": 6028,
       "name": "MissingCounterpartyAccount",
       "msg": "Missing counterparty account for fill"
     },
     {
-      "code": 6030,
+      "code": 6029,
       "name": "InvalidCounterpartyAccount",
       "msg": "Invalid counterparty token account"
     },
     {
-      "code": 6031,
+      "code": 6030,
       "name": "InvalidCollateralMint",
       "msg": "Invalid collateral mint for market"
     },
     {
-      "code": 6032,
+      "code": 6031,
       "name": "InvalidOraclePrice",
       "msg": "Oracle price is invalid"
     },
     {
-      "code": 6033,
+      "code": 6032,
       "name": "InvalidSettlementWindow",
       "msg": "Oracle update is outside the settlement window"
     },
     {
-      "code": 6034,
+      "code": 6033,
       "name": "InvalidSettlementPrice",
       "msg": "Settlement price is invalid"
     },
     {
-      "code": 6035,
+      "code": 6034,
       "name": "CreditLedgerFull",
       "msg": "Credit ledger is full"
     },
     {
-      "code": 6036,
+      "code": 6035,
       "name": "NothingToClaim",
       "msg": "Nothing to claim"
-    },
-    {
-      "code": 6037,
-      "name": "UnclaimedCredits",
-      "msg": "Market has unclaimed credits; claim all fills before closing"
     }
   ],
   "types": [

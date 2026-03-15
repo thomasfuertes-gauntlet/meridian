@@ -1,6 +1,5 @@
 import * as anchor from "@coral-xyz/anchor";
 import { expect } from "chai";
-import { Keypair } from "@solana/web3.js";
 import {
   createAssociatedTokenAccount,
 } from "@solana/spl-token";
@@ -19,8 +18,7 @@ import {
 //  CLOSE MARKET
 //
 //  close_market closes a settled market account (and its orderbook)
-//  returning rent to the admin.  The `force` flag bypasses the
-//  unclaimed-credits guard.
+//  returning rent to the admin.
 // ─────────────────────────────────────────────────────────────────
 
 describe("close_market", () => {
@@ -36,9 +34,9 @@ describe("close_market", () => {
     closeIdx = ctx.uniqueTestSeedBase + 20_000;
   });
 
-  // ── Happy path: settle with no resting orders, force=false ──────
+  // ── Happy path: settled market closes cleanly ──────────────────
 
-  it("closes a settled market with no unclaimed credits (force=false)", async () => {
+  it("closes a settled market", async () => {
     const pdas = await createMarket(ctx, "NVDA", new anchor.BN(500_000_000), nextDate());
 
     // Mint 1 pair so the vault isn't totally empty
@@ -49,9 +47,8 @@ describe("close_market", () => {
 
     const adminBefore = await ctx.provider.connection.getBalance(ctx.admin.publicKey);
 
-    // close_market with force=false: no resting orders -> no unclaimed credits -> succeeds
     await ctx.program.methods
-      .closeMarket(false)
+      .closeMarket()
       .accountsPartial({
         admin: ctx.admin.publicKey,
         market: pdas.marketPda,
@@ -79,7 +76,7 @@ describe("close_market", () => {
 
     try {
       await ctx.program.methods
-        .closeMarket(false)
+        .closeMarket()
         .accountsPartial({
           admin: ctx.admin.publicKey,
           market: pdas.marketPda,
@@ -92,52 +89,9 @@ describe("close_market", () => {
     }
   });
 
-  // ── force=false blocked by unclaimed credits ─────────────────────
+  // ── Closes even with unclaimed credits ─────────────────────────
 
-  it("rejects close_market(force=false) when there are unclaimed credits", async () => {
-    const pdas = await createMarket(ctx, "AAPL", new anchor.BN(200_000_000), nextDate());
-
-    // place_order (bid side) requires user_yes ATA to be initialized
-    const adminYes = await createAssociatedTokenAccount(
-      ctx.provider.connection,
-      ctx.mintAuthority,
-      pdas.yesMintPda,
-      ctx.admin.publicKey
-    );
-
-    // Place a resting bid - USDC escrowed in obUsdcVault
-    await placeBid(
-      ctx,
-      pdas,
-      ctx.admin.publicKey,
-      ctx.adminUsdcAta,
-      adminYes,
-      500_000,
-      1
-    );
-
-    // Settle - auto-credits the resting bid's escrowed USDC back to the maker
-    await adminSettleMarket(ctx, pdas, new anchor.BN(100_000_000));
-
-    // force=false must fail because the resting bid was credited and not yet claimed
-    try {
-      await ctx.program.methods
-        .closeMarket(false)
-        .accountsPartial({
-          admin: ctx.admin.publicKey,
-          market: pdas.marketPda,
-          orderBook: pdas.orderBookPda,
-        })
-        .rpc();
-      expect.fail("Should have thrown UnclaimedCredits");
-    } catch (err: any) {
-      expect(err.toString()).to.include("UnclaimedCredits");
-    }
-  });
-
-  // ── force=true bypasses unclaimed credit check ───────────────────
-
-  it("closes with force=true even when unclaimed credits remain", async () => {
+  it("closes with unclaimed credits (no force needed)", async () => {
     const pdas = await createMarket(ctx, "META", new anchor.BN(600_000_000), nextDate());
 
     // place_order (bid side) requires user_yes ATA to be initialized
@@ -169,9 +123,9 @@ describe("close_market", () => {
     );
     expect(hasCredits).to.be.true;
 
-    // force=true must succeed despite unclaimed credits
+    // Close succeeds despite unclaimed credits
     await ctx.program.methods
-      .closeMarket(true)
+      .closeMarket()
       .accountsPartial({
         admin: ctx.admin.publicKey,
         market: pdas.marketPda,
@@ -187,9 +141,9 @@ describe("close_market", () => {
     expect(obInfo).to.be.null;
   });
 
-  // ── Claim credits first, then close normally ─────────────────────
+  // ── Claim-then-close path still works ─────────────────────────
 
-  it("closes cleanly after claim_fills drains credits (force=false)", async () => {
+  it("closes cleanly after claim_fills drains credits", async () => {
     const pdas = await createMarket(ctx, "MSFT", new anchor.BN(400_000_000), nextDate());
 
     // place_order (bid side) requires user_yes ATA to be initialized
@@ -229,9 +183,9 @@ describe("close_market", () => {
     const usdcAfter = await tokenAmount(ctx, ctx.adminUsdcAta);
     expect(usdcAfter).to.be.greaterThan(usdcBefore);
 
-    // Now force=false must succeed (no more credits)
+    // Close succeeds
     await ctx.program.methods
-      .closeMarket(false)
+      .closeMarket()
       .accountsPartial({
         admin: ctx.admin.publicKey,
         market: pdas.marketPda,

@@ -1050,12 +1050,7 @@ export type Meridian = {
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": [
-        {
-          "name": "force",
-          "type": "bool"
-        }
-      ]
+      "args": []
     },
     {
       "name": "createStrikeMarket",
@@ -2798,68 +2793,58 @@ export type Meridian = {
     },
     {
       "code": 6025,
-      "name": "orderBookNotEmpty",
-      "msg": "Order book still has active orders"
-    },
-    {
-      "code": 6026,
       "name": "orderBookEscrowNotEmpty",
       "msg": "Order book escrow is not empty"
     },
     {
-      "code": 6027,
+      "code": 6026,
       "name": "missingOrderBookAccounts",
       "msg": "Missing order book validation accounts"
     },
     {
-      "code": 6028,
+      "code": 6027,
       "name": "invalidOrderBookAccount",
       "msg": "Invalid order book validation accounts"
     },
     {
-      "code": 6029,
+      "code": 6028,
       "name": "missingCounterpartyAccount",
       "msg": "Missing counterparty account for fill"
     },
     {
-      "code": 6030,
+      "code": 6029,
       "name": "invalidCounterpartyAccount",
       "msg": "Invalid counterparty token account"
     },
     {
-      "code": 6031,
+      "code": 6030,
       "name": "invalidCollateralMint",
       "msg": "Invalid collateral mint for market"
     },
     {
-      "code": 6032,
+      "code": 6031,
       "name": "invalidOraclePrice",
       "msg": "Oracle price is invalid"
     },
     {
-      "code": 6033,
+      "code": 6032,
       "name": "invalidSettlementWindow",
       "msg": "Oracle update is outside the settlement window"
     },
     {
-      "code": 6034,
+      "code": 6033,
       "name": "invalidSettlementPrice",
       "msg": "Settlement price is invalid"
     },
     {
-      "code": 6035,
+      "code": 6034,
       "name": "creditLedgerFull",
       "msg": "Credit ledger is full"
     },
     {
-      "code": 6036,
+      "code": 6035,
       "name": "nothingToClaim",
       "msg": "Nothing to claim"
-    },
-    {
-      "code": 6037,
-      "name": "unclaimedCredits",
-      "msg": "Market has unclaimed credits; claim all fills before closing"
     }
   ],
   "types": [

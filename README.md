@@ -326,6 +326,17 @@ Protocol fees are currently zero. Revenue models used by comparable platforms:
 
 - [ ] **Compute unit budgeting** - Profile each instruction's CU consumption. `buy_yes` with 32-order book iteration currently uses ~100k CU; at scale this needs to stay under 200k to leave room for priority fees and Solana's 1.4M CU per-tx limit.
 - [x] **RPC credit optimization** - On Helius free tier (1M credits/mo) bots burned ~248k credits/day. Fixed with three standard Solana bot practices: (a) `getBlockhashCached` with 30s TTL (blockhashes valid ~90s, was fetching per-tx - 54k credits/day wasted), (b) `skipPreflight: true` on all bot txs (simulation reads were 55k credits/day), (c) fire-and-forget `sendRawTransaction` + batch `getSignatureStatuses` instead of per-tx WS confirmation (25k WEBSOCKET_CONNECT credits/day). Provider monkey-patch in live-bots/strategy-bots applies to all `.rpc()` calls without per-site changes. Now on Developer plan ($49/mo, 50 req/s, 10M credits) - TX delay dropped from 2500ms to 500ms. Production would own the full tx lifecycle instead of patching Anchor's provider.
+- **Frontend RPC hygiene** (current state: credit-aware, not a proxy layer):
+
+  | Maturity | Description | Status |
+  |----------|-------------|--------|
+  | 0.0.1 | Naive - one RPC call per render, no batching | Past this |
+  | **0.1** | **Batch reads (`getMultipleAccountsInfo`), polling over WS, inflight dedup** | **Current** |
+  | 0.2 | Retry/circuit-breaker, adaptive polling, request coalescing | Not needed for demo |
+  | 1.0 | Dedicated RPC, Geyser/webhooks, Jito bundles | Production infrastructure |
+
+  Frontend has no RPC proxy or middleware - the `?debug` proxy is a console logger. Real optimization is architectural: 10s polling via `getMultipleAccountsInfo` (2 RPC calls vs 84 per-market WS subs), inflight dedup in activity feed (~20 lines), `Promise.allSettled` per Pyth feed (Hermes batch is all-or-nothing). Zero WS subs for market data; 1 `onLogs` sub for activity feed. This is the right amount of complexity for a devnet demo.
+
 - [ ] **Transaction pipelining** - Combine sequenced operations (cancel+replace, mint+place) into single atomic transactions. Current fire-and-forget pattern accepts that sequenced ops occasionally fail when the first tx doesn't land - bot retries on next tick. Production needs: nonce accounts for guaranteed inclusion, atomic cancel+replace instructions, and per-block write-lock contention handling when multiple takers hit the same order book.
 - [ ] **RPC infrastructure** - Current Helius Developer plan (50 req/s, 10M credits/mo) is sufficient for devnet demo. Production market makers need dedicated RPC nodes with sub-100ms latency. Jito bundles for MEV-protected settlement transactions.
 - [ ] **Event indexing** - Replace frontend `onLogs` polling with a dedicated indexer (Helius webhooks, or a custom Geyser plugin) for reliable trade history and analytics.

@@ -25,16 +25,17 @@ export function isMarketHours(): boolean {
   return minutes >= 570 && minutes <= 990; // 9:30 AM - 4:30 PM
 }
 
-// Fallback prices near setup-local.ts strikes for interesting fair values.
-// Used when Pyth Hermes is unavailable (weekends, off-hours, network issues).
+// Fallback/seed prices for synthetic random-walk on localnet.
+// Updated 2026-03-15. Strike generation uses these as reference,
+// so fair values make sense relative to the generated strikes.
 const FALLBACK_PRICES: Record<string, number> = {
   AAPL: 237,
-  MSFT: 432,
-  GOOGL: 185,
-  AMZN: 206,
-  NVDA: 134,
+  MSFT: 430,
+  GOOGL: 184,
+  AMZN: 208,
+  NVDA: 180,
   META: 700,
-  TSLA: 258,
+  TSLA: 259,
 };
 
 // Synthetic random walk state (persists across calls within a process)

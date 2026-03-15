@@ -44,6 +44,8 @@ make uat                # E2E lifecycle test: create → mint → trade → sett
 cd frontend && npm run dev
 ```
 
+`make local` manages its own background validator. Frontend startup and chain bootstrap are intentionally separate - restart the UI without recreating markets. Use `frontend/.env.local` with `VITE_RPC_URL=http://127.0.0.1:8899` for frontend-only local overrides.
+
 ## Bootstrap (Dev Wallets)
 
 Dev wallets are derived deterministically from `sha256("meridian-dev-{name}")` - every clone produces the same keys. Wallets: `admin`, `bot-a`, `bot-b`. Files live in `.wallets/` (gitignored), generated at runtime.
@@ -92,6 +94,17 @@ cd frontend && npm run dev
 
 > Set `DEVNET_RPC_URL` in `.env` (copy from `.env.example`). [Helius](https://helius.dev) Developer plan ($49/mo) recommended - 50 req/s, 10M credits/mo. Free tier (10 req/s, 1M credits) works but bots burn through credits fast.
 
+### Existing deployment (shared config)
+
+If you're working with an already-deployed program and USDC mint:
+
+```bash
+cp .env.example .env
+# Fill in DEVNET_RPC_URL, DEVNET_USDC_MINT
+make devnet-deploy   # build + deploy + ensure USDC mint + GlobalConfig
+make devnet-health   # verify deployment
+```
+
 ## RPC Provider Requirements
 
 ### WebSocket subscription count
@@ -114,17 +127,6 @@ cd frontend && npm run dev
 - **Bots**: `ws-cache.ts` detects WS silence after 2 minutes and re-subscribes. Initial book state is fetched via `getAccountInfo` RPC, so bots have a snapshot even before WS fires. Strategy-bots read from a shared tmpfile written by live-bots - if live-bots WS is dead, strategy-bots see stale book data until WS recovers.
 - **Frontend market data**: Unaffected - market data uses polling only, no WS subs.
 - **Frontend activity feed**: `onLogs` has no reconnect logic. If WS drops, the live activity feed stops updating silently; historically-fetched records remain visible. The `?debug` query param logs `[ws-budget]` messages to the console to track active sub count.
-
-### Existing deployment (shared config)
-
-If you're working with an already-deployed program and USDC mint:
-
-```bash
-cp .env.example .env
-# Fill in DEVNET_RPC_URL, DEVNET_USDC_MINT
-make devnet-deploy   # build + deploy + ensure USDC mint + GlobalConfig
-make devnet-health   # verify deployment
-```
 
 ## Railway Deployment
 
@@ -190,30 +192,6 @@ Frontend SPA POSTs to `/active-market` (same origin, same port) when the user na
 | `ALERT_WEBHOOK_URL` | Slack/Discord incoming webhook for automation failure alerts (optional) |
 | `PORT` | Signal-server listen port (set by Railway automatically) |
 | `RAILWAY_DOCKERFILE_PATH` | Set to `Dockerfile`; if auto-detect picks wrong file, also set in Railway dashboard: Settings > Build > Dockerfile Path |
-
-What they do:
-
-- `make local` - single command: starts validator, builds, deploys, creates 12-min cycle markets, seeds books
-- `make local-cycle` - settle old markets, create fresh 12-min markets (run again to rotate)
-- `make local-settle` - settle + close all current markets
-- `make local-seed` - re-seed order books with bot liquidity
-- `make test` - Anchor/TS test suite (`make test GREP='pattern'` for filtered runs)
-- `make uat` - automated E2E lifecycle: create → mint → trade → settle → redeem (~3 min)
-- `make nuke` - devnet only: settle all, close all, drain all wallets to admin. `NUKE_FLAGS="--yes"` skips prompt, `NUKE_FLAGS="--hard --yes"` also closes program
-- `cd frontend && npm run dev` - starts the frontend against localhost RPC
-
-Quickstart:
-
-```bash
-make local
-cd frontend && npm run dev  # in a second terminal
-```
-
-Notes:
-
-- `make local` manages its own background validator. For a foreground validator, run `solana-test-validator --bind-address 127.0.0.1 --mint $(solana-keygen pubkey .wallets/admin.json) --reset --ledger .localnet/ledger --limit-ledger-size 50000000` in one terminal, then `make local` in another (or run `_local-deploy`, `local-cycle`, `local-seed` individually).
-- Frontend startup and chain/bootstrap are intentionally separate so you can restart the UI without recreating local markets.
-- A local `frontend/.env.local` with `VITE_RPC_URL=http://127.0.0.1:8899` is the preferred explicit override for frontend-only local work.
 
 ## Current Frontend State
 
@@ -375,9 +353,9 @@ Not everything needs rework. These components are designed for scale:
 
 - **Credit/claim settlement model** - Taker txs are fully deterministic (no `remaining_accounts` variance). This is the key architectural win over Phoenix/OpenBook where taker txs can fail due to stale book state.
 - **$1 payout invariant** - Enforced at the Rust level with overflow-checked arithmetic. Every code path preserves `total_pairs_minted * USDC_PER_PAIR == vault_balance`.
-- **State machine** - Created → Frozen → Settled transitions are well-tested with 100+ integration tests covering edge cases, double-settlement prevention, and concurrent access patterns.
+- **State machine** - Created → Frozen → Settled transitions are well-tested with 118 integration tests covering edge cases, double-settlement prevention, and concurrent access patterns.
 - **Oracle integration** - `settle_market` with Pyth pull-based oracle (PriceUpdateV2 via Wormhole VAA) is the production path. Staleness and confidence checks are configurable per ticker.
-- **ALPHA mode** - Rapid 15-minute market cycles for UAT. `make alpha-cycle` → trade → `make alpha-settle` enables continuous integration testing of the full lifecycle.
+- **Short-cycle markets** - `make local` creates 12-minute markets for rapid local iteration. `make local-cycle` rotates to fresh markets. `make uat` runs the full lifecycle end-to-end.
 
 ## Notes
 

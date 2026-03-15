@@ -102,5 +102,6 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - Devnet operator config: `.env` (copy from `.env.example`). Treat `DEVNET_RPC_URL` and `DEVNET_USDC_MINT` there as the repo deploy source of truth - not hardcoded Makefile defaults.
 - Bot scripts accept `USDC_MINT` env var (falls back to `local-config.json`). Airdrop only on localhost (devnet faucets rate-limit).
 - `make nuke` tears down all devnet state: force-settles markets, closes them (recovering ~70% of rent), drains bot wallets to admin. `NUKE_FLAGS="--yes"` skips prompt, `--skip-settle` / `--skip-close` bypass those steps (useful for pre-CLOB markets). `--hard` PERMANENTLY closes the program account (cannot redeploy to same ID) - only for final teardown, not iteration. For devnet cycling, just `make nuke NUKE_FLAGS="--yes"` then `make devnet-deploy && make devnet-setup`.
+- Railway targets are decoupled: `make railway-deploy` pushes the container only. `make railway-env` syncs env vars. No composite target - chain explicitly when needed (e.g. `make devnet-deploy && make devnet-setup && make railway-deploy` after contract changes).
 - Frontend `?debug` query param logs all Solana RPC calls and Pyth Hermes fetches to browser console.
 - See README `## Railway Deployment` for full Railway setup, env var table, and service architecture.

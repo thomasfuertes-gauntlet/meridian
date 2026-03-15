@@ -140,16 +140,24 @@ cp .env.example .env
 railway init                # creates project, links to current dir
 railway add -s meridian     # creates the service
 
-# 3. First-time full deploy (program + state + env + container)
-make railway-full
+# 3. First-time full deploy
+make devnet-deploy    # build + deploy program to devnet
+make devnet-setup     # create markets + fund bots
+make railway-env      # sync env vars to Railway service
+make railway-deploy   # build + push container
 ```
 
 ### Redeployment
 
 ```bash
-make railway-deploy   # push container only (frontend/bot code changes)
-make railway-env      # sync env vars to Railway (when config changes)
-make railway-full     # full: program + state + env + container (after contract changes)
+# Code changes only (frontend, bots, scripts)
+make railway-deploy
+
+# After contract changes (Rust)
+make devnet-deploy && make devnet-setup && make railway-deploy
+
+# After config changes (.env)
+make railway-env && make railway-deploy
 ```
 
 Demo bot flow can be concentrated to a single ticker via `DEMO_TICKER`; current recommended demo default is `NVDA`.

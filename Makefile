@@ -6,7 +6,7 @@
 	test uat \
 	devnet-deploy devnet-setup devnet-health \
 	devnet-bootstrap nuke \
-	railway-deploy railway-env railway-full
+	railway-deploy railway-env
 
 # ── Config & Variables ──────────────────────────────────────────
 
@@ -205,10 +205,6 @@ nuke: _wallets _devnet-env  ## Devnet: settle all, close all, drain SOL to admin
 	$(DEVNET_TS_ENV) $(TSX) scripts/nuke-devnet.ts $(NUKE_FLAGS)
 
 # ── Railway ────────────────────────────────────────────────────
-# Decoupled: deploy container, sync env, and full pipeline are independent.
-#   make railway-deploy   → push container (the 10x/day action)
-#   make railway-env      → sync env vars to Railway service
-#   make railway-full     → program + state + env + container (rare, after contract changes)
 
 railway-deploy:  ## Push container to Railway
 	$(call require_var,RAILWAY_SERVICE)
@@ -226,8 +222,6 @@ railway-env: _railway-env  ## Sync env vars to Railway service
 		"ENABLE_LIQUIDITY_BOT=$(ENABLE_LIQUIDITY_BOT)" \
 		"ENABLE_TRADE_BOTS=$(ENABLE_TRADE_BOTS)" \
 	| xargs railway variable set -s "$(RAILWAY_SERVICE)"
-
-railway-full: devnet-deploy devnet-setup railway-env railway-deploy  ## Full: program + state + env + container
 
 # ── Build & Cleanup ────────────────────────────────────────────
 

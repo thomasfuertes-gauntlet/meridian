@@ -299,6 +299,7 @@ The built-in CLOB is the right demo choice (shows depth of understanding, avoids
 - [ ] **Partial fills** - `buy_yes` and `sell_yes` currently require full fills (atomic fill-or-kill). Production needs partial fills with remaining quantity posted as a resting order. Requires rethinking the taker instruction to optionally place a maker order with the unfilled residual.
 - [ ] **Order types** - Add IOC (immediate-or-cancel), GTC (good-till-cancel), and day orders. Current `place_order` is implicitly GTC with manual cancel.
 - [ ] **Matching engine optimization** - Replace linear order scan with a sorted binary heap. Current O(n) iteration is fine for 32 slots; at 1,000+ orders it becomes a compute-unit bottleneck (~200k CU budget per Solana tx).
+- [ ] **Sell No limit orders (auto-redeem on fill)** - Currently Sell No is market-only because `buy_yes` + `redeem` requires the fill to complete before redeem executes - impossible for resting orders where the fill happens in the taker's transaction. Fix: add `auto_redeem` flag on `Order` struct. During fill, if set, the program burns credited Yes + escrowed No directly and credits USDC instead of Yes tokens. Requires: new Order field (Borsh layout change), No token escrow vault on the OB, and fill handler access to Yes/No mints for burning. Maker still claims USDC via `claim_fills`. ~Half-day Rust change.
 
 ### Settlement & Oracle
 

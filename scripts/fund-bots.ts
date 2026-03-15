@@ -18,7 +18,7 @@ import { USDC_PER_PAIR } from "./constants";
 import { sleep, defaultTxDelay } from "./bot-utils";
 
 const DEVNET_DELAY_MS = defaultTxDelay();
-const BOT_USDC_AMOUNT = 250_000;
+const BOT_USDC_AMOUNT = 1_000_000;
 const MIN_SOL = 1;
 const FUND_SOL = 2;
 

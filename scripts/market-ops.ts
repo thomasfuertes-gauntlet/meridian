@@ -157,7 +157,7 @@ export async function fundDevWallets(
   usdcMint: PublicKey,
   opts: { adminUsdc?: number; botUsdc?: number; solPerBot?: number } = {},
 ): Promise<void> {
-  const { adminUsdc = 1000, botUsdc = 250_000, solPerBot = 5 } = opts;
+  const { adminUsdc = 1_000_000, botUsdc = 1_000_000, solPerBot = 5 } = opts;
   const botA = getDevWallet("bot-a");
   const botB = getDevWallet("bot-b");
 

@@ -76,8 +76,12 @@ export function MarketDetail() {
     }
   }, [wallet, connection, routeTicker]);
 
-  // Load once on mount + when wallet/ticker changes (not on every poll)
-  useEffect(() => { loadPositions(); }, [loadPositions]);
+  // Load on mount/wallet/ticker change, then refresh every 15s to catch post-trade updates
+  useEffect(() => {
+    loadPositions();
+    const id = setInterval(loadPositions, 15_000);
+    return () => clearInterval(id);
+  }, [loadPositions]);
 
   const handleRedeem = useCallback(async (position: Position) => {
     if (!wallet || !usdcMintForPortfolio) return;
@@ -313,6 +317,7 @@ export function MarketDetail() {
               ticker={featured.ticker}
               bestBid={featured.bestBid}
               bestAsk={featured.bestAsk}
+              orderBook={featured.orderBook ?? null}
             />
           ) : (
             <section>

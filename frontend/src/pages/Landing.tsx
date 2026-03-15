@@ -10,7 +10,7 @@ import { formatUsdcBaseUnits } from "../lib/format";
 export function Landing() {
   const navigate = useNavigate();
   const { data, loading } = useMarketData();
-  const snapshots = data?.tickerSnapshots ?? [];
+  const snapshots = useMemo(() => data?.tickerSnapshots ?? [], [data]);
 
   // Featured contract: first NVDA market with book data
   const featuredContract = useMemo(() => {
@@ -19,7 +19,6 @@ export function Landing() {
     const active = nvdaMarkets
       .filter((m) => m.status === "created" && m.yesMid != null)
       .sort((a, b) => {
-        // Closest to ATM
         const nvda = snapshots.find((s) => s.ticker === "NVDA");
         const spot = nvda?.latestPrice ?? 0;
         const spotBase = spot * USDC_PER_PAIR;

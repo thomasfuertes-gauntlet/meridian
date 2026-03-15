@@ -89,7 +89,9 @@ export function computeLevels(fair: number): {
   asks: [number, number][];
 } {
   const offsets = [0.02, 0.05, 0.08, 0.13, 0.19, 0.27];
-  const quantities = [10, 15, 25, 40, 50, 60];
+  // KEY-DECISION 2026-03-15: institutional-scale depth for demo credibility.
+  // 21,500 tokens/side ≈ $10,750 notional at fair. Well within 250K bot budget.
+  const quantities = [500, 1_000, 2_000, 4_000, 6_000, 8_000];
 
   const bids: [number, number][] = [];
   const asks: [number, number][] = [];

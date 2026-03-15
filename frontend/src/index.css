@@ -255,37 +255,36 @@ nav button[data-active="true"] {
 [data-lifecycle] {
   display: flex;
   align-items: center;
-  gap: 0;
   font-size: 12px;
-  list-style: none;
   padding: 0;
   margin: var(--space-sm) 0;
 }
-[data-lifecycle] li {
-  display: flex;
+[data-lc-step] {
+  display: inline-flex;
   align-items: center;
   gap: var(--space-xs);
 }
-[data-lifecycle] li::before {
-  content: "";
+[data-lc-dot] {
+  display: inline-block;
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
-[data-lifecycle] [data-separator] {
+[data-lc-sep] {
   display: inline-block;
   width: 24px;
   height: 1px;
   background: var(--border);
   margin: 0 var(--space-sm);
+  flex-shrink: 0;
 }
-[data-lifecycle] li[data-state="past"]::before { background: var(--muted); }
-[data-lifecycle] li[data-state="past"] { color: var(--muted); }
-[data-lifecycle] li[data-state="current"]::before { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
-[data-lifecycle] li[data-state="current"] { color: var(--text); font-weight: 500; }
-[data-lifecycle] li[data-state="future"]::before { border: 1.5px solid var(--muted); background: transparent; }
-[data-lifecycle] li[data-state="future"] { color: var(--muted); }
+[data-lc-step="past"]            { color: var(--muted); }
+[data-lc-step="past"] [data-lc-dot]    { background: var(--muted); }
+[data-lc-step="current"]         { color: var(--text); font-weight: 500; }
+[data-lc-step="current"] [data-lc-dot] { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+[data-lc-step="future"]          { color: var(--muted); }
+[data-lc-step="future"] [data-lc-dot]  { border: 1.5px solid var(--muted); background: transparent; }
 
 /* ── Solvency banner ─────────────────────────── */
 [data-solvency] {

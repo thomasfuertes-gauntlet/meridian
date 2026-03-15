@@ -228,6 +228,65 @@ Notes:
 - **Portfolio** (`/portfolio`) - positions scoped to connected wallet. Mark value, cost basis, unrealized/realized P&L, redeem buttons for settled winners and pre-settlement complete sets.
 - Header shows cluster label (Devnet/Localnet) and red banner when Phantom is on wrong network.
 
+## Bot System
+
+Three bot processes provide liquidity and trading activity. All are optional sidecars - the on-chain CLOB functions without them.
+
+### Wallets
+
+| Wallet | Role | Seed |
+|--------|------|------|
+| `admin` | USDC mint authority, program deployer | `sha256("meridian-dev-admin")` |
+| `bot-a` | Market maker (live-bots, seed-bots) | `sha256("meridian-dev-bot-a")` |
+| `bot-b` | Frontend dev wallet, strategy bots | `sha256("meridian-dev-bot-b")` |
+
+### Processes
+
+| Process | Wallet | Behavior | Cadence |
+|---------|--------|----------|---------|
+| **seed-bots** | bot-a | Bootstrap empty order books with logarithmic depth (6 bid/ask levels). Idempotent per market. | Loop every 15 min |
+| **live-bots** | bot-a | Market maker: cancel/replace, place near spread, cross spread. Weighted 80% toward active market. | Tick every 150-400ms |
+| **strategy-bots** | bot-b | Four directional strategies (momentum, Bollinger, correlation, time-decay). Taker-only. | Tick every 45s |
+
+### Prices
+
+Auto-detected from `ANCHOR_PROVIDER_URL`:
+- **Localnet**: Synthetic random-walk (deterministic per process, no network deps)
+- **Market hours** (9:30 AM-4:30 PM ET): Pyth Hermes HTTP; warns on fallback
+- **Off-hours**: Pyth Hermes with silent fallback to synthetic
+
+### Active Market Signal
+
+Frontend writes the currently-viewed market to `/tmp/meridian-active-market.txt`. Bots weight 80% of activity toward that strike. Signal stale after 5 min → uniform random fallback.
+
+- **Local**: Vite dev middleware writes file on navigation
+- **Railway**: Frontend POSTs to signal-server (same container), which writes the file
+
+### WS Cache
+
+Live-bots owns a single WS subscription to the active market's orderbook. Writes parsed book state to `/tmp/meridian-ws-books.json`. Strategy-bots reads this file - no WS sub needed. Subscription rotates every 10s based on active-market signal.
+
+### Running Bots
+
+```bash
+# Local (separate terminals)
+make local-live         # bot-a market maker
+make local-strategy     # bot-b directional strategies
+make local-seed         # bot-a one-shot book seeding
+
+# Railway (feature flags in .env / railway-env)
+ENABLE_LIQUIDITY_BOT=true   # starts seed-bots + live-bots
+ENABLE_TRADE_BOTS=true      # starts strategy-bots (90s after live-bots)
+```
+
+### Funding
+
+```bash
+make devnet-fund-bots   # transfer SOL + mint 250K USDC to bot-a and bot-b
+```
+
+Bots auto-replenish USDC from admin mint authority when balance drops below threshold.
+
 ## Spec Deviations (Intentional)
 
 Deviations from `spec.md` that are deliberate V1 scope decisions:

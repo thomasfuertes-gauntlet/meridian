@@ -14,15 +14,15 @@ import { Program } from "@coral-xyz/anchor";
 import { Meridian } from "../target/types/meridian";
 import { PublicKey } from "@solana/web3.js";
 import {
-  createMint,
   createAssociatedTokenAccount,
-  mintTo,
+  createMint,
   getAssociatedTokenAddressSync,
+  mintTo,
 } from "@solana/spl-token";
 import { getDevWallet } from "./dev-wallets";
 import { USDC_DECIMALS, USDC_PER_PAIR } from "./constants";
 import { accountExists } from "./market-ops";
-import { sleep, defaultTxDelay } from "./bot-utils";
+import { defaultTxDelay, sleep } from "./bot-utils";
 
 const DEVNET_DELAY_MS = defaultTxDelay();
 
@@ -55,22 +55,20 @@ async function main() {
     console.log("\nCreated USDC Mint:", usdcMint.toString());
   }
 
-  // Admin USDC ATA + seed balance
-  let adminUsdcAta: PublicKey;
+  // Admin USDC ATA - create if missing, seed only if empty
   const adminAtaAddr = getAssociatedTokenAddressSync(usdcMint, admin.publicKey);
-  if (await accountExists(connection, adminAtaAddr)) {
-    adminUsdcAta = adminAtaAddr;
-  } else {
-    adminUsdcAta = await createAssociatedTokenAccount(
-      connection,
-      adminKeypair,
-      usdcMint,
-      admin.publicKey
-    );
+  if (!(await accountExists(connection, adminAtaAddr))) {
+    await createAssociatedTokenAccount(connection, adminKeypair, usdcMint, admin.publicKey);
+    console.log("Created admin USDC ATA");
   }
-  await mintTo(connection, adminKeypair, usdcMint, adminUsdcAta, adminKeypair, 1000 * USDC_PER_PAIR);
-  console.log("Minted 1000 USDC to admin");
-  await sleep(DEVNET_DELAY_MS);
+  const adminBalance = await connection.getTokenAccountBalance(adminAtaAddr);
+  if (Number(adminBalance.value.amount) === 0) {
+    await mintTo(connection, adminKeypair, usdcMint, adminAtaAddr, adminKeypair, 1000 * USDC_PER_PAIR);
+    console.log("Minted 1000 USDC to admin");
+    await sleep(DEVNET_DELAY_MS);
+  } else {
+    console.log(`Admin USDC: ${adminBalance.value.uiAmountString} (skipping mint)`);
+  }
 
   // Initialize GlobalConfig
   const [configPda] = PublicKey.findProgramAddressSync(

@@ -227,8 +227,8 @@ nav button[data-active="true"] {
 [data-pricebar="full"] { height: 28px; }
 [data-pricebar="compact"] { height: 6px; }
 [data-pricebar] > [data-side="yes"] {
-  background: var(--color-yes);
-  color: #0a0a0f;
+  background: #14F19520;
+  color: var(--color-yes);
   display: flex;
   align-items: center;
   padding: 0 var(--space-sm);
@@ -238,8 +238,8 @@ nav button[data-active="true"] {
   min-width: 0;
 }
 [data-pricebar] > [data-side="no"] {
-  background: var(--color-no);
-  color: #0a0a0f;
+  background: #FF4D6A20;
+  color: var(--color-no);
   display: flex;
   align-items: center;
   padding: 0 var(--space-sm);

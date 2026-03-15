@@ -1,8 +1,13 @@
 import { useState, useCallback, useEffect } from "react";
 import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import { BN } from "@coral-xyz/anchor";
-import { PublicKey } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { Keypair, PublicKey, Transaction } from "@solana/web3.js";
+import {
+  TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountIdempotentInstruction,
+  createMintToInstruction,
+  getAssociatedTokenAddressSync,
+} from "@solana/spl-token";
 import { getProgram } from "../lib/anchor";
 import {
   buildBuyYesTx,
@@ -14,6 +19,13 @@ import {
 } from "../lib/trade";
 import { getPositionConflict } from "../lib/portfolio";
 import { USDC_PER_PAIR } from "../lib/constants";
+
+// Admin keypair for localhost USDC minting (mint authority)
+const ADMIN_SEED = new Uint8Array([
+  40, 100, 210, 154, 86, 62, 31, 103, 52, 81, 136, 199, 204, 204, 11, 86, 90,
+  55, 146, 76, 143, 64, 228, 47, 38, 106, 116, 12, 98, 94, 24, 252,
+]);
+const ADMIN_KEYPAIR = Keypair.fromSeed(ADMIN_SEED);
 
 type TradeAction = "buyYes" | "buyNo" | "sellYes" | "sellNo";
 
@@ -217,14 +229,49 @@ export function TradePanel({
         ))}
       </nav>
 
-      {wallet && (
-        <dl>
-          <dt>Yes tokens</dt>
-          <dd>{balanceMap.get(yesMint.toString()) ?? 0}</dd>
-          <dt>No tokens</dt>
-          <dd>{balanceMap.get(noMint.toString()) ?? 0}</dd>
-        </dl>
-      )}
+      {wallet && (() => {
+        const usdcBalance = balanceMap.get(usdcMint.toString()) ?? 0;
+        const usdcDollars = (usdcBalance / USDC_PER_PAIR).toFixed(2);
+        return (
+          <dl>
+            <dt>USDC</dt>
+            <dd>
+              ${usdcDollars}
+              {usdcBalance === 0 && (
+                <button
+                  type="button"
+                  style={{ marginLeft: "var(--space-sm)", fontSize: 11, padding: "2px 8px" }}
+                  onClick={async () => {
+                    try {
+                      setStatus("Minting 1,000 USDC...");
+                      const userUsdc = getAssociatedTokenAddressSync(usdcMint, wallet.publicKey);
+                      const tx = new Transaction();
+                      tx.feePayer = ADMIN_KEYPAIR.publicKey;
+                      tx.add(createAssociatedTokenAccountIdempotentInstruction(ADMIN_KEYPAIR.publicKey, userUsdc, wallet.publicKey, usdcMint));
+                      tx.add(createMintToInstruction(usdcMint, userUsdc, ADMIN_KEYPAIR.publicKey, BigInt(1_000 * USDC_PER_PAIR)));
+                      const { blockhash } = await connection.getLatestBlockhash();
+                      tx.recentBlockhash = blockhash;
+                      tx.sign(ADMIN_KEYPAIR);
+                      const sig = await connection.sendRawTransaction(tx.serialize());
+                      await connection.confirmTransaction(sig, "confirmed");
+                      setStatus("Minted $1,000 USDC");
+                      setBalanceTick((t) => t + 1);
+                    } catch (err) {
+                      setStatus(`Mint failed: ${friendlyError(err)}`);
+                    }
+                  }}
+                >
+                  Get $1,000 USDC
+                </button>
+              )}
+            </dd>
+            <dt>Yes tokens</dt>
+            <dd>{balanceMap.get(yesMint.toString()) ?? 0}</dd>
+            <dt>No tokens</dt>
+            <dd>{balanceMap.get(noMint.toString()) ?? 0}</dd>
+          </dl>
+        );
+      })()}
 
       <label>
         Price (USDC) - leave empty for market

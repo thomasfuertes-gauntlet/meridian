@@ -451,6 +451,8 @@ async function main() {
       process.exit(0);
     }
     for (const mkt of currentMarkets) {
+      // Skip markets past close time
+      if (mkt.closeTime <= Date.now() / 1000) continue;
       const book = sharedBooks.get(mkt.orderBook.toBase58());
       if (!book) continue;
 

@@ -178,18 +178,27 @@ export function createWsCache(connection: Connection, program: Program<Meridian>
     rotateActiveSubscription();
   }, ROTATE_INTERVAL_MS);
 
-  // Discover new markets periodically
+  // Discover new markets + prune settled/closed ones periodically
   const refreshInterval = setInterval(async () => {
     try {
       const discovered = await discoverMarkets(program);
+      const activeKeys = new Set(discovered.map((m) => m.pubkey.toBase58()));
+      // Add new markets
       for (const mkt of discovered) {
         if (!markets.has(mkt.pubkey.toBase58())) {
           markets.set(mkt.pubkey.toBase58(), mkt);
-          // Fetch initial book
           try {
             const obInfo = await connection.getAccountInfo(mkt.orderBook);
             if (obInfo) books.set(mkt.orderBook.toBase58(), parseBook(obInfo.data as Buffer));
           } catch {}
+        }
+      }
+      // Prune markets no longer active (settled/closed)
+      for (const key of markets.keys()) {
+        if (!activeKeys.has(key)) {
+          const removed = markets.get(key);
+          markets.delete(key);
+          if (removed) books.delete(removed.orderBook.toBase58());
         }
       }
       writeState(books);

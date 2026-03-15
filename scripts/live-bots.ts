@@ -149,6 +149,9 @@ async function main() {
   }
 
   async function tradeOnMarket(mkt: MarketCtx): Promise<void> {
+    // Skip markets past close time (frozen or settling - on-chain rejects with MarketFrozen)
+    if (mkt.closeTime <= Date.now() / 1000) return;
+
     const botYesAta = getAssociatedTokenAddressSync(mkt.yesMint, bot.publicKey);
     await ensureAtas(mkt, botYesAta);
     const fair = getFairForMarket(mkt);

@@ -11,11 +11,11 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - `tests/` - validator-backed TypeScript integration tests
 - `frontend/` - Vite + React SPA (no Tailwind, semantic HTML + CSS custom properties)
 - `scripts/` - dev tooling, bot strategies, fair-value engine, automation cron jobs
-- `config/` - devnet deployment config (`devnet.env`)
+- `mock-pyth/` - lightweight mock Pyth oracle for hermetic localnet testing
 
 ## Architecture at a Glance
 
-- **16 on-chain instructions** - see `OVERVIEW.md` for the full contract surface.
+- **18 on-chain instructions** - see `OVERVIEW.md` for the full contract surface.
 - **Market lifecycle**: Created → Frozen → Settled. Settlement auto-credits all resting orders (no drain requirement).
 - **Four trade paths** on one Yes/USDC order book: Buy Yes, Sell Yes, Buy No (`mint_pair` + `sell_yes`), Sell No (`buy_yes` + `redeem`).
 - **Hermetic oracle testing** - A lightweight mock Pyth program (`mock-pyth/`) runs on localnet, enabling the full permissionless `settle_market` oracle path without network dependencies. Same validation chain (feed ID, staleness, confidence, verification level) runs against deterministic test data.
@@ -71,7 +71,7 @@ make devnet-bootstrap    # generate fresh keypairs + deploy + fund + setup (use 
 
 ## Devnet Deploy
 
-One command from `git clone` to 42 live markets on devnet:
+One command from `git clone` to ~49 live markets on devnet:
 
 ```bash
 npm ci
@@ -217,11 +217,12 @@ Notes:
 
 ## Current Frontend State
 
-- Market detail shows the single Yes/USDC book from both Yes and No perspectives.
-- Market detail now uses a left-hand strike rail with per-strike Yes mid, No mid, and liquidity so cross-strike comparison stays visible while trading.
-- History (`/history`) is live from on-chain instruction decoding. Defaults to "My Trades" (wallet-level filter) when a wallet is connected; "All Activity" toggle shows the market-wide tape with optional desk-wallet filtering for `admin`, `bot-a`, and `bot-b`.
-- Portfolio supports desk-wallet inspection, read-only bot/admin views, canonical redeem actions for the connected wallet, and transaction-derived cost basis / P&L when history coverage is sufficient.
-- The portfolio read model now hides cost basis and unrealized P&L when current inventory is older than the fetched transaction window or came from non-canonical flows, instead of showing misleading values.
+- **Landing** (`/`) - product explanation, live MAG7 Pyth prices, wallet connect CTA, settlement countdown.
+- **Markets** (`/markets`) - 7-ticker grid with live prices, strike counts, CLOB mid sparklines.
+- **Market detail** (`/markets/:ticker`) - left-hand strike rail with per-strike Yes/No mid and liquidity. Trade panel with Buy Yes, Sell Yes, Buy No, Sell No paths.
+- **History** (`/history`) - on-chain instruction decoding. "My Trades" (connected wallet) or "All Activity" toggle. Cursor-based load-more pagination.
+- **Portfolio** (`/portfolio`) - positions scoped to connected wallet. Mark value, cost basis, unrealized/realized P&L, redeem buttons for settled winners and pre-settlement complete sets.
+- Header shows cluster label (Devnet/Localnet) and red banner when Phantom is on wrong network.
 
 ## Spec Deviations (Intentional)
 
@@ -229,10 +230,8 @@ Deviations from `spec.md` that are deliberate V1 scope decisions:
 
 | Spec Requirement | Implementation | Rationale |
 |---|---|---|
-| Landing page | `/` redirects to `/markets` | Markets page serves as landing for demo |
 | Trade page | Integrated into MarketDetail (`/markets/:ticker`) | Trade panel lives inside market detail view |
 | Settlement at ~4:05 PM ET via oracle | 4:07 PM ET, `settle_market` first then `admin_settle` fallback | Oracle path posts Wormhole-verified VAA from Hermes; falls back to `admin_settle` (1hr delay) if VAA outside settlement window or Hermes unavailable |
-| 7th strike (rounded close) | Excluded in V1 | Documented in CLAUDE.md; 6 strikes per stock after dedup |
 | Next.js for frontend | Vite + React | Lighter build, no SSR needed for SPA |
 | Sell No limit orders | Market orders only | `buy_yes` + `redeem` composition requires fill before redeem; architectural constraint |
 
@@ -324,4 +323,4 @@ Not everything needs rework. These components are designed for scale:
 
 - Local validator state lives under `.localnet/`.
 - Program ID is deterministic: `GMwKXYNKRkN3wGdgAwR4BzG2RfPGGLGjehuoNwUzBGk2`
-- Strikes: `±3%`, `±6%`, `±9%` from previous close, rounded to nearest `$10`, deduplicated.
+- Strikes: rounded close plus `±3%`, `±6%`, `±9%` offsets, rounded to nearest `$10`, deduplicated (up to 7 per ticker).

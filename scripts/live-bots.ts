@@ -6,12 +6,12 @@
  * per market, and drifts orders toward fair value.
  *
  * Actions (weighted random per market):
- *   50% - Cancel a random order and replace at +/-$0.01-0.03 jitter toward fair
- *   25% - Place a new resting order near the spread (qty 1-3)
- *   20% - Cross the spread with qty 1 (creates fills/movement)
+ *   30% - Cancel a random order and replace at +/-$0.01-0.03 jitter toward fair
+ *   20% - Place a new resting order near the spread (qty 1-3)
+ *   45% - Cross the spread (depth-aware, creates fills/movement)
  *    5% - Do nothing (natural pause)
  *
- * Run after `make bots`. Uses deterministic bot-a wallet.
+ * Run after `make local-bots`. Uses deterministic bot-a wallet.
  */
 import * as anchor from "@coral-xyz/anchor";
 import BN from "bn.js";
@@ -48,6 +48,21 @@ function clamp(v: number, lo: number, hi: number) {
 
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
+}
+
+/** Walk one side of the book and return fillable qty + worst price to sweep it. */
+function walkDepth(
+  orders: { price: number; quantity: number }[],
+  maxQty: number,
+): { fillable: number; worstPrice: number } {
+  let fillable = 0;
+  let worstPrice = 0;
+  for (const o of orders) {
+    fillable += o.quantity;
+    worstPrice = o.price;
+    if (fillable >= maxQty) break;
+  }
+  return { fillable: Math.min(fillable, maxQty), worstPrice };
 }
 
 async function main() {
@@ -297,11 +312,18 @@ async function main() {
 
       console.log(`[${mkt.ticker}] + ${side} ${qty} @ $${(refreshedPrice / USDC_PER_PAIR).toFixed(2)}  [${txCount}]`);
 
-    } else if (book.bids.length > MIN_ORDERS_PER_SIDE && book.asks.length > MIN_ORDERS_PER_SIDE) {
-      // 45% - Cross the spread (visible fill)
-      const crossQty = randInt(5, 50);
+    } else if (book.bids.length > 0 && book.asks.length > 0) {
+      // 45% - Cross the spread (depth-aware fill) + post remainder as liquidity
+      const side = Math.random() < 0.5 ? "bid" : "ask";
+      const oppositeOrders = side === "bid" ? book.asks : book.bids;
+
+      // Walk the book to find fillable depth
+      const desiredQty = randInt(1, 10);
+      const { fillable } = walkDepth(oppositeOrders, desiredQty);
+
+      // Mint full desired qty (cross portion + remainder for resting order)
       await program.methods
-        .mintPair(new BN(crossQty))
+        .mintPair(new BN(desiredQty))
         .accountsPartial({
           user: bot.publicKey,
           market: mkt.pubkey,
@@ -317,20 +339,82 @@ async function main() {
       txCount++;
       await sleep(TX_DELAY_MS);
 
-      const side = Math.random() < 0.5 ? "bid" : "ask";
+      // Re-check depth after mint (book may have changed)
       const refreshedBook = cache.books.get(mkt.orderBook.toBase58());
       if (!refreshedBook) return;
+      const freshOrders = side === "bid" ? refreshedBook.asks : refreshedBook.bids;
+      const { fillable: freshFillable, worstPrice: freshWorstPrice } = walkDepth(freshOrders, fillable || desiredQty);
 
-      if (side === "bid") {
-        const bestAsk = refreshedBook.asks[0];
-        if (!bestAsk) return;
-        const hitPrice = bestAsk.price;
+      // Cross what's available
+      if (freshFillable > 0) {
+        const submitQty = freshFillable;
+        if (side === "bid") {
+          await program.methods
+            .buyYes(new BN(submitQty), new BN(freshWorstPrice))
+            .accountsPartial({
+              user: bot.publicKey,
+              market: mkt.pubkey,
+              yesMint: mkt.yesMint,
+              orderBook: mkt.orderBook,
+              obUsdcVault: mkt.obUsdcVault,
+              obYesVault: mkt.obYesVault,
+              userUsdc: botUsdcAta,
+              userYes: botYesAta,
+            })
+            .signers([bot])
+            .rpc();
+          txCount++;
+          console.log(`[${mkt.ticker}] * BUY ${submitQty} @ $${(freshWorstPrice / USDC_PER_PAIR).toFixed(2)}  [${txCount}]`);
+        } else {
+          await program.methods
+            .sellYes(new BN(submitQty), new BN(freshWorstPrice))
+            .accountsPartial({
+              user: bot.publicKey,
+              market: mkt.pubkey,
+              orderBook: mkt.orderBook,
+              obUsdcVault: mkt.obUsdcVault,
+              obYesVault: mkt.obYesVault,
+              userUsdc: botUsdcAta,
+              userYes: botYesAta,
+            })
+            .signers([bot])
+            .rpc();
+          txCount++;
+          console.log(`[${mkt.ticker}] * SELL ${submitQty} @ $${(freshWorstPrice / USDC_PER_PAIR).toFixed(2)}  [${txCount}]`);
+        }
+        await sleep(TX_DELAY_MS);
+      }
+
+      // Post remainder (or full qty if nothing was fillable) as resting liquidity
+      const restQty = freshFillable > 0 ? (desiredQty - freshFillable) : desiredQty;
+      if (restQty > 0) {
+        const postBook = cache.books.get(mkt.orderBook.toBase58());
+        if (!postBook) return;
+        const bestBid = postBook.bids[0]?.price ?? MIN_PRICE;
+        const bestAsk = postBook.asks[0]?.price ?? MAX_PRICE;
+
+        // Post on the same side as the cross direction, 1-3 ticks behind the spread
+        const ticks = randInt(1, 3);
+        const restPrice = clamp(
+          side === "bid" ? bestBid + ticks * 10_000 : bestAsk - ticks * 10_000,
+          MIN_PRICE, MAX_PRICE,
+        );
+        // Don't cross the book with the resting order
+        if (side === "bid" && restPrice >= bestAsk) return;
+        if (side === "ask" && restPrice <= bestBid) return;
+
+        if (postBook.bids.length >= MAX_PER_SIDE - 1 && side === "bid") return;
+        if (postBook.asks.length >= MAX_PER_SIDE - 1 && side === "ask") return;
+
         await program.methods
-          .buyYes(new BN(crossQty), new BN(hitPrice))
+          .placeOrder(
+            side === "bid" ? { bid: {} } : { ask: {} },
+            new BN(restPrice),
+            new BN(restQty),
+          )
           .accountsPartial({
             user: bot.publicKey,
             market: mkt.pubkey,
-            yesMint: mkt.yesMint,
             orderBook: mkt.orderBook,
             obUsdcVault: mkt.obUsdcVault,
             obYesVault: mkt.obYesVault,
@@ -340,28 +424,7 @@ async function main() {
           .signers([bot])
           .rpc();
         txCount++;
-
-        console.log(`[${mkt.ticker}] * BUY ${crossQty} @ $${(hitPrice / USDC_PER_PAIR).toFixed(2)}  [${txCount}]`);
-      } else {
-        const bestBid = refreshedBook.bids[0];
-        if (!bestBid) return;
-        const hitPrice = bestBid.price;
-        await program.methods
-          .sellYes(new BN(crossQty), new BN(hitPrice))
-          .accountsPartial({
-            user: bot.publicKey,
-            market: mkt.pubkey,
-            orderBook: mkt.orderBook,
-            obUsdcVault: mkt.obUsdcVault,
-            obYesVault: mkt.obYesVault,
-            userUsdc: botUsdcAta,
-            userYes: botYesAta,
-          })
-          .signers([bot])
-          .rpc();
-        txCount++;
-
-        console.log(`[${mkt.ticker}] * SELL ${crossQty} @ $${(hitPrice / USDC_PER_PAIR).toFixed(2)}  [${txCount}]`);
+        console.log(`[${mkt.ticker}] + ${side} ${restQty} @ $${(restPrice / USDC_PER_PAIR).toFixed(2)} (remainder)  [${txCount}]`);
       }
     }
   }
@@ -395,8 +458,10 @@ async function main() {
         await tradeOnMarket(mkt);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        const transient = ["0x1", "0x0", "blockhash", "OrderBookFull", "NotOrderOwner", "debit", "CrossingOrdersUseDedicatedPath"];
-        if (!transient.some((t) => msg.includes(t))) {
+        const transient = ["0x1", "0x0", "blockhash", "OrderBookFull", "NotOrderOwner", "debit", "CrossingOrdersUseDedicatedPath", "NoMatchingOrders"];
+        if (msg.includes("AtomicTradeIncomplete")) {
+          console.log(`  [fill-miss] ${msg.slice(0, 120)}`);
+        } else if (!transient.some((t) => msg.includes(t))) {
           console.log(`  [err] ${msg.slice(0, 120)}`);
         }
       }

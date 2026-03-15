@@ -1,8 +1,8 @@
-export function ELI5() {
+export function Overview() {
   return (
     <>
       <section>
-        <h1>Meridian - ELI5</h1>
+        <h1>Architecture Overview</h1>
         <p>Binary outcome markets for MAG7 stocks on Solana. One question, two tokens, one dollar.</p>
       </section>
 

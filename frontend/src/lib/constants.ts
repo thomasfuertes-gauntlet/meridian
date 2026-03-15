@@ -24,7 +24,9 @@ export const IS_LOCAL_RPC =
 export const IS_REMOTE_RPC = !IS_LOCAL_RPC;
 
 
-export const RPC_MODE_LABEL = IS_LOCAL_RPC ? "Local validator" : "Remote RPC";
+export const CLUSTER_LABEL = IS_LOCAL_RPC
+  ? "Localnet"
+  : RPC_URL.includes("devnet") ? "Devnet" : "Mainnet";
 export const ACTIVITY_LIMIT = IS_LOCAL_RPC ? 120 : 12;
 
 export const PORTFOLIO_SIGNATURE_LIMIT = IS_LOCAL_RPC ? 120 : 12;

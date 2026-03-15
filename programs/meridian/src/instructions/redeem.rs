@@ -22,7 +22,11 @@ pub struct Redeem<'info> {
     )]
     pub market: Account<'info, StrikeMarket>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        token::mint = market.usdc_mint,
+        token::authority = user,
+    )]
     pub user_usdc: Account<'info, TokenAccount>,
 
     #[account(
@@ -90,7 +94,9 @@ pub fn handler<'info>(
         ];
         let signer_seeds = &[&market_seeds[..]];
 
-        let usdc_amount = amount.checked_mul(USDC_PER_PAIR).unwrap();
+        let usdc_amount = amount
+            .checked_mul(USDC_PER_PAIR)
+            .ok_or(MeridianError::InvalidAmount)?;
         token::transfer(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),

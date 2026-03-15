@@ -23,7 +23,7 @@ pub struct BuyYes<'info> {
         seeds = [GlobalConfig::SEED],
         bump = config.bump,
     )]
-    pub config: Account<'info, GlobalConfig>,
+    pub config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
         seeds = [
@@ -34,10 +34,14 @@ pub struct BuyYes<'info> {
         ],
         bump = market.bump,
     )]
-    pub market: Account<'info, StrikeMarket>,
+    pub market: Box<Account<'info, StrikeMarket>>,
 
-    #[account(mut)]
-    pub user_usdc: Account<'info, TokenAccount>,
+    #[account(
+        mut,
+        token::mint = market.usdc_mint,
+        token::authority = user,
+    )]
+    pub user_usdc: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,

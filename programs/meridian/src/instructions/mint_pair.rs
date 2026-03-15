@@ -30,7 +30,11 @@ pub struct MintPair<'info> {
     )]
     pub market: Box<Account<'info, StrikeMarket>>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        token::mint = market.usdc_mint,
+        token::authority = user,
+    )]
     pub user_usdc: Box<Account<'info, TokenAccount>>,
 
     #[account(
@@ -91,7 +95,9 @@ pub fn handler(ctx: Context<MintPair>, amount: u64) -> Result<()> {
     let signer_seeds = &[&market_seeds[..]];
 
     // Transfer USDC from user to vault
-    let usdc_amount = amount.checked_mul(USDC_PER_PAIR).unwrap();
+    let usdc_amount = amount
+        .checked_mul(USDC_PER_PAIR)
+        .ok_or(MeridianError::InvalidAmount)?;
     token::transfer(
         CpiContext::new(
             ctx.accounts.token_program.to_account_info(),

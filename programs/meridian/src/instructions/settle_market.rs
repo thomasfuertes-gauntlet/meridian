@@ -113,6 +113,12 @@ fn oracle_price_to_usdc_micro(price: &Price) -> Result<u64> {
     let exp_diff = price.exponent - target_exp;
     let base_price = u64::try_from(price.price).map_err(|_| MeridianError::InvalidOraclePrice)?;
 
+    // Guard against extreme exponents that would overflow 10u64.pow()
+    require!(
+        exp_diff.unsigned_abs() <= 19,
+        MeridianError::InvalidOraclePrice
+    );
+
     Ok(if exp_diff >= 0 {
         base_price
             .checked_mul(10u64.pow(exp_diff as u32))

@@ -16,8 +16,12 @@ if (!mintAddress) {
   }
 }
 
+// Cache the PublicKey to maintain referential stability across renders.
+// Creating new PublicKey each call breaks React useCallback/useMemo deps.
+const cachedMint: PublicKey | null = mintAddress ? new PublicKey(mintAddress) : null;
+
 export function getConfiguredUsdcMint(): PublicKey | null {
-  return mintAddress ? new PublicKey(mintAddress) : null;
+  return cachedMint;
 }
 
 export function useUsdcMint(): PublicKey {

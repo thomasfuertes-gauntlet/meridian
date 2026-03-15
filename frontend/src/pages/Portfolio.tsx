@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import { getProgram, getReadOnlyProgram } from "../lib/anchor";
-import { DeskSelector } from "../components/DeskSelector";
 import { MAG7, type Ticker } from "../lib/constants";
 import { money, formatContracts, formatUsdcBaseUnits } from "../lib/format";
 import { useMarketData } from "../lib/use-market-data";
-import { getDeskWallets } from "../lib/dev-wallets";
 import {
   buildBurnPairTx,
   buildRedeemTx,
@@ -47,11 +45,6 @@ function currentYesPrice(position: Position, yesMid: number | null): number | nu
   return yesMid;
 }
 
-function currentNoPrice(position: Position, yesMid: number | null): number | null {
-  const yesPrice = currentYesPrice(position, yesMid);
-  return yesPrice == null ? null : 1_000_000 - yesPrice;
-}
-
 function redeemableContracts(position: Position): number {
   if (position.outcome === "yesWins") return position.yesBalance;
   if (position.outcome === "noWins") return position.noBalance;
@@ -65,45 +58,22 @@ function pnlTone(value: number | null): "green" | "red" | "muted" {
   return "muted";
 }
 
-function hasPartialHistory(positions: Array<{ performance?: PositionPerformance }>): boolean {
-  return positions.some((position) => position.performance?.partialHistory);
-}
-
 export function Portfolio() {
   const wallet = useAnchorWallet();
   const { connection } = useConnection();
   const { data } = useMarketData();
-  const desks = useMemo(() => getDeskWallets(wallet?.publicKey), [wallet]);
-  const [selectedDeskId, setSelectedDeskId] = useState<string>("");
   const [positions, setPositions] = useState<Position[]>([]);
   const [performance, setPerformance] = useState<Map<string, PositionPerformance>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionState, setActionState] = useState<Record<string, string>>({});
   const usdcMint = getConfiguredUsdcMint();
-  const selectedDesk = useMemo(
-    () => desks.find((entry) => entry.id === selectedDeskId) ?? desks[0] ?? null,
-    [desks, selectedDeskId]
-  );
-  const canMutateSelectedDesk =
-    !!wallet && !!selectedDesk && wallet.publicKey.equals(selectedDesk.publicKey);
 
-  useEffect(() => {
-    if (!selectedDeskId && desks[0]) {
-      setSelectedDeskId(desks[0].id);
-      return;
-    }
-    if (selectedDeskId && !desks.some((entry) => entry.id === selectedDeskId) && desks[0]) {
-      setSelectedDeskId(desks[0].id);
-    }
-  }, [desks, selectedDeskId]);
-
-  // Use ref for market data to avoid re-triggering loadPositions on every SSE price update
   const dataRef = useRef(data);
   dataRef.current = data;
 
   const loadPositions = useCallback(async () => {
-    if (!selectedDesk) {
+    if (!wallet) {
       setPositions([]);
       setPerformance(new Map());
       return;
@@ -116,10 +86,10 @@ export function Portfolio() {
       const allMarkets = snapshot
         ? Object.values(snapshot.marketsByTicker).flat()
         : undefined;
-      const next = await fetchPositions(program, connection, selectedDesk.publicKey, allMarkets);
+      const next = await fetchPositions(program, connection, wallet.publicKey, allMarkets);
       setPositions(next);
       if (usdcMint) {
-        const nextPerformance = await fetchPositionPerformance(connection, selectedDesk.publicKey, next, usdcMint);
+        const nextPerformance = await fetchPositionPerformance(connection, wallet.publicKey, next, usdcMint);
         setPerformance(nextPerformance);
       } else {
         setPerformance(new Map());
@@ -130,7 +100,7 @@ export function Portfolio() {
     } finally {
       setLoading(false);
     }
-  }, [connection, selectedDesk, usdcMint]);
+  }, [connection, wallet, usdcMint]);
 
   useEffect(() => {
     loadPositions();
@@ -147,20 +117,16 @@ export function Portfolio() {
           : null;
       const mid = market?.yesMid ?? null;
       const yesPrice = currentYesPrice(position, mid);
-      const noPrice = currentNoPrice(position, mid);
       const redeemable = redeemableContracts(position);
       const perf = performance.get(position.market.toBase58());
       const currentValue = markValue(position, mid);
       const costBasis = perf?.costBasis ?? null;
       return {
         ...position,
-        marketView: market,
         performance: perf,
         markValue: currentValue,
         yesPrice,
-        noPrice,
         redeemable,
-        redeemableValue: redeemable,
         costBasis,
         unrealizedPnl:
           costBasis != null
@@ -173,23 +139,18 @@ export function Portfolio() {
   const totals = useMemo(() => {
     return enriched.reduce(
       (acc, position) => {
-        acc.yes += position.yesBalance;
-        acc.no += position.noBalance;
         acc.markValue += position.markValue;
-        acc.redeemable += position.redeemable;
-        acc.costBasis += position.costBasis ?? 0;
         acc.unrealizedPnl += position.unrealizedPnl ?? 0;
         acc.realizedPnl += position.performance?.realizedPnl ?? 0;
+        acc.redeemable += position.redeemable;
         return acc;
       },
-      { yes: 0, no: 0, markValue: 0, redeemable: 0, costBasis: 0, unrealizedPnl: 0, realizedPnl: 0 }
+      { markValue: 0, unrealizedPnl: 0, realizedPnl: 0, redeemable: 0 }
     );
   }, [enriched]);
 
-  const partialHistoryVisible = useMemo(() => hasPartialHistory(enriched), [enriched]);
-
   const handleRedeem = useCallback(async (position: Position) => {
-    if (!wallet || !selectedDesk || !canMutateSelectedDesk || !usdcMint) return;
+    if (!wallet || !usdcMint) return;
 
     const actionKey = position.market.toBase58();
     setActionState((current) => ({ ...current, [actionKey]: "Building transaction..." }));
@@ -199,7 +160,7 @@ export function Portfolio() {
       const tx = position.settled
         ? await buildRedeemTx(
             program,
-            selectedDesk.publicKey,
+            wallet.publicKey,
             position.market,
             position.outcome === "yesWins" ? position.yesMint : position.noMint,
             usdcMint,
@@ -207,7 +168,7 @@ export function Portfolio() {
           )
         : await buildBurnPairTx(
             program,
-            selectedDesk.publicKey,
+            wallet.publicKey,
             position.market,
             position.yesMint,
             position.noMint,
@@ -219,7 +180,7 @@ export function Portfolio() {
 
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
       tx.recentBlockhash = blockhash;
-      tx.feePayer = selectedDesk.publicKey;
+      tx.feePayer = wallet.publicKey;
 
       const signed = await wallet.signTransaction(tx);
       const signature = await connection.sendRawTransaction(signed.serialize());
@@ -234,64 +195,34 @@ export function Portfolio() {
       const message = err instanceof Error ? err.message : "Transaction failed";
       setActionState((current) => ({ ...current, [actionKey]: `Error: ${message}` }));
     }
-  }, [canMutateSelectedDesk, connection, loadPositions, selectedDesk, usdcMint, wallet]);
+  }, [connection, loadPositions, usdcMint, wallet]);
 
   return (
     <>
       <section>
-        <h1>Live positions and exits</h1>
+        <h1>Portfolio</h1>
         <dl>
-          <dt>Yes tokens</dt>
-          <dd>{formatContracts(totals.yes)}</dd>
-          <dt>No tokens</dt>
-          <dd>{formatContracts(totals.no)}</dd>
           <dt>Mark value</dt>
           <dd>{money.format(totals.markValue)}</dd>
-          <dt>Cost basis</dt>
-          <dd>{money.format(totals.costBasis)}</dd>
           <dt>Unrealized P&amp;L</dt>
           <dd><mark data-tone={pnlTone(totals.unrealizedPnl)}>{money.format(totals.unrealizedPnl)}</mark></dd>
           <dt>Realized P&amp;L</dt>
           <dd><mark data-tone={pnlTone(totals.realizedPnl)}>{money.format(totals.realizedPnl)}</mark></dd>
-          <dt>Redeemable now</dt>
-          <dd>{money.format(totals.redeemable)} <small>Includes settled winners and pre-settlement complete sets.</small></dd>
+          <dt>Redeemable</dt>
+          <dd>{money.format(totals.redeemable)}</dd>
         </dl>
+        <button onClick={loadPositions} disabled={loading}>
+          {loading ? "Refreshing..." : "Refresh"}
+        </button>
       </section>
 
       <section>
-        <nav>
-          <DeskSelector
-            desks={desks}
-            selectedDeskId={selectedDesk?.id ?? desks[0]?.id ?? ""}
-            onChange={setSelectedDeskId}
-            label="Wallet"
-          />
-          <button
-            onClick={loadPositions}
-            disabled={loading}
-          >
-            {loading ? "Refreshing..." : "Refresh"}
-          </button>
-        </nav>
-
-        <p>
-          {selectedDesk ? (
-            canMutateSelectedDesk
-              ? `Viewing ${selectedDesk.label}. Redeem and complete-set exit actions are enabled.`
-              : `Viewing ${selectedDesk.label} in read-only mode. Connect that wallet to sign exits.`
-          ) : (
-            "No wallet selected."
-          )}
-        </p>
-
-        {partialHistoryVisible && (
-          <p><mark data-tone="blue">Cost basis and unrealized P&amp;L are hidden for positions whose current inventory is older than the fetched transaction window or came from non-canonical flows.</mark></p>
-        )}
-
         {error && <p><mark data-tone="red">{error}</mark></p>}
 
-        {enriched.length === 0 ? (
-          <p><mark data-tone="muted">{loading ? "Loading wallet positions..." : "No positions found for this wallet."}</mark></p>
+        {!wallet ? (
+          <p><mark data-tone="muted">Connect wallet to view positions.</mark></p>
+        ) : enriched.length === 0 ? (
+          <p><mark data-tone="muted">{loading ? "Loading..." : "No positions found."}</mark></p>
         ) : (
           <table>
             <thead>
@@ -301,21 +232,10 @@ export function Portfolio() {
                 <th>Status</th>
                 <th>Yes</th>
                 <th>No</th>
-                <th>Yes price</th>
-                <th>No price</th>
+                <th>Current price</th>
                 <th>Mark</th>
                 <th>Cost</th>
-                <th>U. P&amp;L</th>
-                <th>R. P&amp;L</th>
-                <th>Yes entry</th>
-                <th>No entry</th>
-                <th>Pair entry</th>
-                <th>Best mid</th>
-                <th>History</th>
-                <th>Paired</th>
-                <th>Depth</th>
-                <th>Pairs minted</th>
-                <th>Settlement</th>
+                <th>P&amp;L</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -330,35 +250,16 @@ export function Portfolio() {
                     <td>{formatContracts(position.yesBalance)}</td>
                     <td>{formatContracts(position.noBalance)}</td>
                     <td>{formatUsdcBaseUnits(position.yesPrice)}</td>
-                    <td>{formatUsdcBaseUnits(position.noPrice)}</td>
                     <td>{money.format(position.markValue)}</td>
                     <td>{position.costBasis != null ? money.format(position.costBasis) : "--"}</td>
                     <td><mark data-tone={pnlTone(position.unrealizedPnl)}>{position.unrealizedPnl != null ? money.format(position.unrealizedPnl) : "--"}</mark></td>
-                    <td><mark data-tone={pnlTone(position.performance?.realizedPnl ?? 0)}>{money.format(position.performance?.realizedPnl ?? 0)}</mark></td>
-                    <td>{formatUsdcBaseUnits(position.performance?.yesEntryPrice ?? null)}</td>
-                    <td>{formatUsdcBaseUnits(position.performance?.noEntryPrice ?? null)}</td>
-                    <td>{formatUsdcBaseUnits(position.performance?.pairEntryPrice ?? null)}</td>
-                    <td>{formatUsdcBaseUnits(position.marketView?.yesMid ?? null)}</td>
                     <td>
-                      {position.performance?.partialHistory
-                        ? <mark data-tone="blue">Partial</mark>
-                        : "Covered"}
-                    </td>
-                    <td>{formatContracts(position.performance?.pairedContracts ?? 0)}</td>
-                    <td>{formatContracts(position.marketView?.totalDepth ?? 0)}</td>
-                    <td>{formatContracts(position.marketView?.totalPairsMinted ?? 0)}</td>
-                    <td>{formatUsdcBaseUnits(position.settlementPrice ?? position.marketView?.settlementPrice ?? null)}</td>
-                    <td>
-                      {position.redeemable > 0 && canMutateSelectedDesk ? (
+                      {position.redeemable > 0 ? (
                         <button onClick={() => void handleRedeem(position)}>
-                          {position.settled ? "Redeem" : "Exit complete set"}
+                          {position.settled ? "Redeem" : "Exit"}
                         </button>
                       ) : (
-                        <mark data-tone="muted">
-                          {position.redeemable === 0
-                            ? position.settled ? "Nothing redeemable" : "Single-leg"
-                            : "Read-only"}
-                        </mark>
+                        <mark data-tone="muted">--</mark>
                       )}
                       {actionState[actionKey] && (
                         <small> {actionState[actionKey]}</small>

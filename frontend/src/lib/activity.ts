@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { BorshInstructionCoder, type Idl } from "@coral-xyz/anchor";
 import {
   type ParsedInstruction,
@@ -229,9 +229,9 @@ function normalizeInstruction(
   };
 }
 
-async function fetchProgramSignatures(rawLimit: number): Promise<string[]> {
+async function fetchProgramSignatures(rawLimit: number, before?: string): Promise<string[]> {
   const sigs = await connection.getSignaturesForAddress(
-    PROGRAM_ID, { limit: rawLimit }, "confirmed"
+    PROGRAM_ID, { limit: rawLimit, ...(before ? { before } : {}) }, "confirmed"
   );
   return sigs.map((s) => s.signature);
 }
@@ -353,9 +353,48 @@ export async function fetchActivityFeed(
   }
 }
 
+async function fetchOlderActivity(
+  beforeSignature: string,
+  limit: number,
+  marketLookup: Map<string, MarketLookupEntry>,
+  filterTicker?: Ticker,
+): Promise<{ records: ActivityRecord[]; hasMore: boolean }> {
+  const coder = new BorshInstructionCoder(idl as Idl);
+  const signatures = await fetchProgramSignatures(limit * 3, beforeSignature);
+  if (signatures.length === 0) return { records: [], hasMore: false };
+
+  const transactions = await connection.getParsedTransactions(signatures.slice(0, limit), {
+    commitment: "confirmed",
+    maxSupportedTransactionVersion: 0,
+  });
+
+  const activity: ActivityRecord[] = [];
+  for (const tx of transactions) {
+    if (!tx) continue;
+    for (const instruction of tx.transaction.message.instructions) {
+      if (!isPartiallyDecodedInstruction(instruction)) continue;
+      if (!instruction.programId.equals(PROGRAM_ID)) continue;
+      const normalized = normalizeInstruction(tx, instruction, marketLookup, coder);
+      if (!normalized) continue;
+      if (!normalized.marketAddress || !marketLookup.has(normalized.marketAddress)) continue;
+      if (filterTicker && normalized.ticker !== filterTicker) continue;
+      activity.push(normalized);
+    }
+  }
+
+  activity.sort((a, b) => {
+    if ((b.blockTime ?? 0) !== (a.blockTime ?? 0)) return (b.blockTime ?? 0) - (a.blockTime ?? 0);
+    return b.slot - a.slot;
+  });
+
+  return { records: activity.slice(0, limit), hasMore: signatures.length >= limit };
+}
+
 export function useActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: Ticker) {
   const [data, setData] = useState<ActivityRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const bufferRef = useRef<ActivityRecord[]>([]);
   const marketLookupRef = useRef<Map<string, MarketLookupEntry>>(new Map());
@@ -366,7 +405,6 @@ export function useActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: Ticker) {
 
   useEffect(() => {
     let alive = true;
-    const RING_SIZE = 120;
 
     async function init() {
       const contextMarkets = ctxRef.current
@@ -375,8 +413,9 @@ export function useActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: Ticker) {
       const { records, lookup } = await fetchActivityFeed(limit, filterTicker, contextMarkets);
       if (!alive) return;
       marketLookupRef.current = lookup;
-      bufferRef.current = records.slice(0, RING_SIZE);
+      bufferRef.current = records;
       setData([...bufferRef.current]);
+      setHasMore(records.length >= limit);
       setError(null);
     }
 
@@ -418,7 +457,7 @@ export function useActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: Ticker) {
             }
 
             if (newRecords.length === 0 || !alive) return;
-            bufferRef.current = [...newRecords, ...bufferRef.current].slice(0, RING_SIZE);
+            bufferRef.current = [...newRecords, ...bufferRef.current];
             setData([...bufferRef.current]);
           } catch {
             // ignore tx fetch errors
@@ -434,7 +473,27 @@ export function useActivityFeed(limit = ACTIVITY_LIMIT, filterTicker?: Ticker) {
     };
   }, [limit, filterTicker]);
 
-  return { data, loading, error };
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore || bufferRef.current.length === 0) return;
+    const oldest = bufferRef.current[bufferRef.current.length - 1];
+    if (!oldest) return;
+
+    setLoadingMore(true);
+    try {
+      const result = await fetchOlderActivity(
+        oldest.signature, limit, marketLookupRef.current, filterTicker
+      );
+      bufferRef.current = [...bufferRef.current, ...result.records];
+      setData([...bufferRef.current]);
+      setHasMore(result.hasMore);
+    } catch {
+      // ignore load more errors
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, hasMore, limit, filterTicker]);
+
+  return { data, loading, loadingMore, hasMore, error, loadMore };
 }
 
 export function formatActivityPrice(record: ActivityRecord): number | null {

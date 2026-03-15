@@ -25,7 +25,7 @@ function sideTone(side: "yes" | "no" | null): "green" | "red" | "muted" {
 
 export function History() {
   const wallet = useAnchorWallet();
-  const { data, loading, error } = useActivityFeed(ACTIVITY_LIMIT);
+  const { data, loading, loadingMore, hasMore, error, loadMore } = useActivityFeed(ACTIVITY_LIMIT);
   const [tickerFilter, setTickerFilter] = useState<Ticker | "all">("all");
   const [viewMode, setViewMode] = useState<"mine" | "all">("mine");
   const desks = useMemo(() => getDeskWallets(wallet?.publicKey), [wallet]);
@@ -194,6 +194,12 @@ export function History() {
               })}
             </tbody>
           </table>
+        )}
+
+        {hasMore && !loading && (
+          <button onClick={() => void loadMore()} disabled={loadingMore}>
+            {loadingMore ? "Loading..." : `Load more (${filtered.length} shown)`}
+          </button>
         )}
       </section>
     </>

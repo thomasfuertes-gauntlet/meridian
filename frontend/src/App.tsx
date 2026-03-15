@@ -63,7 +63,7 @@ export default function App() {
 
   return (
     <ConnectionProvider endpoint={RPC_URL}>
-      <WalletProvider wallets={wallets} autoConnect={IS_LOCAL_RPC}>
+      <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
           <MarketDataProvider>
           <header>

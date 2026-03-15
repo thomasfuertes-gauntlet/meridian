@@ -274,19 +274,22 @@ export function TradePanel({
       </button>
 
       {bestBid == null && bestAsk == null && (
-        <button
-          type="button"
-          onClick={() => {
-            const base = import.meta.env.VITE_SIGNAL_URL;
-            const url = base
-              ? `${base}/active-market?ticker=${encodeURIComponent(ticker)}`
-              : `/api/active-ticker?ticker=${encodeURIComponent(ticker)}`;
-            fetch(url).catch(() => {});
-            setStatus(`Requested liquidity for ${ticker}`);
-          }}
-        >
-          Request liquidity
-        </button>
+        <>
+          <p><small>Empty book - enter a price to place the first limit order, or request bot liquidity.</small></p>
+          <button
+            type="button"
+            onClick={() => {
+              const base = import.meta.env.VITE_SIGNAL_URL;
+              const url = base
+                ? `${base}/active-market?ticker=${encodeURIComponent(ticker)}`
+                : `/api/active-ticker?ticker=${encodeURIComponent(ticker)}`;
+              fetch(url).catch(() => {});
+              setStatus(`Requested liquidity for ${ticker}`);
+            }}
+          >
+            Request liquidity
+          </button>
+        </>
       )}
 
       {status && <small>{status}</small>}

@@ -108,8 +108,8 @@ export function MarketDetail() {
     <>
       <section>
         <Link to="/markets">← Back to markets</Link>
-        <header>
-          <h1>{ticker} <small>{snapshot?.company ?? ticker}</small></h1>
+        <h1>{ticker} <small>{snapshot?.company ?? ticker}</small></h1>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
           <dl>
             <dt>Spot</dt>
             <dd>{snapshot?.latestPrice != null ? `$${snapshot.latestPrice.toFixed(2)}` : "--"}</dd>
@@ -144,7 +144,7 @@ export function MarketDetail() {
               )}
             </dl>
           )}
-        </header>
+        </div>
         {error && <p><mark data-tone="red">{error}</mark></p>}
       </section>
 
@@ -201,7 +201,7 @@ export function MarketDetail() {
         </div>
 
         <div style={{ position: "sticky", top: "1rem", alignSelf: "start" }}>
-          {featured && usdcMint && featured.bestBid != null && featured.bestAsk != null ? (
+          {featured && usdcMint ? (
             <TradePanel
               market={featured.publicKey}
               yesMint={featured.yesMint}
@@ -214,7 +214,7 @@ export function MarketDetail() {
             />
           ) : (
             <section>
-              <p><mark data-tone="muted">Entry is unavailable until the selected market has a visible top of book.</mark></p>
+              <p><mark data-tone="muted">No market selected.</mark></p>
             </section>
           )}
         </div>

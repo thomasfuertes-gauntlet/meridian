@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import { BN } from "@coral-xyz/anchor";
 import { Keypair, PublicKey, Transaction } from "@solana/web3.js";
@@ -135,7 +135,7 @@ export function TradePanel({
   // Sell No limit can't be atomic (bid + redeem requires async fill)
   const sellNoLimitBlocked = action === "sellNo" && isResting;
 
-  const handleTrade = useCallback(async () => {
+  async function handleTrade() {
     if (!wallet || effectivePrice == null || sellNoLimitBlocked) return;
 
     setStatus("Building transaction...");
@@ -205,19 +205,7 @@ export function TradePanel({
       console.error("Trade failed:", err);
       setStatus(`Error: ${friendlyError(err)}`);
     }
-  }, [
-    wallet,
-    connection,
-    action,
-    quantity,
-    effectivePrice,
-    isResting,
-    sellNoLimitBlocked,
-    market,
-    yesMint,
-    noMint,
-    usdcMint,
-  ]);
+  }
 
   const strikeDollars = (strikePrice / USDC_PER_PAIR).toFixed(2);
 

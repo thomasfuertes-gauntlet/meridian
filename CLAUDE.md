@@ -15,6 +15,7 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - USDC uses 6 decimal places. 1.00 USDC = 1_000_000 base units. All invariant checks at base-unit precision.
 - Position constraints are frontend-only UX guardrails. Tokens are freely transferable SPL tokens.
 - "Closing price" = Pyth real-time price at ~4:05 PM ET, not official NYSE/NASDAQ close.
+- **Pyth terminology**: Pyth = oracle network. Hermes = HTTP API serving signed prices. VAA = Wormhole-signed price blob. PriceUpdateV2 = on-chain account holding a posted VAA. All one system, four layers.
 
 ## Stack
 
@@ -59,7 +60,7 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 
 - OrderBook uses `#[account(zero_copy)]` + `AccountLoader` (4720 bytes exceeds 4096 stack limit for Borsh).
 - `AccountLoader` does not support `has_one` or field constraints in `#[account()]` - validate in handler body.
-- Escrow vaults (`ob_usdc_vault`, `ob_yes_vault`) are separate from the market vault. CLOB never touches market vault.
+- Escrow vaults (`ob_usdc_vault`, `ob_yes_vault`) use orderbook PDA authority; market vault uses market PDA authority. Different signing authorities = CLOB bugs cannot drain collateral. `mint_pair`/`redeem` only touch market vault; CLOB only touches OB vaults.
 - **Credit/claim model**: Taker fills (`buy_yes`/`sell_yes`) do one CPI transfer to the taker, then credit maker balances in OrderBook zero_copy memory. No `remaining_accounts` needed. Makers withdraw via `claim_fills` (permissionless, any market state). Breaking layout change per deploy.
 - `placeOrder` validates user's Yes ATA exists for both bid and ask sides. Create ATAs with `createAssociatedTokenAccountIdempotentInstruction` before any orders - don't rely on `mintPair` side effects.
 - **Mock Pyth oracle** (`mock-pyth/`): Standalone native Solana program (~30 lines, no Anchor) deployed at the real Pyth Receiver address via `--bpf-program`. Accepts raw bytes and writes them to an account, enabling `settle_market` (permissionless oracle path) on localnet. Built once by `cargo build-sbf` (~30s), cached via Make dependency on `mock-pyth/src/lib.rs`. Both `make local` and `make test` auto-build it. TS helpers in `scripts/mock-pyth.ts` (`buildMockPriceUpdateV2Data`, `createMockPriceUpdate`) are the public API for tests and `settle-cycle.ts`.
@@ -76,6 +77,9 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 
 - **No Tailwind.** Frontend uses semantic HTML (nav, section, table, dl, form, etc.) with global CSS in `index.css`. Element selectors + CSS custom properties + `data-*` attributes for state. No utility classes.
 - Zero-copy OrderBook must be parsed from raw buffer in frontend (Anchor IDL codegen doesn't support zero_copy). See `frontend/src/lib/orderbook.ts`.
+- `TradePanel` does not receive or use orderbook data. It only needs `bestBid`/`bestAsk` for display pricing.
+- **Taker order pricing**: Market orders send `USDC_PER_PAIR - 1` (buy) / `1` (sell) as on-chain price to sweep all levels. Do not use `bestAsk`/`bestBid` as the on-chain price - that only fills top-of-book. `effectivePrice` is for display only.
+- **Lean on Rust for validation.** Frontend does not cap quantity or block submission based on book depth. On-chain fill-or-kill (`AtomicTradeIncomplete`) is the single source of truth. Frontend's 10s poll is too stale to gate transactions.
 - Current active trade composition is:
   Buy No = `mint_pair` + `sell_yes`
   Sell No = `buy_yes` + `redeem`

@@ -17,7 +17,7 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 
 ## Architecture at a Glance
 
-- **18 on-chain instructions** - see `OVERVIEW.md` for the full contract surface.
+- **On-chain instructions** - see `OVERVIEW.md` for the full contract surface.
 - **Market lifecycle**: Created → Frozen → Settled. Settlement auto-credits all resting orders (no drain requirement).
 - **Four trade paths** on one Yes/USDC order book: Buy Yes, Sell Yes, Buy No (`mint_pair` + `sell_yes`), Sell No (`buy_yes` + `redeem`).
 - **Hermetic oracle testing** - A lightweight mock Pyth program (`mock-pyth/`) runs on localnet, enabling the full permissionless `settle_market` oracle path without network dependencies. Same validation chain (feed ID, staleness, confidence, verification level) runs against deterministic test data.

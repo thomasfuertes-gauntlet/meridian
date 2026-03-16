@@ -22,7 +22,7 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - Anchor 0.32.0 / Solana CLI 3.1.9 / Rust 1.94.0
 - `pyth-solana-receiver-sdk` 1.1.0 (pull-based oracle, PriceUpdateV2)
 - Standard SPL tokens (0 decimals for Yes/No, 6 for USDC). Custom devnet USDC mint.
-- Built-in CLOB (32 orders/side, zero_copy OrderBook, separate escrow vaults per market)
+- Built-in CLOB (zero_copy OrderBook, separate escrow vaults per market)
 
 ## Decisions Resolved
 
@@ -43,14 +43,13 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 
 ## Dev Environment
 
-- Source toolchain: `source ~/.cargo/env`. On this host, fresh non-interactive `zsh -lc` shells already resolve both Solana and Anchor, so the extra Solana `PATH` export is currently redundant.
-- Commands in this environment run through non-interactive `zsh`; keep toolchain setup in shell startup files that `zsh -lc` reads, not only in interactive-only shell config.
+- Commands run through non-interactive `zsh`; keep toolchain setup in shell startup files that `zsh -lc` reads, not only in interactive-only shell config.
 - Tests use `.accountsPartial({})` not `.accounts({})` - Anchor 0.32 auto-resolves PDAs.
 - `vault.reload()` after CPI transfers to refresh cached account data before invariant checks.
 - Pyth equity feeds only update during US market hours on devnet. Use admin_settle for off-hours testing.
 - `StrikeMarket` stores `usdc_mint` (added after `vault`). Changing field order shifts Borsh layout - existing accounts incompatible. Devnet: `make nuke NUKE_FLAGS="--yes"` then `make devnet-deploy` for fresh markets.
 - **Deterministic dev wallets** in `.wallets/` (gitignored) - see README for derivation details and security warning.
-- **Frontend auto-sign**: On localhost, "Dev Wallet" appears in wallet picker. Uses a dedicated `user` keypair (`sha256("meridian-dev-user")`) - separate from bot wallets so the UI portfolio is clean of bot activity. Funded with SOL only (no USDC faucet). Bots (bot-a, bot-b) each get 1,000,000 USDC. Phantom also available via Wallet Standard alongside Dev Wallet.
+- **Frontend auto-sign**: On localhost, "Dev Wallet" appears in wallet picker. Uses a dedicated keypair separate from bot wallets - UI portfolio stays clean of bot activity. Funded with SOL only (no USDC faucet). Phantom also available via Wallet Standard alongside Dev Wallet.
 - Prefer a local `frontend/.env.local` for frontend-only local overrides; do not use Vite env files to drive root bootstrap scripts.
 - USDC mint address written to `frontend/src/lib/local-config.json` by setup script (gitignored, changes per session).
 - Phantom must use custom RPC `http://localhost:8899` for local dev (not devnet setting).
@@ -58,7 +57,7 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 
 ## CLOB Dev Notes
 
-- OrderBook uses `#[account(zero_copy)]` + `AccountLoader` (4720 bytes exceeds 4096 stack limit for Borsh).
+- OrderBook uses `#[account(zero_copy)]` + `AccountLoader` (Borsh deserialization exceeds Solana's stack limit at full occupancy).
 - `AccountLoader` does not support `has_one` or field constraints in `#[account()]` - validate in handler body.
 - Escrow vaults (`ob_usdc_vault`, `ob_yes_vault`) use orderbook PDA authority; market vault uses market PDA authority. Different signing authorities = CLOB bugs cannot drain collateral. `mint_pair`/`redeem` only touch market vault; CLOB only touches OB vaults.
 - **Credit/claim model**: Taker fills (`buy_yes`/`sell_yes`) do one CPI transfer to the taker, then credit maker balances in OrderBook zero_copy memory. No `remaining_accounts` needed. Makers withdraw via `claim_fills` (permissionless, any market state). Breaking layout change per deploy.
@@ -84,12 +83,9 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
   Buy No = `mint_pair` + `sell_yes`
   Sell No = `buy_yes` + `redeem`
   Pre-settlement complete-set exits should route through `redeem`, not `burn_pair`.
-- `vite-plugin-node-polyfills` required for Buffer/crypto in Solana libs.
 - Pyth Hermes equity feed IDs verified via `hermes.pyth.network/v2/price_feeds?query=TICKER&asset_type=equity`. Don't guess IDs.
 - Pyth Hermes batch endpoint is all-or-nothing: one invalid feed ID returns 404 for entire batch. Frontend fetches individually via Promise.allSettled.
 - `accountsPartial` silently ignores unknown keys. Always match IDL names exactly (camelCase in TS, snake_case in IDL - SDK converts). Wrong names compile fine but fail at runtime with "Account X not provided".
-- `mintPair(amount)` takes a u64 amount. `burnPair` is disabled at runtime and should not be used for new work.
-- `@solana/wallet-adapter-wallets` removed. Phantom self-registers via Wallet Standard. `wallets` array is empty on production, only `LocalDevWalletAdapter` on localhost.
 - `vite.config.js` is gitignored (see comment in `vite.config.ts` for why).
 
 ## Bot System

@@ -1,5 +1,7 @@
 # Meridian
 
+**Live:** https://meridian-production-f1f3.up.railway.app
+
 Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on whether a stock closes above a strike price, with a hard $1 USDC payout invariant.
 
 > **This file**: developer onboarding - repo layout, setup, local/devnet workflow.

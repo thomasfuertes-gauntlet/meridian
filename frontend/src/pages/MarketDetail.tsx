@@ -317,7 +317,6 @@ export function MarketDetail() {
               ticker={featured.ticker}
               bestBid={featured.bestBid}
               bestAsk={featured.bestAsk}
-              orderBook={featured.orderBook ?? null}
             />
           ) : (
             <section>

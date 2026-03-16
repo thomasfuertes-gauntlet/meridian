@@ -19,7 +19,6 @@ import {
 } from "../lib/trade";
 import { getPositionConflict } from "../lib/portfolio";
 import { USDC_PER_PAIR } from "../lib/constants";
-import type { ParsedOrder, ParsedOrderBook } from "../lib/orderbook";
 
 // Admin keypair for localhost USDC minting (mint authority)
 const ADMIN_SEED = new Uint8Array([
@@ -39,27 +38,6 @@ interface TradePanelProps {
   ticker: string;
   bestBid: number | null;
   bestAsk: number | null;
-  orderBook: ParsedOrderBook | null;
-}
-
-/**
- * Walk orders on one side of the book and sum fillable quantity up to a price limit.
- * Orders must already be sorted: asks ascending, bids descending (ParsedOrderBook guarantees this).
- */
-function fillableAtPrice(
-  orders: ParsedOrder[],
-  maxPrice: number | null, // null = market order (take all levels)
-  side: "buy" | "sell"
-): number {
-  let fillable = 0;
-  for (const order of orders) {
-    if (maxPrice != null) {
-      if (side === "buy" && order.price > maxPrice) break;
-      if (side === "sell" && order.price < maxPrice) break;
-    }
-    fillable += order.quantity;
-  }
-  return fillable;
 }
 
 // Map on-chain error messages to user-friendly descriptions
@@ -101,7 +79,6 @@ export function TradePanel({
   ticker,
   bestBid,
   bestAsk,
-  orderBook,
 }: TradePanelProps) {
   const wallet = useAnchorWallet();
   const { connection } = useConnection();
@@ -158,30 +135,21 @@ export function TradePanel({
   // Sell No limit can't be atomic (bid + redeem requires async fill)
   const sellNoLimitBlocked = action === "sellNo" && isResting;
 
-  // Depth-aware fill estimation: how many contracts can actually fill?
-  const fillableQty = (() => {
-    if (!orderBook || isResting) return null; // resting orders don't cross the book
-    // Buy Yes / Sell No walk the ask side; Sell Yes / Buy No walk the bid side
-    const isBuySide = action === "buyYes" || action === "sellNo";
-    const orders = isBuySide ? orderBook.asks : orderBook.bids;
-    const limitPrice = isLimit && wouldCross ? priceUsdc : null; // crossing limit = capped market
-    return fillableAtPrice(orders, limitPrice, isBuySide ? "buy" : "sell");
-  })();
-
-  const requestedQty = parseInt(quantity) || 0;
-  const depthExceeded = fillableQty != null && requestedQty > 0 && requestedQty > fillableQty;
-  const cappedQty = depthExceeded ? fillableQty : requestedQty;
-
   const handleTrade = useCallback(async () => {
     if (!wallet || effectivePrice == null || sellNoLimitBlocked) return;
-    // Block submission when book has zero fillable depth for taker orders
-    if (!isResting && fillableQty === 0) return;
 
     setStatus("Building transaction...");
     try {
       const program = getProgram(wallet);
-      // For taker orders, use capped quantity to avoid AtomicTradeIncomplete
-      const submitQty = isResting ? (parseInt(quantity) || 1) : (cappedQty || parseInt(quantity) || 1);
+      const submitQty = parseInt(quantity) || 1;
+
+      // Market orders sweep the full book; limit orders use the user's price.
+      const isBuySide = action === "buyYes" || action === "sellNo";
+      const onChainPrice = isLimit
+        ? effectivePrice
+        : isBuySide
+          ? USDC_PER_PAIR - 1  // buy: accept any ask up to $0.999999
+          : 1;                  // sell: accept any bid down to $0.000001
 
       const params = {
         program,
@@ -190,7 +158,7 @@ export function TradePanel({
         yesMint,
         noMint,
         usdcMint,
-        price: new BN(effectivePrice),
+        price: new BN(onChainPrice),
         quantity: new BN(submitQty),
       };
 
@@ -245,8 +213,6 @@ export function TradePanel({
     effectivePrice,
     isResting,
     sellNoLimitBlocked,
-    fillableQty,
-    cappedQty,
     market,
     yesMint,
     noMint,
@@ -341,23 +307,6 @@ export function TradePanel({
         />
       </label>
 
-      {/* Depth indicator for taker orders */}
-      {fillableQty != null && !isResting && (
-        <small>
-          Available{effectivePrice != null && isLimit ? ` at $${(effectivePrice / USDC_PER_PAIR).toFixed(2)}` : " (all levels)"}: <strong>{new Intl.NumberFormat("en-US").format(fillableQty)}</strong> contracts
-          {depthExceeded && (
-            <p style={{ margin: "0.25rem 0 0" }}>
-              <mark data-tone="red">Only {new Intl.NumberFormat("en-US").format(fillableQty)} fillable. Will submit {new Intl.NumberFormat("en-US").format(cappedQty)} - place a limit order for the remainder.</mark>
-            </p>
-          )}
-          {fillableQty === 0 && (
-            <p style={{ margin: "0.25rem 0 0" }}>
-              <mark data-tone="red">No liquidity on the book. Place a limit order to seed depth.</mark>
-            </p>
-          )}
-        </small>
-      )}
-
       {/* Crossing price hint */}
       {wouldCross && effectivePrice != null && (
         <small>
@@ -423,19 +372,15 @@ export function TradePanel({
 
       <button
         type="submit"
-        disabled={!wallet || effectivePrice == null || sellNoLimitBlocked || (!isResting && fillableQty === 0)}
+        disabled={!wallet || effectivePrice == null || sellNoLimitBlocked}
       >
         {!wallet
           ? "Connect wallet"
           : sellNoLimitBlocked
             ? "No liquidity"
-            : !isResting && fillableQty === 0
-              ? "No liquidity"
-              : isResting
-                ? `Limit ${ACTION_LABELS[action]}`
-                : depthExceeded
-                  ? `${ACTION_LABELS[action]} ${new Intl.NumberFormat("en-US").format(cappedQty)} of ${new Intl.NumberFormat("en-US").format(requestedQty)}`
-                  : ACTION_LABELS[action]}
+            : isResting
+              ? `Limit ${ACTION_LABELS[action]}`
+              : ACTION_LABELS[action]}
       </button>
 
       {emptyBook && (

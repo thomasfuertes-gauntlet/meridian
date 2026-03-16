@@ -90,7 +90,7 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - `accountsPartial` silently ignores unknown keys. Always match IDL names exactly (camelCase in TS, snake_case in IDL - SDK converts). Wrong names compile fine but fail at runtime with "Account X not provided".
 - `mintPair(amount)` takes a u64 amount. `burnPair` is disabled at runtime and should not be used for new work.
 - `@solana/wallet-adapter-wallets` removed. Phantom self-registers via Wallet Standard. `wallets` array is empty on production, only `LocalDevWalletAdapter` on localhost.
-- `vite.config.js` is gitignored. Vite handles `.ts` config natively. Stale `.js` from tsc crashes Vite when `"type": "module"` is set in package.json.
+- `vite.config.js` is gitignored (see comment in `vite.config.ts` for why).
 
 ## Bot System
 

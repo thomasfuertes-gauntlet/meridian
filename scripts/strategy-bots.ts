@@ -447,8 +447,10 @@ async function main() {
     const marketInfos: MarketInfo[] = [];
     const currentMarkets = [...marketsByKey.values()];
     if (currentMarkets.length === 0) {
-      console.log("[done] All markets settled. Exiting.");
-      process.exit(0);
+      // No markets right now - wait for rediscovery cycle (15 min refresh)
+      console.log("[idle] No active markets. Waiting for new markets...");
+      await sleep(60_000);
+      continue;
     }
     for (const mkt of currentMarkets) {
       // Skip markets past close time

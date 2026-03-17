@@ -450,8 +450,10 @@ async function main() {
     // Pick 1-2 markets uniformly at random
     const markets = [...cache.markets.values()];
     if (markets.length === 0) {
-      console.log("[done] All markets settled. Exiting gracefully.");
-      process.exit(0);
+      // No markets right now - wait for ws-cache to rediscover (5 min refresh)
+      console.log("[idle] No active markets. Waiting for new markets...");
+      await sleep(60_000);
+      continue;
     }
     const batch = randInt(1, Math.min(2, markets.length));
     const selected = [...markets].sort(() => Math.random() - 0.5).slice(0, batch);

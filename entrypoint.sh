@@ -104,7 +104,22 @@ if [[ ${#PIDS[@]} -eq 0 ]]; then
   exit 1
 fi
 
-# Exit container if any process dies (Railway will restart)
-wait -n "${PIDS[@]}"
-echo "FATAL: a process died, exiting for container restart"
-exit 1
+# Monitor child processes. Restart container only if an essential process
+# (automation, signal-server) dies. Bot processes may exit cleanly when no
+# markets exist and should not crash the whole container.
+while true; do
+  wait -n "${PIDS[@]}" 2>/dev/null || true
+  # Check which PIDs are still alive
+  ALIVE=()
+  for pid in "${PIDS[@]}"; do
+    if kill -0 "$pid" 2>/dev/null; then
+      ALIVE+=("$pid")
+    fi
+  done
+  if [[ ${#ALIVE[@]} -eq 0 ]]; then
+    echo "FATAL: all processes exited, restarting container"
+    exit 1
+  fi
+  PIDS=("${ALIVE[@]}")
+  sleep 5
+done

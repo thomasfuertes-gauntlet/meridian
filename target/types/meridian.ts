@@ -1040,8 +1040,8 @@ export type Meridian = {
         {
           "name": "orderBook",
           "docs": [
-            "OrderBook to close. AccountLoader validates zero_copy discriminator.",
-            "Key match to market.order_book validated in handler body."
+            "Only lamports are transferred - no deserialization needed.",
+            "UncheckedAccount tolerates pre-migration OB layouts of any size."
           ],
           "writable": true
         },
@@ -1312,6 +1312,97 @@ export type Meridian = {
           "type": "i64"
         }
       ]
+    },
+    {
+      "name": "forceCloseMarket",
+      "docs": [
+        "Temporary: force-close any market regardless of settlement state.",
+        "Tolerates pre-migration undersized OrderBook accounts."
+      ],
+      "discriminator": [
+        114,
+        40,
+        160,
+        215,
+        157,
+        253,
+        241,
+        215
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.ticker",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.strike_price",
+                "account": "strikeMarket"
+              },
+              {
+                "kind": "account",
+                "path": "market.date",
+                "account": "strikeMarket"
+              }
+            ]
+          }
+        },
+        {
+          "name": "orderBook",
+          "docs": [
+            "Raw account - no deserialization. Tolerates any OB layout size."
+          ],
+          "writable": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "freezeMarket",

@@ -1,10 +1,14 @@
+// KEY-DECISION 2026-03-16: Temporary instruction for nuking pre-migration markets
+// whose OrderBook accounts are undersized (4728 vs 7800 bytes). Skips settlement
+// check and OB deserialization. Remove after devnet cleanup.
+
 use anchor_lang::prelude::*;
 
 use crate::errors::MeridianError;
 use crate::state::{GlobalConfig, StrikeMarket};
 
 #[derive(Accounts)]
-pub struct CloseMarket<'info> {
+pub struct ForceCloseMarket<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
 
@@ -29,17 +33,15 @@ pub struct CloseMarket<'info> {
     pub market: Account<'info, StrikeMarket>,
 
     /// CHECK: Validated by key match to market.order_book in handler.
-    /// Only lamports are transferred - no deserialization needed.
-    /// UncheckedAccount tolerates pre-migration OB layouts of any size.
+    /// Raw account - no deserialization. Tolerates any OB layout size.
     #[account(mut)]
     pub order_book: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<CloseMarket>) -> Result<()> {
+pub fn handler(ctx: Context<ForceCloseMarket>) -> Result<()> {
     let market = &ctx.accounts.market;
-    require!(market.is_settled(), MeridianError::MarketNotSettled);
 
     // Validate order book belongs to this market
     require!(
@@ -47,8 +49,7 @@ pub fn handler(ctx: Context<CloseMarket>) -> Result<()> {
         MeridianError::InvalidOrderBookAccount
     );
 
-    // Close the OrderBook account manually - return rent to admin.
-    // AccountLoader doesn't support Anchor's `close` attribute, so we do it here.
+    // Close the OrderBook account - return rent to admin
     let ob_info = ctx.accounts.order_book.to_account_info();
     let admin_info = ctx.accounts.admin.to_account_info();
 
@@ -59,10 +60,9 @@ pub fn handler(ctx: Context<CloseMarket>) -> Result<()> {
         .checked_add(ob_lamports)
         .ok_or(MeridianError::InvalidAmount)?;
 
-    // Reassign to system program and zero data to mark as closed
     ob_info.assign(&anchor_lang::system_program::ID);
     ob_info.resize(0)?;
 
-    // Market account is closed via Anchor's `close = admin` attribute
+    // Market account closed via Anchor's `close = admin` attribute
     Ok(())
 }

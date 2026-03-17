@@ -110,4 +110,10 @@ pub mod meridian {
     pub fn close_market(ctx: Context<CloseMarket>) -> Result<()> {
         instructions::close_market::handler(ctx)
     }
+
+    /// Temporary: force-close any market regardless of settlement state.
+    /// Tolerates pre-migration undersized OrderBook accounts.
+    pub fn force_close_market(ctx: Context<ForceCloseMarket>) -> Result<()> {
+        instructions::force_close_market::handler(ctx)
+    }
 }

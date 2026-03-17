@@ -59,7 +59,7 @@ else
   echo "Skipping SPA server (ENABLE_FRONTEND=false)"
 fi
 
-if [[ "${ENABLE_LIQUIDITY_BOT:-true}" != "false" ]]; then
+if [[ "${ENABLE_LIQUIDITY_BOT:-false}" != "false" ]]; then
   # Bootstrap: if no active markets exist and it's a weekday during market hours,
   # run the morning job inline so bots don't crash-loop waiting for the 8 AM cron.
   MARKET_COUNT=$(npx tsx -e "
@@ -88,7 +88,7 @@ else
   echo "Skipping live-bots (ENABLE_LIQUIDITY_BOT=false)"
 fi
 
-if [[ "${ENABLE_TRADE_BOTS:-true}" != "false" ]]; then
+if [[ "${ENABLE_TRADE_BOTS:-false}" != "false" ]]; then
   echo "Waiting 90s for order book liquidity + RPC cooldown..."
   sleep 90
 

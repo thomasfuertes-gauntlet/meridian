@@ -4,7 +4,7 @@
 	local local-cycle local-settle local-seed \
 	local-live local-strategy local-ui local-validator-reset \
 	test uat \
-	devnet-deploy _devnet-setup devnet-fund-bots devnet-health \
+	devnet-deploy _devnet-setup devnet-fund-bots devnet-settle devnet-health \
 	nuke \
 	railway-deploy railway-env
 
@@ -195,6 +195,9 @@ _devnet-setup: _wallets _devnet-env
 devnet-fund-bots: _wallets _devnet-env  ## Fund bot-a/bot-b with SOL + USDC
 	$(DEVNET_TS_ENV) $(TSX) scripts/fund-bots.ts
 
+devnet-settle: _wallets _devnet-env  ## Settle all pending devnet markets (admin_settle, requires 1hr past close)
+	$(DEVNET_TS_ENV) RPC_URL="$(DEVNET_URL)" HERMES_URL="https://hermes-beta.pyth.network" $(TSX) scripts/automation.ts --settle
+
 devnet-health: _wallets _devnet-env
 	$(DEVNET_READONLY_ENV) $(TSX) scripts/health-check.ts
 
@@ -217,6 +220,7 @@ railway-env: _railway-env  ## Sync env vars to Railway service
 		"RAILWAY_DOCKERFILE_PATH=Dockerfile" \
 		"ENABLE_LIQUIDITY_BOT=$(ENABLE_LIQUIDITY_BOT)" \
 		"ENABLE_TRADE_BOTS=$(ENABLE_TRADE_BOTS)" \
+		"HERMES_URL=https://hermes-beta.pyth.network" \
 	| xargs railway variable set -s "$(RAILWAY_SERVICE)"
 
 # ── Build & Cleanup ────────────────────────────────────────────

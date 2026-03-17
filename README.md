@@ -21,7 +21,7 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
 - **Market lifecycle**: Created → Frozen → Settled. Settlement auto-credits all resting orders (no drain requirement).
 - **Four trade paths** on one Yes/USDC order book: Buy Yes, Sell Yes, Buy No (`mint_pair` + `sell_yes`), Sell No (`buy_yes` + `redeem`).
 - **Hermetic oracle testing** - A lightweight mock Pyth program (`mock-pyth/`) runs on localnet, enabling the full permissionless `settle_market` oracle path without network dependencies. Same validation chain (feed ID, staleness, confidence, verification level) runs against deterministic test data.
-- **Devnet settlement**: Automation cron fires at **4:07 PM ET**. Tries `settle_market` (Pyth pull oracle, no delay) first; falls back to `admin_settle` (1hr delay, retries until ~5:00 PM ET). Set `HERMES_URL=https://hermes-beta.pyth.network` for devnet-compatible Wormhole VAAs. Localnet settlement uses the same oracle path via mock-pyth, with `admin_settle` as fallback.
+- **Devnet settlement**: Automation cron fires **once** at **4:07 PM ET**. Tries `settle_market` (Pyth pull oracle, no delay) first; falls back to `admin_settle` (requires `close_time + 1hr`). **The job does not retry "too early" failures** - if the oracle path fails at 4:07 PM, admin_settle won't be eligible until 5:00 PM, and by then the job has already exited. To settle stale markets, run manually: `make devnet-settle` (sets `RPC_URL`, `HERMES_URL` automatically). **`HERMES_URL=https://hermes-beta.pyth.network` is required** for devnet - without it, the oracle path uses mainnet Hermes which returns 404 for devnet feeds, and all markets fail. Localnet settlement uses the same oracle path via mock-pyth, with `admin_settle` as fallback.
 - **Oracle**: Pyth pull-based. Staleness threshold 300s, confidence band reject > 1% of price. Both configurable per ticker in `GlobalConfig.oracle_policies`.
 
 ## Local Workflow
@@ -106,6 +106,7 @@ cp .env.example .env
 # Fill in DEVNET_RPC_URL, DEVNET_USDC_MINT
 make devnet-deploy   # build + deploy + ensure USDC mint + GlobalConfig
 make devnet-health   # verify deployment
+make devnet-settle   # manually settle stale markets (requires 1hr past close)
 ```
 
 ## RPC Provider Requirements
@@ -171,26 +172,34 @@ All bot activity is scoped to NVDA.
 
 - Dockerfile: `Dockerfile` (root, multi-stage: builds frontend SPA, then runtime with scripts)
 - Entrypoint: `entrypoint.sh`
-- Runs five processes under `wait -n` (container restarts if any die):
-  - automation cron (market creation at 8:00 AM ET + settlement at 4:07 PM ET)
-  - signal-server (`scripts/signal-server.ts`, listens on `PORT`) - serves frontend SPA static files
-  - seed-bots (long-running, re-seeds every 15 min during market hours)
-  - live-bots (market maker, bot-a wallet)
-  - strategy-bots (4 directional strategies, bot-b wallet) - starts **90s after live-bots** to stagger initial market discovery
+- Processes controlled by feature flags (container restarts via `wait -n` if any enabled process dies):
+
+| Process | Flag | Default | Description |
+|---------|------|---------|-------------|
+| automation cron | `ENABLE_AUTOMATION` | `true` | Market creation 8:00 AM ET + settlement 4:07 PM ET |
+| signal-server | `ENABLE_FRONTEND` | `true` | SPA static files on `PORT` |
+| seed-bots | `ENABLE_LIQUIDITY_BOT` | `false` | Re-seeds empty books every 15 min |
+| live-bots | `ENABLE_LIQUIDITY_BOT` | `false` | Market maker (bot-a) |
+| strategy-bots | `ENABLE_TRADE_BOTS` | `false` | 4 directional strategies (bot-b), starts 90s after live-bots |
+
+> **Bots are off by default.** Set `ENABLE_LIQUIDITY_BOT=true` and `ENABLE_TRADE_BOTS=true` in Railway env vars to enable them. Without bots, markets will have empty order books.
 
 ### Environment Variables
 
-| Variable | Purpose |
-|----------|---------|
-| `VITE_RPC_URL` | Helius devnet RPC URL (baked into SPA at build time) |
-| `VITE_USDC_MINT` | Devnet USDC mint address (baked into SPA at build time) |
-| `VITE_DEV_WALLET` | `true` to enable auto-sign Dev Wallet |
-| `USDC_MINT` | Devnet USDC mint address (runtime, for bots) |
-| `ANCHOR_PROVIDER_URL` | Helius devnet RPC URL (runtime, for Anchor SDK + bots; `RPC_URL` is derived from this in `entrypoint.sh`) |
-| `HERMES_URL` | `https://hermes-beta.pyth.network` for devnet-compatible Wormhole VAAs |
-| `ALERT_WEBHOOK_URL` | Slack/Discord incoming webhook for automation failure alerts (optional) |
-| `PORT` | Signal-server listen port (set by Railway automatically) |
-| `RAILWAY_DOCKERFILE_PATH` | Set to `Dockerfile`; if auto-detect picks wrong file, also set in Railway dashboard: Settings > Build > Dockerfile Path |
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `ANCHOR_PROVIDER_URL` | **yes** | Helius devnet RPC URL (runtime, for Anchor SDK + bots; `RPC_URL` derived from this) |
+| `USDC_MINT` | **yes** | Devnet USDC mint address (runtime, for bots) |
+| `HERMES_URL` | **yes** | Must be `https://hermes-beta.pyth.network` for devnet. Without this, oracle settlement fails 100% (mainnet Hermes returns 404 for devnet feeds) |
+| `VITE_RPC_URL` | **yes** | Helius devnet RPC URL (baked into SPA at build time) |
+| `VITE_USDC_MINT` | **yes** | Devnet USDC mint address (baked into SPA at build time) |
+| `VITE_DEV_WALLET` | no | `true` to enable auto-sign Dev Wallet in frontend |
+| `ENABLE_LIQUIDITY_BOT` | no | `true` to run seed-bots + live-bots (default: `false`) |
+| `ENABLE_TRADE_BOTS` | no | `true` to run strategy-bots (default: `false`) |
+| `ENABLE_AUTOMATION` | no | `false` to disable morning + settlement cron (default: `true`) |
+| `ALERT_WEBHOOK_URL` | no | Slack/Discord incoming webhook for automation failure alerts |
+| `PORT` | no | Signal-server listen port (set by Railway automatically) |
+| `RAILWAY_DOCKERFILE_PATH` | no | Set to `Dockerfile`; if auto-detect picks wrong file, also set in Railway dashboard |
 
 ## Current Frontend State
 

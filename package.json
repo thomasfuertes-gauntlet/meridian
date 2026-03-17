@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts",
-    "local:ui": "cd frontend && npm run dev"
+    "local:ui": "cd frontend && npm run dev",
+    "postinstall": "node scripts/patch-rpc-websockets.cjs"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.0",

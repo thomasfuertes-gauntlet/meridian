@@ -83,7 +83,7 @@ Binary outcome markets for MAG7 stocks on Solana. Users trade Yes/No tokens on w
   Buy No = `mint_pair` + `sell_yes`
   Sell No = `buy_yes` + `redeem`
   Pre-settlement complete-set exits should route through `redeem`, not `burn_pair`.
-- Pyth Hermes equity feed IDs verified via `hermes.pyth.network/v2/price_feeds?query=TICKER&asset_type=equity`. Don't guess IDs.
+- Pyth feed IDs differ between mainnet and devnet. Current IDs in `scripts/pyth.ts` and `config.rs` are devnet (hermes-beta) IDs. Verify via `hermes-beta.pyth.network/v2/price_feeds?query=TICKER&asset_type=equity`. Don't guess IDs.
 - `accountsPartial` silently ignores unknown keys. Always match IDL names exactly (camelCase in TS, snake_case in IDL - SDK converts). Wrong names compile fine but fail at runtime with "Account X not provided".
 - `vite.config.js` is gitignored (see comment in `vite.config.ts` for why).
 

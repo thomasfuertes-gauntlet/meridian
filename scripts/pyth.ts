@@ -5,7 +5,20 @@
  * Includes fallback hardcoded prices for devnet/off-hours testing.
  */
 
-export const PYTH_FEED_IDS: Record<string, string> = {
+// KEY-DECISION 2026-03-17: mainnet and devnet Pyth use different feed IDs.
+// Verified via hermes[-beta].pyth.network/v2/price_feeds?query=<TICKER>&asset_type=equity
+// Selected at runtime from ANCHOR_PROVIDER_URL (mainnet = no "devnet"/localhost in URL).
+const PYTH_FEED_IDS_DEVNET: Record<string, string> = {
+  AAPL: "afcc9a5bb5eefd55e12b6f0b4c8e6bccf72b785134ee232a5d175afd082e8832",
+  MSFT: "4e10201a9ad79892f1b4e9a468908f061f330272c7987ddc6506a254f77becd7",
+  GOOGL: "545b468a0fc88307cf64f7cda62b190363089527f4b597887be5611b6cefe4f1",
+  AMZN: "095e126b86f4f416a21da0c44b997a379e8647514a1b78204ca0a6267801d00f",
+  NVDA: "16e38262485de554be6a09b0c1d4d86eb2151a7af265f867d769dee359cec32e",
+  META: "057aef33dd5ca9b91bef92c6aee08bca76565934008ed3c8d55e382ed17fb883",
+  TSLA: "7dac7cafc583cc4e1ce5c6772c444b8cd7addeecd5bedb341dfa037c770ae71e",
+};
+
+const PYTH_FEED_IDS_MAINNET: Record<string, string> = {
   AAPL: "49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688",
   MSFT: "d0ca23c1cc005e004ccf1db5bf76aeb6a49218f43dac3d4b275e92de12ded4d1",
   GOOGL: "5a48c03e9b9cb337801073ed9d166817473697efff0d138874e0f6a33d6d5aa6",
@@ -14,6 +27,15 @@ export const PYTH_FEED_IDS: Record<string, string> = {
   META: "78a3e3b8e676a8f73c439f5d749737034b139bbbe899ba5775216fba596607fe",
   TSLA: "16dad506d7db8da01c87581c87ca897a012a153557d4d578c3b9c9e1bc0632f1",
 };
+
+function isMainnet(): boolean {
+  const url = process.env.ANCHOR_PROVIDER_URL ?? "";
+  return !url.includes("devnet") && !url.includes("127.0.0.1") && !url.includes("localhost");
+}
+
+export const PYTH_FEED_IDS: Record<string, string> = isMainnet()
+  ? PYTH_FEED_IDS_MAINNET
+  : PYTH_FEED_IDS_DEVNET;
 
 // Fallback prices for devnet testing (approximate recent values)
 const FALLBACK_PRICES: Record<string, number> = {

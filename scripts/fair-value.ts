@@ -171,22 +171,20 @@ export async function fetchStockPrices(): Promise<Map<string, number>> {
     }
   }
 
-  // Fill missing tickers with synthetic random-walk prices
-  const missingTickers: string[] = [];
-  for (const [ticker] of entries) {
-    if (!prices.has(ticker)) {
-      prices.set(ticker, getSyntheticPrice(ticker));
-      missingTickers.push(ticker);
+  // Localnet: fill all tickers with synthetic random-walk prices.
+  // Non-localnet: return only what Hermes provided. Missing tickers
+  // get no price — callers skip markets without a price rather than
+  // trading on fake data.
+  if (LOCALNET) {
+    for (const [ticker] of entries) {
+      if (!prices.has(ticker)) {
+        prices.set(ticker, getSyntheticPrice(ticker));
+      }
     }
-  }
-
-  if (missingTickers.length > 0) {
-    if (LOCALNET) {
-      console.log("  [LOCALNET] Synthetic prices:", missingTickers.join(", "));
-    } else if (isMarketHours()) {
-      console.warn(`  [WARNING] Pyth Hermes failed during market hours! Synthetic fallback for: ${missingTickers.join(", ")}`);
-    } else {
-      console.log("  [off-hours] Synthetic prices for:", missingTickers.join(", "));
+  } else {
+    const missing = entries.map(([t]) => t).filter((t) => !prices.has(t));
+    if (missing.length > 0) {
+      console.warn(`  [WARNING] Pyth Hermes missing: ${missing.join(", ")} (skipping, no synthetic fallback)`);
     }
   }
 

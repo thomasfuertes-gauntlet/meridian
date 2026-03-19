@@ -125,12 +125,12 @@ async function main() {
     }
   }
 
-  function getFairForMarket(mkt: MarketCtx): number {
+  function getFairForMarket(mkt: MarketCtx): number | null {
     const stockPrice = stockPrices.get(mkt.ticker);
+    if (!stockPrice) return null; // no Hermes price → skip market
     const strikeDollars = mkt.strikePrice / USDC_PER_PAIR;
     const hoursUntilClose = (mkt.closeTime - Date.now() / 1000) / 3600;
-    // fetchStockPrices() now always returns all tickers (synthetic fallback)
-    return stockPrice ? fairValue(stockPrice, strikeDollars, hoursUntilClose) : 0.50;
+    return fairValue(stockPrice, strikeDollars, hoursUntilClose);
   }
 
   // Track which markets have had ATAs initialized this session
@@ -155,6 +155,7 @@ async function main() {
     const botYesAta = getAssociatedTokenAddressSync(mkt.yesMint, bot.publicKey);
     await ensureAtas(mkt, botYesAta);
     const fair = getFairForMarket(mkt);
+    if (fair === null) return; // no Hermes price → skip
     const fairPrice = Math.round(fair * USDC_PER_PAIR);
 
     const book = cache.books.get(mkt.orderBook.toBase58());

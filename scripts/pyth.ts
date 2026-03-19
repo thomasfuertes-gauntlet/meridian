@@ -37,6 +37,12 @@ export const PYTH_FEED_IDS: Record<string, string> = isMainnet()
   ? PYTH_FEED_IDS_MAINNET
   : PYTH_FEED_IDS_DEVNET;
 
+// KEY-DECISION 2026-03-19: Hermes endpoint must match feed ID set.
+// Mainnet Hermes 404s on devnet feed IDs and vice versa.
+export const HERMES_BASE_URL = isMainnet()
+  ? "https://hermes.pyth.network"
+  : "https://hermes-beta.pyth.network";
+
 // Fallback prices for devnet testing (approximate recent values)
 const FALLBACK_PRICES: Record<string, number> = {
   AAPL: 256.0,
@@ -90,7 +96,7 @@ export function feedIdToBytes(hexId: string): number[] {
 export async function fetchPrice(
   ticker: string,
   feedIds: Record<string, string> = PYTH_FEED_IDS,
-  hermesUrl: string = "https://hermes.pyth.network"
+  hermesUrl: string = HERMES_BASE_URL
 ): Promise<PythPrice> {
   const feedId = feedIds[ticker];
   if (!feedId) {

@@ -19,7 +19,7 @@ import BN from "bn.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { fetchPrice, PYTH_FEED_IDS } from "./pyth";
+import { fetchPrice, PYTH_FEED_IDS, HERMES_BASE_URL } from "./pyth";
 import { oracleSettle } from "./pyth-settle";
 import { sendAlert } from "./alert";
 
@@ -353,7 +353,7 @@ export async function runSettlementJob(): Promise<void> {
     const programId = new PublicKey(
       process.env.PROGRAM_ID || (idl as { address: string }).address
     );
-    const hermesUrl = process.env.HERMES_URL || "https://hermes.pyth.network";
+    const hermesUrl = process.env.HERMES_URL || HERMES_BASE_URL;
 
     // Parse optional feed ID overrides
     let feedIds = { ...PYTH_FEED_IDS };

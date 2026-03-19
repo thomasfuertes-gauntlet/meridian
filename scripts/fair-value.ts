@@ -5,6 +5,7 @@
  */
 
 import { USDC_PER_PAIR, PYTH_FEED_IDS } from "./constants";
+import { HERMES_BASE_URL } from "./pyth";
 
 const FETCH_TIMEOUT_MS = 5_000;
 // KEY-DECISION 2026-03-14: derive synthetic-price mode from RPC URL, not an env var.
@@ -146,7 +147,7 @@ export async function fetchStockPrices(): Promise<Map<string, number>> {
     try {
       const results = await Promise.allSettled(
         entries.map(async ([ticker, feedId]) => {
-          const url = `https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}&parsed=true`;
+          const url = `${HERMES_BASE_URL}/v2/updates/price/latest?ids[]=${feedId}&parsed=true`;
           const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
           if (!res.ok) return null;
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
